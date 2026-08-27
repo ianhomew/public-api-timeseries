@@ -12,7 +12,7 @@
 import os, sys, gzip, json, glob, argparse
 from datetime import datetime
 
-REPO = os.path.expanduser("~/snap/public-api-timeseries")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DESC = {
     "x402_bazaar":       ("軌一", "x402 協議全量掛牌：誰在賣什麼 API、賣多少錢"),

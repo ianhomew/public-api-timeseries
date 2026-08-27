@@ -4,7 +4,7 @@
 """
 import os, glob, json, datetime
 
-REPO = os.path.expanduser("~/snap/public-api-timeseries")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CRYPTO = os.path.join(REPO, "track-crypto/data/x402_bazaar")
 OUT = os.path.join(REPO, "NEXT-STEP.md")
 

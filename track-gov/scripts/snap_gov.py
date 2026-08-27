@@ -6,7 +6,7 @@
 import json, gzip, os, sys, time, re, hashlib, html, urllib.request
 from datetime import datetime, timezone
 
-BASE = os.path.expanduser("~/snap/track-gov")
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(BASE, "data")
 UA = "snapshotter-research/1.0 (daily archival; public accountability; 1 req/sec)"
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")

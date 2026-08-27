@@ -6,11 +6,11 @@
 import json, gzip, os, sys, time, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timezone
 
-BASE = os.path.expanduser("~/snap/track-crypto")
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(BASE, "data")
 LOGS = os.path.join(BASE, "logs")
 def load_env():
-    ep = os.path.expanduser("~/snap/.env")
+    ep = os.path.join(os.path.dirname(os.path.dirname(BASE)), ".env")
     env = {}
     if os.path.exists(ep):
         for line in open(ep):
