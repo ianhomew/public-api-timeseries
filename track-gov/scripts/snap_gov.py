@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(BASE, "data")
-UA = "snapshotter-research/1.0 (daily archival; public accountability; 1 req/sec)"
+UA = "snapshotter-research/1.0 (daily archival; public accountability; 1 req/sec; github.com/ianhomew/public-api-timeseries)"
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 STAMP = datetime.now(timezone.utc).isoformat()
 ROOT = "https://www.fsc.gov.tw/ch/"
@@ -122,6 +122,9 @@ def main():
         t0 = time.time()
         try:
             sernos = list_sernos(ch)
+            if not sernos:
+                raise RuntimeError("list_sernos 回傳 0 筆 —— 視為抓取失敗，不寫入快照"
+                                   " (避免下游誤判為全部下架)")
             items, errs = [], {}
             for s in sernos:
                 try:

@@ -8,8 +8,11 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CRYPTO = os.path.join(REPO, "track-crypto/data/x402_bazaar")
 OUT = os.path.join(REPO, "NEXT-STEP.md")
 
-days = sorted(os.path.basename(p)[:10] for p in glob.glob(os.path.join(CRYPTO, "*.json.gz")))
-n = len(days)
+import glob as _g
+_all = _g.glob(os.path.join(REPO, "track-*/data/*/*.json.gz"))
+days = sorted({os.path.basename(p)[:10] for p in _all})
+import datetime as _dt
+n = (_dt.date.fromisoformat(days[-1]) - _dt.date.fromisoformat(days[0])).days + 1 if days else 0
 size_mb = sum(os.path.getsize(p) for p in glob.glob(os.path.join(REPO, "track-crypto/data/*/*.json.gz"))) / 1e6
 
 MILESTONES = [

@@ -38,7 +38,7 @@ data/_manifest/YYYY-MM-DD.json
 - 純靜態 HTML、無 Cloudflare、無 rate limit
 
 ## 抓取禮貌
-每次請求間隔 1 秒，每日僅執行一次，附帶可識別的 User-Agent。
+每日一輪：列表 2 頁 + 內頁 50 次，合計約 52 次請求，間隔 1 秒。附帶可識別的 User-Agent。
 
 ## 免責
 本存檔僅記錄公開網頁在特定時間點的內容，**不對資料正確性作任何保證**，

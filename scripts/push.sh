@@ -11,16 +11,19 @@ export GIT_COMMITTER_EMAIL=snapshotter@users.noreply.github.com
 mkdir -p logs
 
 # 1) 統計快取（讓 ts 指令維持毫秒級）
-python3 "$R/scripts/explore.py" --build-cache >/dev/null 2>&1 || true
+python3 "$R/scripts/explore.py" --build-cache >/dev/null 2>>logs/cache.err || echo "$(date -Is) [WARN] build-cache 失敗" >> logs/cache.err
 
 # 2) 偵測內容改寫／下架，產生 unified diff 紀錄
-DETECT="$(python3 "$R/scripts/detect_changes.py" 2>&1 | tee -a logs/detect.log)"
+DETECT="$(python3 "$R/scripts/detect_changes.py" 2>&1 | tee -a logs/detect.log)" || {
+  echo "$(date -Is) [FATAL] detect_changes 失敗，仍繼續提交資料" >&2
+  DETECT="changed=0 removed=0 DETECT_FAILED"
+}
 CHANGED="$(printf '%s' "$DETECT" | sed -n 's/.*changed=\([0-9]*\).*/\1/p' | tail -1)"
 REMOVED="$(printf '%s' "$DETECT" | sed -n 's/.*removed=\([0-9]*\).*/\1/p' | tail -1)"
 CHANGED="${CHANGED:-0}"; REMOVED="${REMOVED:-0}"
 
 # 3) 里程碑
-python3 "$R/scripts/milestone.py" >> logs/milestone.log 2>&1 || true
+python3 "$R/scripts/milestone.py" >> logs/milestone.log 2>&1 || echo "$(date -Is) [WARN] milestone 失敗" >> logs/milestone.log
 
 # 4) 提交
 git add -A

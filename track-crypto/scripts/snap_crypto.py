@@ -20,7 +20,7 @@ def load_env():
     return env
 
 ENV = load_env()
-UA = "snapshotter-research/1.0 (daily archival; 1 req/source/day; contact: see repo README)"
+UA = "snapshotter-research/1.0 (daily archival; one pass per day; contact: github.com/ianhomew/public-api-timeseries)"
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 STAMP = datetime.now(timezone.utc).isoformat()
 
@@ -94,6 +94,8 @@ def src_cex():
         except Exception as e:
             errs[name] = f"{type(e).__name__}: {e}"
         time.sleep(1)
+    if not out:
+        raise RuntimeError("7 家交易所全部失敗: %s" % errs)
     return {"exchanges": out, "errors": errs}
 
 def src_vast():
