@@ -1,4 +1,5 @@
 # 日誌與暫存
+logs/
 */logs/
 *.tmp
 .env
