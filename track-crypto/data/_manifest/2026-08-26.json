@@ -1,0 +1,26 @@
+{
+ "date": "2026-08-26",
+ "fetched_at": "2026-08-26T18:00:01.793561+00:00",
+ "sources": {
+  "x402_bazaar": {
+   "ok": true,
+   "bytes": 6052969,
+   "secs": 53.6
+  },
+  "cex_symbols": {
+   "ok": true,
+   "bytes": 406401,
+   "secs": 14.7
+  },
+  "vast_gpu": {
+   "ok": true,
+   "bytes": 21086,
+   "secs": 1.2
+  },
+  "mcp_registry": {
+   "ok": true,
+   "bytes": 6625684,
+   "secs": 946.9
+  }
+ }
+}

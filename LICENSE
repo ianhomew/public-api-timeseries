@@ -1,0 +1,32 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+Copyright (c) 2026 public-api-timeseries contributors
+
+The datasets in this repository are licensed under the Creative Commons
+Attribution 4.0 International License. You are free to:
+
+  Share  — copy and redistribute the material in any medium or format
+  Adapt  — remix, transform, and build upon the material for any purpose,
+           even commercially.
+
+Under the following terms:
+
+  Attribution — You must give appropriate credit, provide a link to the
+  license, and indicate if changes were made.
+
+Full licence text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+---
+
+NOTE ON SOURCE MATERIAL
+
+Taiwanese government notices archived under `track-gov/` are official documents
+(公文) and are not subject to copyright under Article 9 of the Copyright Act of
+the Republic of China (中華民國著作權法第9條), which explicitly includes press
+releases (新聞稿) drafted by public officials in the course of their duties.
+
+Data under `track-crypto/` consists of factual records retrieved from public
+API endpoints. Factual data is not itself subject to copyright. The compilation,
+structure, and accompanying code are licensed as stated above.
+
+The code in `*/scripts/` is released under the MIT License.
