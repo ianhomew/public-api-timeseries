@@ -33,3 +33,19 @@ logs/cron.log                        # 執行日誌
 ## 免責
 本存檔僅記錄公開端點在特定時間點的回應內容，**不對資料正確性作任何保證**，
 **不構成任何投資建議或分析意見**。使用者應自行驗證。
+
+
+## `track-crypto/data/cex_events/` — 上架／下架事件流
+
+`bybit` / `okx` / `mexc` 三家交易所的 API **只回傳存活中的交易對**，下架後直接從回應中消失。
+只有 `htx` 保留 `offline` 狀態（1,547 / 2,159 筆）。
+
+用未修正生存者偏誤的資料做回測，會**系統性高估報酬** —— 因為死掉的標的從資料裡消失了。
+
+本檔逐日比對快照，累積成 `events.jsonl`（只追加）：
+```json
+{"date":"2026-08-27","exchange":"bybit","symbol":"XXXUSDT","event":"DELISTED","from":"Trading","to":null}
+```
+`event` 為 `LISTED` / `DELISTED` / `STATUS_CHANGED`。
+
+**本檔只記錄事實，不含任何解讀、預測或建議。**

@@ -22,6 +22,9 @@ CHANGED="$(printf '%s' "$DETECT" | sed -n 's/.*changed=\([0-9]*\).*/\1/p' | tail
 REMOVED="$(printf '%s' "$DETECT" | sed -n 's/.*removed=\([0-9]*\).*/\1/p' | tail -1)"
 CHANGED="${CHANGED:-0}"; REMOVED="${REMOVED:-0}"
 
+# 2b) CEX 上/下架事件流（生存者偏誤修正：3 家交易所只回存活標的）
+python3 "$R/scripts/cex_events.py" >> logs/cex_events.log 2>&1 || echo "$(date -Is) [WARN] cex_events 失敗" >> logs/cex_events.log
+
 # 3) OpenTimestamps：對資料清單蓋章（證明「這份資料在此時已存在」）
 python3 "$R/scripts/stamp.py" >> logs/stamp.log 2>&1 || echo "$(date -Is) [WARN] stamp 失敗" >> logs/stamp.log
 
