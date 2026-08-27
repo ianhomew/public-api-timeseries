@@ -1,0 +1,21 @@
+{
+ "date": "2026-08-27",
+ "fetched_at": "2026-08-27T09:07:49.690862+00:00",
+ "sources": {
+  "x402_bazaar": {
+   "ok": true,
+   "bytes": 6045267,
+   "secs": 52.4
+  },
+  "cex_symbols": {
+   "ok": true,
+   "bytes": 407121,
+   "secs": 12.6
+  },
+  "vast_gpu": {
+   "ok": true,
+   "bytes": 174956,
+   "secs": 1.8
+  }
+ }
+}
