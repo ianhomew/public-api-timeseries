@@ -93,10 +93,26 @@ def fetch_item(ch, serno):
             "raw_bytes": len(raw)}
 
 def write_gz(key, payload):
-    d = os.path.join(DATA, key); os.makedirs(d, exist_ok=True)
-    final = os.path.join(d, TODAY + ".json.gz"); tmp = final + ".tmp"
+    # NEVER_OVERWRITE: 已存在且內容不同時，另存時戳版本，不覆蓋歷史
+    import hashlib as _h
+    d = os.path.join(DATA, key)
+    os.makedirs(d, exist_ok=True)
+    blob = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    final = os.path.join(d, TODAY + ".json.gz")
+    if os.path.exists(final):
+        try:
+            with gzip.open(final, "rt", encoding="utf-8") as _f:
+                old = json.load(_f)
+            oldb = json.dumps(old, ensure_ascii=False, separators=(",", ":")).encode()
+            if _h.sha256(oldb).hexdigest() == _h.sha256(blob).hexdigest():
+                return final, os.path.getsize(final)
+        except Exception:
+            pass
+        stamp = datetime.now(timezone.utc).strftime("%H%M%S")
+        final = os.path.join(d, TODAY + "T" + stamp + ".json.gz")
+    tmp = final + ".tmp"
     with gzip.open(tmp, "wt", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+        f.write(blob.decode())
     os.replace(tmp, final)
     return final, os.path.getsize(final)
 

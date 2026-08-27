@@ -37,17 +37,30 @@ def fetch(url, retries=3, timeout=45):
                 time.sleep(3 * (i + 1))
     raise last
 
-def write_gz(source, payload):
-    d = os.path.join(DATA, source)
+def write_gz(key, payload):
+    # NEVER_OVERWRITE: 已存在且內容不同時，另存時戳版本，不覆蓋歷史
+    import hashlib as _h
+    d = os.path.join(DATA, key)
     os.makedirs(d, exist_ok=True)
-    final = os.path.join(d, f"{TODAY}.json.gz")
+    blob = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    final = os.path.join(d, TODAY + ".json.gz")
+    if os.path.exists(final):
+        try:
+            with gzip.open(final, "rt", encoding="utf-8") as _f:
+                old = json.load(_f)
+            oldb = json.dumps(old, ensure_ascii=False, separators=(",", ":")).encode()
+            if _h.sha256(oldb).hexdigest() == _h.sha256(blob).hexdigest():
+                return final, os.path.getsize(final)
+        except Exception:
+            pass
+        stamp = datetime.now(timezone.utc).strftime("%H%M%S")
+        final = os.path.join(d, TODAY + "T" + stamp + ".json.gz")
     tmp = final + ".tmp"
     with gzip.open(tmp, "wt", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
-    os.replace(tmp, final)          # 原子寫入
+        f.write(blob.decode())
+    os.replace(tmp, final)
     return final, os.path.getsize(final)
 
-# ---------- 來源定義 ----------
 def src_x402():
     """x402 Bazaar 全量掛牌（分頁抓完）"""
     items, offset, limit = [], 0, 1000

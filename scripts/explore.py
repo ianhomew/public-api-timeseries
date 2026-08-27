@@ -86,12 +86,16 @@ def summarize(name, j):
         return len(offers), s
     if name == "mcp_registry":
         srv = d.get("servers", [])
-        s = [{"name": x.get("name"), "version": (x.get("version") or
-              (x.get("_meta") or {}).get("version")),
-              "status": (x.get("_meta", {}).get("io.modelcontextprotocol.registry/official", {}) or {}).get("status")
-                        or x.get("status"),
-              "desc": str(x.get("description") or "")[:70]} for x in srv[:50]]
-        return len(srv), s
+        def _g(x):
+            core = x.get("server", x)
+            meta = (x.get("_meta") or {}).get("io.modelcontextprotocol.registry/official", {}) or {}
+            return {"name": core.get("name"),
+                    "version": core.get("version"),
+                    "status": meta.get("status") or core.get("status"),
+                    "statusChangedAt": meta.get("statusChangedAt"),
+                    "publishedAt": meta.get("publishedAt"),
+                    "desc": str(core.get("description") or "")[:60]}
+        return len(srv), [_g(x) for x in srv[:50]]
     if name == "fsc_clarification":
         items = d.get("items", j.get("items", []))
         s = [{"date": i.get("date"), "title": i.get("title", "")[:60],

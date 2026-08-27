@@ -36,11 +36,17 @@ def snapshots(source):
             return sorted(glob.glob(os.path.join(d, "*.json.gz")))
     return []
 
+def errors_of(j):
+    d = j.get("data", j)
+    return set((d.get("errors") or {}).keys())
+
 def compare(source, cfg, f_old, f_new):
-    a = {i[cfg["key"]]: i for i in items_of(load(f_old))}
-    b = {i[cfg["key"]]: i for i in items_of(load(f_new))}
-    added = sorted(set(b) - set(a))
-    removed = sorted(set(a) - set(b))
+    j_old, j_new = load(f_old), load(f_new)
+    err = errors_of(j_old) | errors_of(j_new)   # 抓取失敗者不列入下架/新增判定
+    a = {i[cfg["key"]]: i for i in items_of(j_old)}
+    b = {i[cfg["key"]]: i for i in items_of(j_new)}
+    added = sorted(set(b) - set(a) - err)
+    removed = sorted(set(a) - set(b) - err)
     changed = sorted(k for k in set(a) & set(b) if a[k][cfg["sha"]] != b[k][cfg["sha"]])
     return a, b, added, removed, changed
 
