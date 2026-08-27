@@ -7,6 +7,7 @@ export GIT_AUTHOR_EMAIL=snapshotter@users.noreply.github.com
 export GIT_COMMITTER_NAME=vps-snapshotter
 export GIT_COMMITTER_EMAIL=snapshotter@users.noreply.github.com
 
+python3 "$HOME/snap/public-api-timeseries/scripts/explore.py" --build-cache >/dev/null 2>&1 || true
 python3 "$HOME/snap/public-api-timeseries/scripts/milestone.py" >> "$HOME/snap/public-api-timeseries/logs/milestone.log" 2>&1 || true
 
 git add -A

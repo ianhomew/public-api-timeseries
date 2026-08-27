@@ -100,6 +100,41 @@ def summarize(name, j):
         return len(items), s
     return None, []
 
+def stats_path(f):
+    return f[:-8] + ".stats.json" if f.endswith(".json.gz") else f + ".stats.json"
+
+def build_stats(name, f, force=False):
+    sp = stats_path(f)
+    if not force and os.path.exists(sp) and os.path.getmtime(sp) >= os.path.getmtime(f):
+        return json.load(open(sp, encoding="utf-8"))
+    j = load(f)
+    total, sample = summarize(name, j)
+    st = {"source": name, "date": os.path.basename(f)[:10],
+          "total": total, "bytes": os.path.getsize(f),
+          "fetched_at": j.get("_meta", {}).get("fetched_at"),
+          "sample_head": sample[:12]}
+    tmp = sp + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(st, fh, ensure_ascii=False)
+    os.replace(tmp, sp)
+    return st
+
+def get_stats(name, f):
+    try:
+        return build_stats(name, f)
+    except Exception:
+        return None
+
+def build_all_cache():
+    n = 0
+    for name, files in sources().items():
+        for f in files:
+            try:
+                build_stats(name, f); n += 1
+            except Exception as e:
+                print("skip %s: %s" % (f, e))
+    print("已建立 %d 份統計快取" % n)
+
 def overview():
     src = sources()
     if not src:
@@ -119,12 +154,10 @@ def overview():
         print("   檔案數 %-4d  日期 %s ~ %s  合計 %s  最新單檔 %s"
               % (len(files), days[0], days[-1], human(size),
                  human(os.path.getsize(files[-1]))))
-        try:
-            n, _ = summarize(name, load(files[-1]))
-            if n is not None:
-                print("   最新一份內含 %s 筆紀錄" % format(n, ","))
-        except Exception as e:
-            print("   (讀取失敗: %s)" % e)
+        st = get_stats(name, files[-1])
+        if st and st.get("total") is not None:
+            print("   最新一份內含 %s 筆紀錄" % format(st["total"], ","))
+
     print("\n" + "-" * 78)
     print("總計 %d 個檔案，%s" % (tot_files, human(tot_bytes)))
     print("查看內容： explore.py <source> <date>")
@@ -145,6 +178,25 @@ def show(name, date, n, raw):
     hit = [f for f in src[name] if os.path.basename(f).startswith(date)]
     if not hit:
         print("查無 %s 的 %s" % (name, date)); return
+    sp = stats_path(hit[0])
+    if not raw and n <= 12 and os.path.exists(sp) and os.path.getmtime(sp) >= os.path.getmtime(hit[0]):
+        st = json.load(open(sp, encoding="utf-8"))
+        if st.get("sample_head"):
+            print("=" * 78)
+            print("%s  %s   (快取)" % (name, date))
+            print("說明：%s" % DESC.get(name, ("", ""))[1])
+            print("抓取時間：%s" % st.get("fetched_at"))
+            print("=" * 78)
+            print("總筆數：%s" % format(st["total"], ",") if st.get("total") else "")
+            print()
+            for i, row in enumerate(st["sample_head"][:n], 1):
+                print("--- %d ---" % i)
+                for k, v in row.items():
+                    print("   %-12s %s" % (k, str(v)[:100]))
+            if st.get("total", 0) > n:
+                print()
+                print("(僅顯示前 %d 筆，共 %s 筆。-n 超過 12 會讀取完整檔案)" % (n, format(st["total"], ",")))
+            return
     j = load(hit[0])
     meta = j.get("_meta", {})
     print("=" * 78)
@@ -192,11 +244,14 @@ if __name__ == "__main__":
     p.add_argument("-n", type=int, default=8)
     p.add_argument("--raw", action="store_true")
     p.add_argument("--diff", action="store_true")
+    p.add_argument("--build-cache", action="store_true")
     p.add_argument("-h", "--help", action="store_true")
     o = p.parse_args()
     if o.help:
         print(__doc__); sys.exit(0)
-    if o.diff and len(o.args) == 3:
+    if o.build_cache:
+        build_all_cache()
+    elif o.diff and len(o.args) == 3:
         diff(*o.args)
     elif len(o.args) == 0:
         overview()

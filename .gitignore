@@ -2,14 +2,15 @@
 logs/
 */logs/
 *.tmp
+*.stats.json.tmp
 .env
 
 # 軌一大型資料暫不入 GitHub（累積 3 個月後改發布到 Hugging Face Datasets）
 # 原始資料永久保存於 VPS: ~/snap/public-api-timeseries/track-crypto/data/
-track-crypto/data/x402_bazaar/
-track-crypto/data/cex_symbols/
-track-crypto/data/mcp_registry/
-track-crypto/data/vast_gpu/
+track-crypto/data/x402_bazaar/*.json.gz
+track-crypto/data/cex_symbols/*.json.gz
+track-crypto/data/mcp_registry/*.json.gz
+track-crypto/data/vast_gpu/*.json.gz
 # _manifest 保留：體積小，可證明每日排程確實執行
 __pycache__/
 *.pyc
