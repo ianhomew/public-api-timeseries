@@ -10,3 +10,5 @@ track-crypto/data/cex_symbols/
 track-crypto/data/mcp_registry/
 track-crypto/data/vast_gpu/
 # _manifest 保留：體積小，可證明每日排程確實執行
+__pycache__/
+*.pyc
