@@ -128,8 +128,11 @@ def src_mcp():
         time.sleep(0.25)
     return {"total": len(servers), "servers": servers}
 
+# mcp_registry 已於 2026-08-27 停止抓取：
+#   複核發現單日快照即含多版本、官方支援 updated_since、抽樣 120 筆零刪除
+#   佔每日抓取 946.9 秒（93%），邊際資訊近乎零。已抓資料保留不刪。
 SOURCES = [("x402_bazaar", src_x402), ("cex_symbols", src_cex),
-           ("vast_gpu", src_vast), ("mcp_registry", src_mcp)]
+           ("vast_gpu", src_vast)]
 
 def main():
     os.makedirs(LOGS, exist_ok=True)

@@ -1,0 +1,11 @@
+# public-api-timeseries 資料完整性清單
+# 產生時間 (UTC): 2026-08-27T06:22:59.060431+00:00
+# 檔案數: 6
+# 驗證: sha256sum -c 此檔；時間證明: ots verify <此檔>.ots
+
+b0cb9bd73b7a88f2345fe7a8f113d79f55aec5514bf73b96fcfd957be1bc3641  track-crypto/data/cex_symbols/2026-08-26.json.gz
+6a1cfe6209b7490c6503fb57e0121347a82e2b5f8f6207030341f7fe318dc702  track-crypto/data/mcp_registry/2026-08-26.json.gz
+3fbcfdc4c9adff141608f8b34f7674a66d885094f581c3748475e3c6d518718e  track-crypto/data/vast_gpu/2026-08-26.json.gz
+b40cce8f19188a991679d4c84ece01adafeb928e453fab331cf2869cb012a1c0  track-crypto/data/vast_gpu/2026-08-27.json.gz
+2ac953ad6658bfef9c37d9ad783fd0d35294dc0d535c59e0627bb81b50539fd7  track-crypto/data/x402_bazaar/2026-08-26.json.gz
+424ce3de3813d98077524acd0214830584ee9e86a5d9de8fda41b78a7c87effd  track-gov/data/fsc_clarification/2026-08-27.json.gz
