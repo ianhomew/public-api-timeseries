@@ -7,6 +7,8 @@ export GIT_AUTHOR_EMAIL=snapshotter@users.noreply.github.com
 export GIT_COMMITTER_NAME=vps-snapshotter
 export GIT_COMMITTER_EMAIL=snapshotter@users.noreply.github.com
 
+python3 "$HOME/snap/public-api-timeseries/scripts/milestone.py" >> "$HOME/snap/public-api-timeseries/logs/milestone.log" 2>&1 || true
+
 git add -A
 if git diff --cached --quiet; then
   echo "$(date -Is) 無變更，略過"
