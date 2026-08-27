@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""每日自我檢查：沉默即異常。
+在 repo 根目錄產生／刪除 ALERT.md，隨每日 push 上到 GitHub。
+只陳述事實（缺檔／體積異常／manifest 失敗），不做解讀。
+
+時區鐵律：所有快照檔名一律用 **UTC 日期**，本檢查也一律用 UTC 比對。
+"""
+import os, json, glob, statistics, datetime
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT  = os.path.join(REPO, "ALERT.md")
+TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+# 目前應該每日都有新檔的來源。停抓的來源要從這裡移除，否則會持續告警。
+ACTIVE = [
+    ("track-crypto", "x402_bazaar"),
+    ("track-crypto", "cex_symbols"),
+    ("track-crypto", "vast_gpu"),
+    ("track-gov",    "fsc_clarification"),
+]
+LOW, HIGH = 0.5, 3.0   # 體積相對前 7 日中位數的容許區間
+
+def snapshots(track, key):
+    d = os.path.join(REPO, track, "data", key)
+    out = {}
+    for p in glob.glob(os.path.join(d, "*.json.gz")):
+        out.setdefault(os.path.basename(p)[:10], []).append(p)
+    return out
+
+def check_source(track, key, issues):
+    label = f"{track}/{key}"
+    snaps = snapshots(track, key)
+    if not snaps:
+        issues.append((label, "沒有任何快照檔"))
+        return
+    days = sorted(snaps)
+    if TODAY not in snaps:
+        issues.append((label, f"今日（UTC {TODAY}）缺檔；最後一份為 {days[-1]}"
+                              f"（已 {(datetime.date.fromisoformat(TODAY) - datetime.date.fromisoformat(days[-1])).days} 天無新資料）"))
+        return
+    today_sz = max(os.path.getsize(p) for p in snaps[TODAY])
+    prev = [max(os.path.getsize(p) for p in snaps[d]) for d in days if d < TODAY][-7:]
+    if prev:
+        med = statistics.median(prev)
+        if med > 0 and (today_sz < med * LOW or today_sz > med * HIGH):
+            issues.append((label, f"體積異常：今日 {today_sz:,} B，前 {len(prev)} 日中位數 {med:,.0f} B"
+                                  f"（{today_sz/med:.2f}×，容許 {LOW}–{HIGH}×）"))
+
+def check_manifest(track, issues):
+    p = os.path.join(REPO, track, "data", "_manifest", TODAY + ".json")
+    if not os.path.exists(p):
+        issues.append((track, f"今日 manifest 不存在 → 排程可能沒跑（UTC {TODAY}）"))
+        return
+    try:
+        m = json.load(open(p, encoding="utf-8"))
+    except Exception as e:
+        issues.append((track, f"manifest 無法解析：{type(e).__name__}: {e}"))
+        return
+    for name, v in (m.get("sources") or m.get("channels") or {}).items():
+        if not v.get("ok"):
+            issues.append((f"{track}/{name}", f"manifest 標記失敗：{v.get('error','(無錯誤訊息)')}"))
+
+def main():
+    issues = []
+    for track in ("track-crypto", "track-gov"):
+        check_manifest(track, issues)
+    for track, key in ACTIVE:
+        check_source(track, key, issues)
+
+    if not issues:
+        if os.path.exists(OUT):
+            os.remove(OUT)
+        print(f"OK {TODAY} 全部正常（{len(ACTIVE)} 個來源）")
+        return 0
+
+    lines = [
+        "# 🔴 每日自我檢查發現異常",
+        "",
+        f"檢查時間（UTC）：{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}",
+        f"檢查基準日（UTC）：{TODAY}",
+        "",
+        "| 來源 | 問題 |",
+        "|---|---|",
+    ] + [f"| `{a}` | {b} |" for a, b in issues] + [
+        "",
+        "本檔由 `scripts/healthcheck.py` 自動產生。異常排除後會自動刪除。",
+        "",
+        "排查順序：`crontab -l` → `track-*/logs/cron.log` → 手動執行 snapshotter。",
+    ]
+    open(OUT, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    print(f"ALERT {TODAY} {len(issues)} 項異常")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

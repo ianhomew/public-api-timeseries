@@ -31,6 +31,9 @@ python3 "$R/scripts/stamp.py" >> logs/stamp.log 2>&1 || echo "$(date -Is) [WARN]
 # 4) 里程碑
 python3 "$R/scripts/milestone.py" >> logs/milestone.log 2>&1 || echo "$(date -Is) [WARN] milestone 失敗" >> logs/milestone.log
 
+# 4b) 自我檢查：沉默即異常（缺檔／體積異常／manifest 失敗 → 產生 ALERT.md）
+python3 "$R/scripts/healthcheck.py" >> logs/healthcheck.log 2>&1 || echo "$(date -Is) [WARN] healthcheck 失敗" >> logs/healthcheck.log
+
 # 4) 提交
 git add -A
 if git diff --cached --quiet; then
