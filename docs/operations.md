@@ -9,7 +9,7 @@ VPS 時區為 `Asia/Taipei`（UTC+8）。下列時間皆為**台北時間**。
 | 台北時間 | 動作 | 指令 |
 |---|---|---|
 | 09:00 | 抓取 `track-crypto` | `track-crypto/scripts/snap_crypto.py` |
-| 09:30 | 抓取 `track-gov` | `track-gov/scripts/snap_gov.py` |
+| 09:30 | 抓取 `track-gov`（11 個機關，約 58 分鐘） | `track-gov/scripts/snap_gov.py` |
 | 11:30 | 統計快取 → 變動偵測 → 事件流 → 時間戳 → 里程碑 → 自我檢查 → commit → push | `scripts/push.sh` |
 
 檔名使用的是該時刻的 **UTC 日期**。台北 09:00 等於 UTC 01:00，同日。
@@ -46,8 +46,9 @@ commit 標題：
 | 體積異常 | 今日體積不在前 7 日中位數的 **0.5×–3.0×** 區間 |
 | manifest 失敗 | 當日 manifest 中有來源 `ok: false` |
 
-檢查名單只含**仍在抓取**的來源，停抓的來源要從 `ACTIVE` 移除，否則會持續誤報。
-目前名單：`x402_bazaar`、`cex_symbols`、`vast_gpu`、`fsc_clarification`。
+檢查名單：`track-crypto` 為寫死的 `ACTIVE_CRYPTO`（`x402_bazaar`、`cex_symbols`、`vast_gpu`），
+停抓的來源要從該清單移除，否則會持續誤報；`track-gov` 則自 `track-gov/adapters/*.py`
+**自動探索**，新增機關不必改程式。
 
 排查順序：`crontab -l` → `track-*/logs/cron.log` → 手動執行 snapshotter。
 

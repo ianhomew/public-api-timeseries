@@ -68,30 +68,55 @@
 
 ## track-gov
 
-抓取程式：`track-gov/scripts/snap_gov.py`
+抓取程式：`track-gov/scripts/snap_gov.py`（自動載入 `track-gov/adapters/*.py`）
 
-### `fsc_clarification`
+一個機關一支 adapter。每份快照的 `_meta` 內含該來源的 `robots_verified` 親驗紀錄。
+每筆欄位：`id`、`url`、`title`、`date`、`body_text`、`body_sha256`
+（`fsc_clarification` 另保留 `dataserno`，與 2026-08-27 前的快照相容）。
 
-| 項目 | 值 |
-|---|---|
-| 來源 | 金管會 即時新聞澄清（`https://www.fsc.gov.tw/ch/`，`id=609`） |
-| 筆數 | 50（全部歷史，2017-03 起） |
-| 壓縮後 | 42,908 B |
-| 請求次數 | 一輪約 52 次（列表 2 頁 + 內頁 50 筆） |
-| 耗時 | 約 113 秒 |
-| robots.txt | 僅 `Disallow: /uploaddowndoc`，本專案未觸及 |
-| 每筆欄位 | `dataserno`、`url`、`title`、`date`、`body_text`、`body_sha256`、`raw_sha256`、`raw_bytes` |
+下表為 2026-08-27（UTC）在 VPS（德國 IP）實測值。「唯一 sha256」= 該來源所有正文互不重複的比例，
+用來確認抓到的是正文而非頁面框架。
 
-已知限制與技術細節：
+| channel | 機關與類別 | 筆數 | 唯一 sha256 | 壓縮後 | 耗時 | robots.txt 親驗結果 |
+|---|---|---|---|---|---|---|
+| `fsc_clarification` | 金管會 即時新聞澄清 | 50（全部歷史） | 50/50 | 40,066 B | 142s | 僅 `Disallow: /uploaddowndoc`（附件） |
+| `moe_clarify` | 教育部 即時新聞澄清 | 80（全部歷史 82 筆，2 筆舊稿無正文） | 80/80 | 72,944 B | 327s | 4 條，皆為 `/WebResource.axd`、`/src`、`/Scripts/…`、`/search` |
+| `moj_press` | 法務部 新聞發布 | 99 | 99/99 | 107,121 B | 596s | 全檔只有 `Sitemap:` 一行，無任何 Disallow |
+| `cbc_press` | 中央銀行 新聞稿／新聞參考資料 | 99 | 99/99 | 47,464 B | 304s | 該站不提供 robots.txt（請求被導回首頁） |
+| `mof_press` | 財政部 本部新聞 | 99 | 99/99 | 82,376 B | 308s | 僅 `Disallow: /download/` |
+| `mol_press` | 勞動部 新聞稿 | 100 | 100/100 | 132,533 B | 289s | `/bin/`、`/App_Data/`、`/App_Plugins/`、`/Umbraco/` |
+| `moda_press` | 數位發展部 新聞發布 | 100 | 100/100 | 98,098 B | 120s | robots.txt 404，無 Disallow |
+| `moi_press` | 內政部 新聞稿 | 100 | 100/100 | 98,560 B | 381s | robots.txt 404，無 Disallow |
+| `ey_press` | 行政院 本院新聞 | 100 | 100/100 | 175,792 B | 356s | `/Upload`、`/Program/EY/Hope_decision.ascx` |
+| `mohw_press` | 衛生福利部 焦點新聞 | 100 | 100/100 | 117,701 B | 277s | 全檔僅 `User-agent: *`，零 Disallow |
+| `moe_press` | 教育部 即時新聞 | 100 | 100/100 | 121,438 B | 420s | 同 `moe_clarify` |
 
-- 內頁 URL **必須帶 `&dtable=News`**，否則回傳頁面不含正文。
-- 分頁參數是 **`&page=N`**；`pageNum`、`currentPage` 等皆無效。
-- `class="page-edit"` **是內容容器，不是頁尾**。正文結構為
-  `ap > maincontent > subject/date > page-edit > zbox > main-a_01 > main-a_03`。
-- 純靜態 HTML，無 Cloudflare，無 rate limit。
+合計每日約 **1.07 MB**、約 1,150 次請求、約 58 分鐘。
+
+### 各來源的已知限制與踩過的坑
+
+- **`fsc_clarification`**：內頁 URL 必須帶 `&dtable=News`，否則回傳的頁面不含正文；分頁參數是
+  `&page=N`；`class="page-edit"` **是內容容器不是頁尾**。正文含「瀏覽人次」計數器，已在寫入前過濾。
+- **`moe_press` / `moe_clarify`**：分頁為真正的 GET 參數 `page=N&PageSize=20`；`p=`、`pageIndex=` 無效。
+  日期為民國年（`115-08-27`），依規格保留原文不轉換。
+- **`moj_press`**：清單頁**不含日期**，必須進內頁才拿得到。Umbraco 產出，正文被大量 `<span>` 切碎。
+- **`cbc_press`**：內頁 URL 含隨機 5 碼雜湊，**不可自行組裝**，必須沿用清單連結。節點 id 錯誤時
+  **不回 404 而是靜默 302 導回首頁**，極易誤判為「全部下架」，因此 0 筆時一律 raise。
+  ⚠️ **相當比例為統計類新聞稿，正文只有一兩句，實質數字在 XLSX 附件內。本專案不抓附件，
+  因此偵測不到附件被抽換。**
+- **`mof_press`**：側欄「即時新聞澄清」也含 `cntId`，必須只解析 `<table class="table-list">`；
+  頁尾也有 `<article>`，需先錨定 `<span class="span-page-title">`。
+- **`mol_press`**：正文是 Word 貼上產生的巢狀 HTML，需抓 `section.cp` 內最內層的 `<body>`。
+  該節點只滾動保留約一年（實測 289 筆，最舊 2025-08-28），更舊者移入「歷史新聞」。
+- **`moda_press`**：分頁為純前端 JS，7 種 URL 參數實測全部無效；改用官網自己呼叫的公開端點
+  `POST www-api.moda.gov.tw/WebsiteList/NewsList`（回傳 HTML 片段），`Dep` 參數必填。
+- **`moi_press`**：頁面帶 UTF-8 BOM。日期為民國年。
+- **`ey_press`**：節點頁不能裸開，需帶 GUID 或 `?page=&PS=`；清單混入影音節點需過濾；
+  內頁底部「最新新聞」連結列若混入正文會讓多筆高度雷同，已排除。
+  「即時新聞澄清」欄目大量外連到其他部會（含全站禁止的經濟部），**刻意不收錄**，只取本院新聞。
 
 法律依據：著作權法第 9 條第 2 項明文「公文包括公務員職務上草擬之文告、講稿、**新聞稿**」，
-不受著作權保護。個資風險低：裁罰受處分人多為法人，自然人姓名官方已遮罩（如「林00先生」）。
+不受著作權保護。一律不抓附件、不抓個資。
 
 ## 已排除的來源
 
@@ -99,6 +124,7 @@
 |---|---|
 | Binance | robots.txt 全站 `Disallow: /` |
 | Smithery `/api/` | robots.txt `Disallow: /api/` |
-| 經濟部 | robots.txt 限制 |
+| 經濟部 | robots.txt 全站 `Disallow: /` |
+| **環境部** | robots.txt 明文禁止 `/Page/`、`/page/`、`/News_Content.aspx`、`/*?page=*`，新聞稿清單與內頁**全部**落在禁止路徑，無合規替代路徑；且全站 Cloudflare JS 挑戰（`Cf-Mitigated: challenge`），標準函式庫無法取得內容，繞過等同規避防護措施。舊網域 `epa.gov.tw` 已 DNS 不存在 |
 | Tasker | robots.txt 限制 |
 | udn.com | robots.txt 禁止商業用途 |

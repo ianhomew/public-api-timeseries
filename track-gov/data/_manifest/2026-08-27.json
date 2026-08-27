@@ -1,13 +1,13 @@
 {
  "date": "2026-08-27",
- "fetched_at": "2026-08-27T02:04:37.843450+00:00",
+ "fetched_at": "2026-08-27T10:37:22.911943+00:00",
  "channels": {
   "fsc_clarification": {
    "ok": true,
    "n": 50,
-   "bytes": 42908,
+   "bytes": 40066,
    "errors": 0,
-   "secs": 113.2
+   "secs": 142.5
   }
  }
 }

@@ -12,12 +12,24 @@ OUT  = os.path.join(REPO, "ALERT.md")
 TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
 # 目前應該每日都有新檔的來源。停抓的來源要從這裡移除，否則會持續告警。
-ACTIVE = [
-    ("track-crypto", "x402_bazaar"),
-    ("track-crypto", "cex_symbols"),
-    ("track-crypto", "vast_gpu"),
-    ("track-gov",    "fsc_clarification"),
-]
+ACTIVE_CRYPTO = ["x402_bazaar", "cex_symbols", "vast_gpu"]
+
+def _gov_keys():
+    """軌二來源自 track-gov/adapters/*.py 自動探索，新增機關不必改這支程式"""
+    import re as _re
+    adir = os.path.join(REPO, "track-gov", "adapters")
+    out = []
+    if os.path.isdir(adir):
+        for fn in sorted(os.listdir(adir)):
+            if fn.endswith(".py") and not fn.startswith("_"):
+                m = _re.search(r'^KEY\s*=\s*["\'](.+?)["\']',
+                               open(os.path.join(adir, fn), encoding="utf-8").read(), _re.M)
+                if m:
+                    out.append(m.group(1))
+    return out
+
+ACTIVE = ([("track-crypto", k) for k in ACTIVE_CRYPTO] +
+          [("track-gov", k) for k in _gov_keys()])
 LOW, HIGH = 0.5, 3.0   # 體積相對前 7 日中位數的容許區間
 
 def snapshots(track, key):

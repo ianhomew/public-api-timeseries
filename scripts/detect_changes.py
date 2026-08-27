@@ -7,19 +7,37 @@
 有變動才產生檔案；無變動不留痕跡。
 輸出：changes/<source>/YYYY-MM-DD.md  +  CHANGES.md（累積索引）
 """
-import os, sys, gzip, json, glob, difflib
+import os, sys, re, gzip, json, glob, difflib
 from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANGES = os.path.join(REPO, "changes")
 INDEX = os.path.join(REPO, "CHANGES.md")
 
-# 目前支援全文比對的來源（有 body_text 與 sha 的）
-TEXT_SOURCES = {
-    "fsc_clarification": {"key": "dataserno", "title": "title",
-                          "text": "body_text", "sha": "body_sha256",
-                          "url": "url", "label": "金管會即時新聞澄清"},
-}
+# 支援全文比對的來源：自 track-gov/adapters/*.py 自動探索，新增機關不必再改這支程式。
+# 識別鍵一律用 item["id"]；金管會舊快照（2026-08-26～27）只有 dataserno，由 _key() 相容處理。
+def _discover():
+    out = {}
+    adir = os.path.join(REPO, "track-gov", "adapters")
+    if os.path.isdir(adir):
+        for fn in sorted(os.listdir(adir)):
+            if not fn.endswith(".py") or fn.startswith("_"):
+                continue
+            src = open(os.path.join(adir, fn), encoding="utf-8").read()
+            k = re.search(r'^KEY\s*=\s*["\'](.+?)["\']', src, re.M)
+            d = re.search(r'^DESC\s*=\s*["\'](.+?)["\']', src, re.M)
+            if k:
+                out[k.group(1)] = {"key": "id", "title": "title", "text": "body_text",
+                                   "sha": "body_sha256", "url": "url",
+                                   "label": d.group(1) if d else k.group(1)}
+    return out
+
+TEXT_SOURCES = _discover()
+
+def _key(item, cfg):
+    """相容：新快照有 id；金管會舊快照只有 dataserno"""
+    return str(item.get(cfg["key"]) or item.get("dataserno") or item.get("id"))
+
 
 def load(p):
     with gzip.open(p, "rt", encoding="utf-8") as f:
@@ -30,10 +48,15 @@ def items_of(j):
     return d.get("items", j.get("items", []))
 
 def snapshots(source):
+    """每個 UTC 日期只取最後一份。
+    同日多份是「當日重跑／遷移」的產物，不是改寫事件；跨日比較才有意義。"""
     for track in ("track-gov", "track-crypto"):
         d = os.path.join(REPO, track, "data", source)
         if os.path.isdir(d):
-            return sorted(glob.glob(os.path.join(d, "*.json.gz")))
+            per_day = {}
+            for p in sorted(glob.glob(os.path.join(d, "*.json.gz"))):
+                per_day[os.path.basename(p)[:10]] = p
+            return [per_day[k] for k in sorted(per_day)]
     return []
 
 def errors_of(j):
@@ -43,8 +66,8 @@ def errors_of(j):
 def compare(source, cfg, f_old, f_new):
     j_old, j_new = load(f_old), load(f_new)
     err = errors_of(j_old) | errors_of(j_new)   # 抓取失敗者不列入下架/新增判定
-    a = {i[cfg["key"]]: i for i in items_of(j_old)}
-    b = {i[cfg["key"]]: i for i in items_of(j_new)}
+    a = {_key(i, cfg): i for i in items_of(j_old)}
+    b = {_key(i, cfg): i for i in items_of(j_new)}
     added = sorted(set(b) - set(a) - err)
     removed = sorted(set(a) - set(b) - err)
     changed = sorted(k for k in set(a) & set(b) if a[k][cfg["sha"]] != b[k][cfg["sha"]])

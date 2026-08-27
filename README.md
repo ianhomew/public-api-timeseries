@@ -30,13 +30,29 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 
 ### `track-gov/` — 台灣政府公告（可問責性存檔）
 
-| 來源 | 內容 | 最近一次筆數 | 狀態 |
+每日抓各機關新聞稿／澄清稿全文，用來偵測**發布後被靜默改寫或下架**。
+
+| 來源 | 機關與類別 | 最近一次筆數 | 每年新增（估） |
 |---|---|---|---|
-| `fsc_clarification` | 金管會 即時新聞澄清（全部歷史） | 50 | 每日抓取 |
+| `fsc_clarification` | 金管會 即時新聞澄清（全部歷史） | 50 | ~5 |
+| `moe_clarify` | 教育部 即時新聞澄清（全部歷史 82 筆中 80 筆有正文） | 80 | ~9 |
+| `moj_press` | 法務部 新聞發布 | 99 | ~98 |
+| `cbc_press` | 中央銀行 新聞稿／新聞參考資料 | 99 | ~270 |
+| `mol_press` | 勞動部 新聞稿 | 100 | ~270 |
+| `moda_press` | 數位發展部 新聞發布 | 100 | ~67 |
+| `moi_press` | 內政部 新聞稿 | 100 | ~640 |
+| `ey_press` | 行政院 本院新聞 | 100 | ~720 |
+| `mohw_press` | 衛生福利部 焦點新聞 | 100 | ~790 |
+| `moe_press` | 教育部 即時新聞 | 100 | ~1,050 |
+| `mof_press` | 財政部 本部新聞 | 99 | ~1,650 |
 
-每日壓縮後約 **42 KB**。每年約新增 5 筆。
+除「全部歷史」者外，每日抓各來源**最新 100 筆**。每日壓縮後合計約 **1.07 MB**。
 
-各來源的端點、欄位、已知限制見 [docs/sources.md](docs/sources.md)。
+**未收錄**：經濟部（robots.txt `Disallow: /` 全站禁止）、
+環境部（robots.txt 明文禁止新聞稿路徑 `/Page/`、`/News_Content.aspx`，且全站 Cloudflare JS 挑戰）。
+理由與親驗紀錄見 [docs/sources.md](docs/sources.md)。
+
+各來源的端點、分頁方式、已知限制見 [docs/sources.md](docs/sources.md)。
 
 ## 資料長什麼樣
 
@@ -76,7 +92,7 @@ python3 scripts/explore.py --diff fsc_clarification 2026-08-27 2026-08-28
 
 ## 變動偵測
 
-`track-gov` 每筆含 `body_sha256`。比對相同 `dataserno` 在不同日期的 hash，
+`track-gov` 每筆含 `body_sha256`。比對相同 `id` 在**不同日期**的 hash，
 即可發現內容被改寫或下架。有變動時才留下紀錄：
 
 ```
@@ -93,7 +109,7 @@ changes/<source>/YYYY-MM-DD.md          當日 unified diff
 
 | 項目 | 值（2026-08-27 UTC 查核） |
 |---|---|
-| 已累積天數 | 2 天 |
+| 已累積天數 | 2 天（track-gov 新增 10 個機關自 2026-08-27 起） |
 | 每日排程 | 09:00 / 09:30 / 11:30（**台北時間**） |
 | 自我檢查 | `ALERT.md` 存在時代表偵測到異常 |
 | 變動紀錄 | 尚未產生 |

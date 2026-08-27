@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""軌二 snapshotter：金管會公告每日快照（可問責性存檔）
+"""軌二 snapshotter v2：政府公告每日快照（adapter 架構）
 目的：偵測靜默改寫、下架、撤稿。只存原文，不做任何解讀。
-授權：輸出資料 CC BY 4.0（著作權法第9條：公文含新聞稿，不受著作權保護）
+授權：輸出資料 CC BY 4.0（著作權法第 9 條：公文含新聞稿，不受著作權保護）
+
+時區鐵律：檔名日期一律 UTC；排程時間為台北時間。兩者不可混用。
+每個來源一支 adapter，放在 track-gov/adapters/<key>.py，介面見 adapters/README.md。
 """
-import json, gzip, os, sys, time, re, hashlib, html, urllib.request
+import json, gzip, os, sys, re, time, html, hashlib, importlib.util, urllib.request
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(BASE, "data")
-UA = "snapshotter-research/1.0 (daily archival; public accountability; 1 req/sec; github.com/ianhomew/public-api-timeseries)"
+ADPT = os.path.join(BASE, "adapters")
+UA = ("snapshotter-research/1.0 (daily archival; public accountability; 1 req/sec; "
+      "github.com/ianhomew/public-api-timeseries)")
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 STAMP = datetime.now(timezone.utc).isoformat()
-ROOT = "https://www.fsc.gov.tw/ch/"
-
-CHANNELS = [
-    {"key": "fsc_clarification", "id": "609", "parentpath": "0,7,478",
-     "list_mc": "disputearea_list.jsp", "view_mc": "disputearea_view.jsp",
-     "dtable": "News", "desc": "金管會即時新聞澄清"},
-]
+TAG = re.compile(r"<[^>]+>")
 
 def fetch(url, retries=3):
     last = None
@@ -25,14 +24,17 @@ def fetch(url, retries=3):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=45) as r:
-                return r.read().decode("utf-8", "ignore")
+                raw = r.read()
+                enc = "utf-8"
+                m = re.search(rb'charset=["\']?([\w-]+)', raw[:2000], re.I)
+                if m:
+                    enc = m.group(1).decode("ascii", "ignore")
+                return raw.decode(enc, "ignore")
         except Exception as e:
             last = e
             if i < retries - 1:
                 time.sleep(3 * (i + 1))
     raise last
-
-TAG = re.compile(r"<[^>]+>")
 
 def clean(h):
     h = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", h)
@@ -41,115 +43,114 @@ def clean(h):
     t = re.sub(r"[ \t\r\f\v\u3000]+", " ", t)
     return "\n".join(ln.strip() for ln in t.split("\n") if ln.strip())
 
-def grab(raw, cls):
-    m = re.search(r'(?is)<div[^>]*class="' + cls + r'"[^>]*>(.*?)</div>', raw)
-    return clean(m.group(1)) if m else ""
-
-def body_of(raw):
-    """從 class=ap 起，到 footer 前。注意 page-edit 是內容容器，不是頁尾"""
-    i = raw.find('class="ap"')
-    if i < 0:
-        i = raw.find('class="maincontent"')
-    if i < 0:
-        return ""
-    j = len(raw)
-    for mark in ['class="footer', 'id="footer"', 'class="gotop"']:
-        k = raw.find(mark, i)
-        if k > 0:
-            j = min(j, k)
-    k = raw.find(">", i)
-    if 0 < k < i + 200:
-        i = k + 1
-    return clean(raw[i:j])
-
-def list_sernos(ch):
-    out, seen, page = [], set(), 1
-    while page <= 50:
-        u = (ROOT + "home.jsp?id=" + ch["id"] + "&parentpath=" + ch["parentpath"] +
-             "&mcustomize=" + ch["list_mc"] + "&page=" + str(page))
-        t = fetch(u)
-        found = re.findall(re.escape(ch["view_mc"]) + r"&dataserno=(\d+)", t)
-        new = [s for s in dict.fromkeys(found) if s not in seen]
-        if not new:
-            break
-        for s in new:
-            seen.add(s); out.append(s)
-        page += 1
-        time.sleep(1)
+def load_adapters():
+    out = []
+    for fn in sorted(os.listdir(ADPT)):
+        if not fn.endswith(".py") or fn.startswith("_"):
+            continue
+        name = fn[:-3]
+        spec = importlib.util.spec_from_file_location(name, os.path.join(ADPT, fn))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        out.append(mod)
     return out
 
-def fetch_item(ch, serno):
-    u = (ROOT + "home.jsp?id=" + ch["id"] + "&parentpath=" + ch["parentpath"] +
-         "&mcustomize=" + ch["view_mc"] + "&dataserno=" + serno +
-         "&dtable=" + ch["dtable"])
-    raw = fetch(u)
-    body = body_of(raw)
-    return {"dataserno": serno, "url": u,
-            "title": grab(raw, "subject")[:300],
-            "date": grab(raw, "date")[:40],
-            "body_text": body,
-            "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
-            "raw_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-            "raw_bytes": len(raw)}
-
 def write_gz(key, payload):
-    # NEVER_OVERWRITE: 已存在且內容不同時，另存時戳版本，不覆蓋歷史
-    import hashlib as _h
+    """NEVER_OVERWRITE：已存在且內容不同時另存時戳版本，永不覆蓋歷史"""
     d = os.path.join(DATA, key)
     os.makedirs(d, exist_ok=True)
     blob = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     final = os.path.join(d, TODAY + ".json.gz")
     if os.path.exists(final):
         try:
-            with gzip.open(final, "rt", encoding="utf-8") as _f:
-                old = json.load(_f)
-            oldb = json.dumps(old, ensure_ascii=False, separators=(",", ":")).encode()
-            if _h.sha256(oldb).hexdigest() == _h.sha256(blob).hexdigest():
+            with gzip.open(final, "rt", encoding="utf-8") as f:
+                old = json.dumps(json.load(f), ensure_ascii=False, separators=(",", ":")).encode()
+            if hashlib.sha256(old).hexdigest() == hashlib.sha256(blob).hexdigest():
                 return final, os.path.getsize(final)
         except Exception:
             pass
-        stamp = datetime.now(timezone.utc).strftime("%H%M%S")
-        final = os.path.join(d, TODAY + "T" + stamp + ".json.gz")
+        final = os.path.join(d, TODAY + "T" + datetime.now(timezone.utc).strftime("%H%M%S") + ".json.gz")
     tmp = final + ".tmp"
     with gzip.open(tmp, "wt", encoding="utf-8") as f:
         f.write(blob.decode())
     os.replace(tmp, final)
     return final, os.path.getsize(final)
 
+# 每次抓取都會變動、但與「公告內容是否被改寫」無關的行（例：瀏覽人次計數器）。
+# 不濾掉的話，每日 diff 會天天誤報「內容改寫」，真訊號被雜訊淹沒。
+VOLATILE_LABEL = re.compile(r"^(瀏覽人次|點閱數|瀏覽次數|點閱次數|人氣指數)[：:]?\s*\d*$")
+
+def strip_volatile(text):
+    out, skip_next_number = [], False
+    for ln in text.split("\n"):
+        if VOLATILE_LABEL.match(ln.strip()):
+            skip_next_number = True
+            continue
+        if skip_next_number:
+            skip_next_number = False
+            if re.fullmatch(r"[\d,]+", ln.strip()):
+                continue
+        out.append(ln)
+    return "\n".join(out)
+
+def normalize(items):
+    out = []
+    for it in items:
+        body = strip_volatile(it.get("body_text") or "")
+        rec = {
+            "id": str(it["id"]),
+            "url": it["url"],
+            "title": (it.get("title") or "")[:300],
+            "date": (it.get("date") or "")[:40],
+            "body_text": body,
+            "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+        }
+        for k in ("dataserno", "raw_sha256", "raw_bytes"):
+            if k in it:
+                rec[k] = it[k]
+        out.append(rec)
+    return out
+
 def main():
     manifest = {"date": TODAY, "fetched_at": STAMP, "channels": {}}
-    for ch in CHANNELS:
-        t0 = time.time()
+    mods = load_adapters()
+    only = set(sys.argv[1:])
+    if only:
+        mods = [m for m in mods if m.KEY in only]
+    if not mods:
+        print("FATAL 找不到任何 adapter", file=sys.stderr)
+        return 1
+    for mod in mods:
+        key, t0 = mod.KEY, time.time()
         try:
-            sernos = list_sernos(ch)
-            if not sernos:
-                raise RuntimeError("list_sernos 回傳 0 筆 —— 視為抓取失敗，不寫入快照"
-                                   " (避免下游誤判為全部下架)")
-            items, errs = [], {}
-            for s in sernos:
-                try:
-                    items.append(fetch_item(ch, s))
-                except Exception as e:
-                    errs[s] = type(e).__name__ + ": " + str(e)
-                time.sleep(1)
-            payload = {"_meta": {"channel": ch["key"], "desc": ch["desc"],
+            items = normalize(mod.collect(fetch, clean))
+            if not items:
+                raise RuntimeError("collect() 回傳 0 筆 —— 視為抓取失敗，不寫入快照"
+                                   "（避免下游誤判為全部下架）")
+            ids = [i["id"] for i in items]
+            if len(set(ids)) != len(ids):
+                raise RuntimeError("id 重複 %d/%d —— adapter 的識別碼不穩定" % (len(ids) - len(set(ids)), len(ids)))
+            payload = {"_meta": {"channel": key, "desc": mod.DESC,
+                                 "source_home": getattr(mod, "SOURCE_HOME", ""),
+                                 "robots_verified": getattr(mod, "ROBOTS_VERIFIED", ""),
                                  "fetched_at": STAMP, "license": "CC BY 4.0",
                                  "note": "raw government notices; no interpretation"},
-                       "total": len(items), "errors": errs, "items": items}
-            path, size = write_gz(ch["key"], payload)
-            manifest["channels"][ch["key"]] = {"ok": True, "n": len(items),
-                                               "bytes": size, "errors": len(errs),
-                                               "secs": round(time.time() - t0, 1)}
-            print("OK   %-20s %4d 筆 %8d B %.1fs" % (ch["key"], len(items), size, time.time() - t0))
+                       "total": len(items), "errors": {}, "items": items}
+            path, size = write_gz(key, payload)
+            manifest["channels"][key] = {"ok": True, "n": len(items), "bytes": size,
+                                         "errors": 0, "secs": round(time.time() - t0, 1)}
+            print("OK   %-20s %4d 筆 %9d B %.1fs" % (key, len(items), size, time.time() - t0))
         except Exception as e:
-            manifest["channels"][ch["key"]] = {"ok": False, "error": type(e).__name__ + ": " + str(e)}
-            print("FAIL %-20s %s: %s" % (ch["key"], type(e).__name__, e), file=sys.stderr)
-    md = os.path.join(DATA, "_manifest"); os.makedirs(md, exist_ok=True)
+            manifest["channels"][key] = {"ok": False, "error": "%s: %s" % (type(e).__name__, e),
+                                         "secs": round(time.time() - t0, 1)}
+            print("FAIL %-20s %s: %s" % (key, type(e).__name__, e), file=sys.stderr)
+    md = os.path.join(DATA, "_manifest")
+    os.makedirs(md, exist_ok=True)
     with open(os.path.join(md, TODAY + ".json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
     ok = sum(1 for v in manifest["channels"].values() if v.get("ok"))
-    print("--- %d/%d 成功 ---" % (ok, len(CHANNELS)))
-    return 0 if ok else 1
+    print("--- %d/%d 成功 ---" % (ok, len(mods)))
+    return 0 if ok == len(mods) else 1
 
 if __name__ == "__main__":
     sys.exit(main())
