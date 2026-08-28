@@ -9,6 +9,7 @@ import html as _html
 from urllib.parse import urljoin
 
 KEY = "ey_press"
+PARSER_VERSION = 2   # v2：_slice 去除切點殘缺標籤
 DESC = "行政院本院新聞（新聞與公告）"
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://www.ey.gov.tw/robots.txt，全文為 "
@@ -40,7 +41,8 @@ def _slice(doc, start_marker, end_markers):
         k = doc.find(em, i)
         if 0 <= k < j:
             j = k
-    return doc[i:j]
+    # 切點可能卡在標籤中間，去掉尾端殘缺標籤（否則每篇結尾都殘留裸的 "<div"）
+    return re.sub(r"<[^>]*$", "", doc[i:j])
 
 
 def collect(fetch, clean):

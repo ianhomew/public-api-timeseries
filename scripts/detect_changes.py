@@ -63,15 +63,29 @@ def errors_of(j):
     d = j.get("data", j)
     return set((d.get("errors") or {}).keys())
 
+def parser_version(j):
+    d = j.get("data", j)
+    return (d.get("_meta") or {}).get("parser_version", 1)
+
 def compare(source, cfg, f_old, f_new):
     j_old, j_new = load(f_old), load(f_new)
     err = errors_of(j_old) | errors_of(j_new)   # 抓取失敗者不列入下架/新增判定
-    a = {_key(i, cfg): i for i in items_of(j_old)}
+    list_old = items_of(j_old)
+    a = {_key(i, cfg): i for i in list_old}
     b = {_key(i, cfg): i for i in items_of(j_new)}
     added = sorted(set(b) - set(a) - err)
-    removed = sorted(set(a) - set(b) - err)
+    removed = set(a) - set(b) - err
     changed = sorted(k for k in set(a) & set(b) if a[k][cfg["sha"]] != b[k][cfg["sha"]])
-    return a, b, added, removed, changed
+
+    # 「滾動移出」不是「下架」。
+    # 多數來源每日只抓最新 100 筆，有新稿進來就會把最舊的擠出視窗。
+    # 這種消失發生在清單尾端，且通常伴隨等量的新增，不代表機關撤稿。
+    # 真正的下架是「從清單中段消失」。
+    pos = {_key(i, cfg): n for n, i in enumerate(list_old)}
+    tail_start = len(list_old) - (len(added) + len(removed)) - 2
+    rolled = sorted(k for k in removed if pos.get(k, 0) >= tail_start)
+    removed = sorted(removed - set(rolled))
+    return a, b, added, removed, changed, rolled
 
 def render(source, cfg, d_old, d_new, a, b, added, removed, changed):
     L = []
@@ -149,9 +163,16 @@ def main():
             continue
         f_old, f_new = snaps[-2], snaps[-1]
         d_old, d_new = os.path.basename(f_old)[:10], os.path.basename(f_new)[:10]
-        a, b, added, removed, changed = compare(source, cfg, f_old, f_new)
-        print("%s: %s→%s 改寫%d 下架%d 新增%d"
-              % (source, d_old, d_new, len(changed), len(removed), len(added)))
+        # 解析器改版會讓整批 body_sha256 改變，那不是「機關改寫公告」。
+        # 版本不同時跳過比對，避免產生 100% 的假警報。
+        v_old, v_new = parser_version(load(f_old)), parser_version(load(f_new))
+        if v_old != v_new:
+            print("%s: 解析器版本 %s→%s，跳過本次比對（非內容改寫）" % (source, v_old, v_new))
+            continue
+        a, b, added, removed, changed, rolled = compare(source, cfg, f_old, f_new)
+        print("%s: %s→%s 改寫%d 下架%d 新增%d%s"
+              % (source, d_old, d_new, len(changed), len(removed), len(added),
+                 ("（另有 %d 筆滾動移出視窗，不計為下架）" % len(rolled)) if rolled else ""))
         if not (changed or removed):
             continue      # 只有新增不算「變動事件」，不留紀錄
         total_changed += len(changed); total_removed += len(removed)

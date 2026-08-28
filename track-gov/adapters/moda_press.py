@@ -14,6 +14,7 @@ import urllib.request
 from urllib.parse import urljoin
 
 KEY = "moda_press"
+PARSER_VERSION = 2   # v2：_slice 去除切點殘缺標籤
 DESC = "數位發展部新聞發布"
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://moda.gov.tw/robots.txt 與 https://www.moda.gov.tw/robots.txt："
@@ -48,7 +49,8 @@ def _slice(doc, start_marker, end_markers):
         k = doc.find(em, i)
         if 0 <= k < j:
             j = k
-    return doc[i:j]
+    # 切點可能卡在標籤中間，去掉尾端殘缺標籤（否則每篇結尾都殘留裸的 "<div"）
+    return re.sub(r"<[^>]*$", "", doc[i:j])
 
 
 def _list_html(page):

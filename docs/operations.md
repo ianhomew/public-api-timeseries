@@ -10,7 +10,11 @@ VPS 時區為 `Asia/Taipei`（UTC+8）。下列時間皆為**台北時間**。
 |---|---|---|
 | 09:00 | 抓取 `track-crypto` | `track-crypto/scripts/snap_crypto.py` |
 | 09:30 | 抓取 `track-gov`（11 個機關，約 58 分鐘） | `track-gov/scripts/snap_gov.py` |
-| 11:30 | 統計快取 → 變動偵測 → 事件流 → 時間戳 → 里程碑 → 自我檢查 → commit → push | `scripts/push.sh` |
+| 11:30 | 統計快取 → 變動偵測 → 事件流 → 時間戳 → 里程碑 → 自我檢查 → commit → push → 死人開關 | `scripts/push.sh` |
+
+三個排程共用一把 `flock` 鎖（`~/snap/.lock-snap`）：抓取進行中時 push 會等待（最多 2 小時），
+避免「抓到一半就被提交」的競態。抓取腳本以 `python3 -u` 執行，否則 stdout 緩衝會讓
+`cron.log` 在程式結束前一直是空的（出事時無日誌可查）。
 
 檔名使用的是該時刻的 **UTC 日期**。台北 09:00 等於 UTC 01:00，同日。
 
@@ -35,6 +39,26 @@ commit 標題：
 
 在 GitHub 按 **Watch → All Activity** 即可用 email 收到通知。
 
+## 死人開關（dead-man's switch）
+
+`ALERT.md` 有一個先天限制：它要**推上 GitHub** 你才看得到。
+如果壞掉的正好是 push 本身，或整台 VPS 當機、斷網、被停機，
+**不會有任何警報產生** —— 壞掉和一切正常看起來一模一樣。
+
+因此每日流程結束時會 ping 一次外部服務（healthchecks.io）：
+
+| 情況 | 動作 |
+|---|---|
+| 流程開始 | ping `/start` |
+| 全部成功且無 `ALERT.md` | ping 成功 |
+| 任一步驟失敗、push 失敗 | ping `/fail` |
+| push 成功但存在 `ALERT.md` | ping `/fail`（讓使用者收到通知） |
+| **VPS 當機／斷網／cron 沒跑** | **什麼都不 ping → 外部服務逾時後主動通知** |
+
+計時器在**外部**，不在 VPS 上，所以整台機器消失也能被發現。
+ping 網址等同一把權杖，存放在 `~/snap/.env` 的 `HC_PING_URL`（已被 `.gitignore` 排除），
+不寫進這個公開 repo。
+
 ## 自我檢查：`ALERT.md`
 
 `scripts/healthcheck.py` 每日檢查下列項目，任一項異常就在 repo 根目錄產生 `ALERT.md`；
@@ -57,14 +81,19 @@ commit 標題：
 
 ## 變動偵測
 
-`scripts/detect_changes.py` 目前支援全文比對的來源只有 `fsc_clarification`
-（需要 `body_text` 與 `body_sha256` 欄位）。
+`scripts/detect_changes.py` 自 `track-gov/adapters/*.py` 自動探索來源，
+**目前涵蓋全部 11 個機關**（皆有 `body_text` 與 `body_sha256` 欄位）。
 
 | 事件 | 判斷方式 | 是否留紀錄 |
 |---|---|---|
-| 內容改寫 | 同一 `dataserno` 的 `body_sha256` 改變 | 是 |
+| 內容改寫 | 同一 `id` 的 `body_sha256` 改變 | 是 |
 | 下架 | 前一日存在、今日消失 | 是 |
 | 新增 | 今日新出現 | 否 |
+
+比對規則：
+- 同一 UTC 日期若有多份快照（重跑產生），**只取當日最後一份**。
+- 兩份快照的 `_meta.parser_version` 不同時**跳過比對**。
+  解析器改版會讓整批 `body_sha256` 改變，那是我方程式變更，不是機關改寫公告。
 
 有變動才產生 `changes/<source>/YYYY-MM-DD.md`（標準 unified diff，格式同 `git diff`）
 與累積索引 `CHANGES.md`。截至 2026-08-27（UTC）尚未偵測到任何改寫或下架，

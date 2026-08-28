@@ -62,7 +62,10 @@ public-api-timeseries/
 | `cex_symbols` | `{"exchanges":{"bybit":…,"okx":…,…}, "errors":{}}`，每家保留各自原始回應 |
 | `vast_gpu` | vast.ai 原始回應，另加 `_authenticated`（布林） |
 | `mcp_registry` | `{"total":N, "servers":[…]}` |
-| `fsc_clarification` | `{"items":[…]}`，每筆含 `dataserno`、`body_text`、`body_sha256` 等 |
+| `track-gov` 各來源 | `{"_meta":{…}, "total":N, "errors":{}, "items":[…]}`，每筆含 `id`、`url`、`title`、`date`、`body_text`、`body_sha256`（`fsc_clarification` 另有 `dataserno`） |
+
+> ⚠️ **兩軌的巢狀層級不同**：`track-crypto` 的內容在 `snap["data"]` 之下；
+> `track-gov` 的 `items` 直接在**頂層**，沒有 `data` 這一層。
 
 ## manifest 結構
 
@@ -103,8 +106,9 @@ print(snap["data"]["items"][0])
 import gzip, json
 
 def load(path):
+    # 注意：track-gov 的 items 在頂層，沒有 "data" 這一層
     with gzip.open(path, "rt", encoding="utf-8") as f:
-        return {i["dataserno"]: i for i in json.load(f)["data"]["items"]}
+        return {i["id"]: i for i in json.load(f)["items"]}
 
 a = load("track-gov/data/fsc_clarification/2026-08-27.json.gz")
 b = load("track-gov/data/fsc_clarification/2026-08-28.json.gz")
@@ -119,12 +123,15 @@ for k in a.keys() - b.keys():
 ### 命令列
 
 ```bash
-python3 scripts/explore.py                                  # 各來源檔案數、日期範圍、大小
-python3 scripts/explore.py cex_symbols                      # 列出該來源所有日期
-python3 scripts/explore.py vast_gpu 2026-08-27 -n 5         # 預覽 5 筆樣本
-python3 scripts/explore.py vast_gpu 2026-08-27 --raw        # 原始 JSON 前 3000 字
+python3 scripts/explore.py                                        # 各來源檔案數、日期範圍、大小
+python3 scripts/explore.py fsc_clarification                      # 列出該來源所有日期
+python3 scripts/explore.py fsc_clarification 2026-08-27 -n 5      # 預覽 5 筆樣本
 python3 scripts/explore.py --diff fsc_clarification 2026-08-27 2026-08-28
 ```
+
+> ⚠️ **只有 clone 這個 repo 的人**：`track-crypto` 的資料檔**不在 GitHub 上**（見 `.gitignore`），
+> 所以 `explore.py x402_bazaar`、`explore.py vast_gpu` 對你會顯示查無資料，這是預期行為。
+> GitHub 上可用的是 `track-gov` 全部資料、兩軌的 `_manifest`、時間戳與程式碼。
 
 ## 授權
 

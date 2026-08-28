@@ -38,10 +38,11 @@
 | 衛福部 / 法務部 / 內政部 / 數位部 | 無 Disallow 或 robots.txt 404 | 收錄 |
 | 中央銀行 | 不提供 robots.txt | 收錄（依排除協定視為無限制） |
 | 行政院 / 財政部 / 勞動部 / 教育部 | Disallow 僅涵蓋附件或技術路徑 | 收錄（未觸及） |
+| 經濟部 | `Disallow: /` **只綁定具名爬蟲 ZoomEye**；對 `*` 僅禁 `/MNS_OLD/` | 收錄（新聞稿在 `/MNS/`） |
 | **環境部** | 明文禁止 `/Page/`、`/News_Content.aspx` | **排除** |
 | Binance | 全站 `Disallow: /` | **排除** |
 | Smithery `/api/` | `Disallow: /api/` | **排除** |
-| 經濟部 | 限制 | **排除** |
+
 | Tasker | 限制 | **排除** |
 | udn.com | 禁止商業用途 | **排除** |
 

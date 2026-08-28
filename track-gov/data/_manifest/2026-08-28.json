@@ -1,84 +1,98 @@
 {
- "date": "2026-08-27",
- "reconstructed_at": "2026-08-28T03:09:58+00:00",
- "note": "本檔於 2026-08-28 依當日實際快照檔重建。原始 manifest 因單一來源重跑被整份覆寫（只剩 1/11），該缺陷已於 2026-08-28 修正為合併寫入。secs 欄位無法重建，故省略。",
+ "date": "2026-08-28",
+ "fetched_at": "2026-08-28T03:10:06.963604+00:00",
  "channels": {
   "cbc_press": {
    "ok": true,
    "n": 99,
    "bytes": 47464,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 305.4
   },
   "ey_press": {
    "ok": true,
    "n": 100,
-   "bytes": 175792,
+   "bytes": 175791,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 305.5
   },
   "fsc_clarification": {
    "ok": true,
    "n": 50,
-   "bytes": 40066,
+   "bytes": 40058,
    "errors": 0,
-   "snapshots_that_day": 3
+   "secs": 134.4
   },
   "moda_press": {
    "ok": true,
    "n": 100,
-   "bytes": 98098,
+   "bytes": 98099,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 158.6
   },
   "moe_clarify": {
    "ok": true,
    "n": 80,
-   "bytes": 72944,
+   "bytes": 72943,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 343.2
   },
   "moe_press": {
    "ok": true,
    "n": 100,
    "bytes": 121438,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 477.3
   },
   "mof_press": {
    "ok": true,
    "n": 99,
-   "bytes": 82376,
+   "bytes": 82403,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 342.7
   },
   "mohw_press": {
    "ok": true,
    "n": 100,
-   "bytes": 117701,
+   "bytes": 118807,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 279.8
   },
   "moi_press": {
    "ok": true,
    "n": 100,
-   "bytes": 98560,
+   "bytes": 98559,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 367.1
   },
   "moj_press": {
    "ok": true,
    "n": 99,
-   "bytes": 107121,
+   "bytes": 107118,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 458.0
   },
   "mol_press": {
    "ok": true,
    "n": 100,
-   "bytes": 132533,
+   "bytes": 132532,
    "errors": 0,
-   "snapshots_that_day": 1
+   "secs": 284.4
+  },
+  "moea_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 114500,
+   "errors": 0,
+   "secs": 226.4
   }
- }
+ },
+ "runs": [
+  {
+   "at": "2026-08-28T03:10:06.963604+00:00",
+   "channels": [
+    "moea_press"
+   ]
+  }
+ ]
 }

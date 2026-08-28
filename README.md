@@ -45,12 +45,12 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 | `mohw_press` | 衛生福利部 焦點新聞 | 100 | ~790 |
 | `moe_press` | 教育部 即時新聞 | 100 | ~1,050 |
 | `mof_press` | 財政部 本部新聞 | 99 | ~1,650 |
+| `moea_press` | 經濟部 本部新聞 | 100 | ~1,290 |
 
-除「全部歷史」者外，每日抓各來源**最新 100 筆**。每日壓縮後合計約 **1.07 MB**。
+除「全部歷史」者外，每日抓各來源**最新 100 筆**。每日壓縮後合計約 **1.19 MB**（12 個來源）。
 
-**未收錄**：經濟部（robots.txt `Disallow: /` 全站禁止）、
-環境部（robots.txt 明文禁止新聞稿路徑 `/Page/`、`/News_Content.aspx`，且全站 Cloudflare JS 挑戰）。
-理由與親驗紀錄見 [docs/sources.md](docs/sources.md)。
+**未收錄**：環境部（robots.txt 明文禁止新聞稿路徑 `/Page/`、`/News_Content.aspx`，
+且全站 Cloudflare JS 挑戰）。理由與親驗紀錄見 [docs/sources.md](docs/sources.md)。
 
 各來源的端點、分頁方式、已知限制見 [docs/sources.md](docs/sources.md)。
 

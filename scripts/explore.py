@@ -182,6 +182,10 @@ def show(name, date, n, raw):
     hit = [f for f in src[name] if os.path.basename(f).startswith(date)]
     if not hit:
         print("查無 %s 的 %s" % (name, date)); return
+    if len(hit) > 1:
+        print("（%s 當日有 %d 份快照，顯示最後一份，與 detect_changes.py 一致）"
+              % (date, len(hit)))
+    hit = hit[-1:]           # 同日多份取「最後一份」
     sp = stats_path(hit[0])
     if not raw and n <= 12 and os.path.exists(sp) and os.path.getmtime(sp) >= os.path.getmtime(hit[0]):
         st = json.load(open(sp, encoding="utf-8"))
@@ -226,10 +230,11 @@ def diff(name, d1, d2):
     f2 = [f for f in src.get(name, []) if os.path.basename(f).startswith(d2)]
     if not f1 or not f2:
         print("找不到指定日期"); return
-    a, b = load(f1[0]), load(f2[0])
-    if name == "fsc_clarification":
-        ia = {i["dataserno"]: i for i in a["items"]}
-        ib = {i["dataserno"]: i for i in b["items"]}
+    a, b = load(f1[-1]), load(f2[-1])      # 同日多份一律取最後一份
+    if "items" in a and "items" in b and a["items"] and "body_sha256" in a["items"][0]:
+        kf = (lambda i: str(i.get("id") or i.get("dataserno")))
+        ia = {kf(i): i for i in a["items"]}
+        ib = {kf(i): i for i in b["items"]}
         add = set(ib) - set(ia); rm = set(ia) - set(ib)
         chg = [k for k in set(ia) & set(ib)
                if ia[k]["body_sha256"] != ib[k]["body_sha256"]]

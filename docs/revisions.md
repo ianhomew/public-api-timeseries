@@ -53,3 +53,19 @@
 
 `snap_crypto.py` 的函式註解寫「十家 CEX」，與實際端點清單不符。
 實際為 7 家：bybit、okx、bitget、htx、gateio、kucoin、mexc。Binance 因 robots.txt 排除。
+
+## 7. 經濟部的排除理由是誤讀（2026-08-28 稽核發現）
+
+- **原本的說法**：經濟部 robots.txt 為全站 `Disallow: /`，因此排除。
+- **重新親驗的結果**：該檔只針對具名爬蟲 `ZoomEye` 全站封鎖；對一般 User-agent
+  只禁止 `/MNS_OLD/`。經濟部現行新聞稿位於 `/MNS/populace/news/`，不在禁止路徑內，
+  直接 GET 回 200，未被阻擋。
+- **現況**：**仍未收錄**。排除的方向（保守）沒有造成違規，但**理由站不住腳**，
+  因此在此更正。是否納入為新來源，待另行評估。
+
+## 8. `docs/data-format.md` 的比對範例原本無法執行（2026-08-28 稽核發現）
+
+- **原本的寫法**：`json.load(f)["data"]["items"]`
+- **實際結構**：`track-gov` 的 `items` 在**頂層**，`data` 這一層只存在於 `track-crypto`。
+  照原範例執行會直接 `KeyError: 'data'`。
+- 已更正，並在文件中明確標示兩軌的巢狀層級不同。

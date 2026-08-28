@@ -21,15 +21,15 @@
 | `ey_press` | 行政院 本院新聞 | 100 | 176 KB | 356s |
 | `mohw_press` | 衛生福利部 焦點新聞 | 100 | 118 KB | 277s |
 | `moe_press` | 教育部 即時新聞 | 100 | 121 KB | 420s |
+| `moea_press` | 經濟部 本部新聞 | 100 | 115 KB | 226s |
 
-合計每日約 **1.07 MB**、約 1,150 次請求、約 58 分鐘（每次請求間隔 1 秒）。
+合計每日約 **1.19 MB**、約 1,260 次請求、約 62 分鐘（每次請求間隔 1 秒）。
 數值為 2026-08-27（UTC）在 VPS 實測。
 
 **未收錄**：
 
 | 機關 | 原因 |
 |---|---|
-| 經濟部 | robots.txt 全站 `Disallow: /` |
 | 環境部 | robots.txt 明文禁止 `/Page/`、`/page/`、`/News_Content.aspx`，新聞稿全部落在禁止路徑；且全站 Cloudflare JS 挑戰，`Cf-Mitigated: challenge` |
 
 ## 架構

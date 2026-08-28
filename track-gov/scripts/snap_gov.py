@@ -133,6 +133,7 @@ def main():
             payload = {"_meta": {"channel": key, "desc": mod.DESC,
                                  "source_home": getattr(mod, "SOURCE_HOME", ""),
                                  "robots_verified": getattr(mod, "ROBOTS_VERIFIED", ""),
+                                 "parser_version": getattr(mod, "PARSER_VERSION", 1),
                                  "fetched_at": STAMP, "license": "CC BY 4.0",
                                  "note": "raw government notices; no interpretation"},
                        "total": len(items), "errors": {}, "items": items}
@@ -144,10 +145,27 @@ def main():
             manifest["channels"][key] = {"ok": False, "error": "%s: %s" % (type(e).__name__, e),
                                          "secs": round(time.time() - t0, 1)}
             print("FAIL %-20s %s: %s" % (key, type(e).__name__, e), file=sys.stderr)
+    # manifest 合併寫入：單獨重跑一個來源時，不得覆寫當日其他來源的紀錄。
+    # （2026-08-28 稽核發現：原本用 "w" 無條件覆寫，一次單來源重跑就把 11/11 蓋成 1/11）
     md = os.path.join(DATA, "_manifest")
     os.makedirs(md, exist_ok=True)
-    with open(os.path.join(md, TODAY + ".json"), "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=1)
+    mpath = os.path.join(md, TODAY + ".json")
+    merged = {"date": TODAY, "channels": {}}
+    if os.path.exists(mpath):
+        try:
+            merged = json.load(open(mpath, encoding="utf-8"))
+            merged.setdefault("channels", {})
+        except Exception:
+            merged = {"date": TODAY, "channels": {}}
+    merged["channels"].update(manifest["channels"])
+    merged["date"] = TODAY
+    merged["fetched_at"] = STAMP
+    merged.setdefault("runs", []).append(
+        {"at": STAMP, "channels": sorted(manifest["channels"])})
+    tmp = mpath + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, mpath)
     ok = sum(1 for v in manifest["channels"].values() if v.get("ok"))
     print("--- %d/%d 成功 ---" % (ok, len(mods)))
     return 0 if ok == len(mods) else 1

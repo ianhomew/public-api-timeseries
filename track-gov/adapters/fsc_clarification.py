@@ -10,27 +10,32 @@ ROOT = "https://www.fsc.gov.tw/ch/"
 CH = {"id": "609", "parentpath": "0,7,478",
       "list_mc": "disputearea_list.jsp", "view_mc": "disputearea_view.jsp", "dtable": "News"}
 MAX_PAGES = 50
+PARSER_VERSION = 2   # v2：正文改切到 <!--ap END -->，移除導覽選單污染
 
 def _grab(raw, cls, clean):
     m = re.search(r'(?is)<div[^>]*class="' + cls + r'"[^>]*>(.*?)</div>', raw)
     return clean(m.group(1)) if m else ""
 
 def _body(raw, clean):
-    """從 class=ap 起、到 footer 前。注意 page-edit 是內容容器，不是頁尾"""
+    """從 class=ap 之後，切到 <!--ap END --> 為止。
+    先前版本切到 footer 標記，會把整份網站導覽選單（約 34% 篇幅）當成正文，
+    一旦官網改版選單，50 篇會同時被誤判為「內容改寫」。"""
     i = raw.find('class="ap"')
     if i < 0:
         i = raw.find('class="maincontent"')
     if i < 0:
         return ""
-    j = len(raw)
-    for mark in ('class="footer', 'id="footer"', 'class="gotop"'):
-        k = raw.find(mark, i)
-        if k > 0:
-            j = min(j, k)
     k = raw.find(">", i)
     if 0 < k < i + 200:
         i = k + 1
-    return clean(raw[i:j])
+    j = raw.find("<!--ap END -->", i)
+    if j < 0:
+        j = len(raw)
+        for mark in ('class="fat_box', 'class="footer', 'id="footer"', 'class="gotop"'):
+            m = raw.find(mark, i)
+            if m > 0:
+                j = min(j, m)
+    return clean(re.sub(r"<[^>]*$", "", raw[i:j]))
 
 def collect(fetch, clean):
     sernos, seen, page = [], set(), 1
