@@ -25,10 +25,28 @@ hc_ping /start
 python3 "$R/scripts/explore.py" --build-cache >/dev/null 2>>logs/cache.err || echo "$(date -Is) [WARN] build-cache 失敗" >> logs/cache.err
 
 # 2) 偵測內容改寫／下架，產生 unified diff 紀錄
+DETECT_OK=1
 DETECT="$(python3 "$R/scripts/detect_changes.py" 2>&1 | tee -a logs/detect.log)" || {
   echo "$(date -Is) [FATAL] detect_changes 失敗，仍繼續提交資料" >&2
   DETECT="changed=0 removed=0 DETECT_FAILED"
+  DETECT_OK=0
 }
+# 變動偵測是這個專案的核心功能。它掛掉時若沉默地以「0 筆變動」繼續，
+# 等於核心功能失效卻回報一切正常。改為明確留下告警並通知。
+if [ "$DETECT_OK" = "0" ]; then
+  {
+    echo "# 🔴 變動偵測失敗"
+    echo
+    echo "檢查時間（UTC）：$(date -u -Is)"
+    echo
+    echo "\`scripts/detect_changes.py\` 執行失敗，本日**未進行**改寫／下架偵測。"
+    echo "資料快照仍已保存，但這一天的比對結果不存在。"
+    echo
+    echo "排查：\`python3 scripts/detect_changes.py\` 手動執行看錯誤訊息。"
+  } > ALERT-DETECT.md
+else
+  rm -f ALERT-DETECT.md
+fi
 CHANGED="$(printf '%s' "$DETECT" | sed -n 's/.*changed=\([0-9]*\).*/\1/p' | tail -1)"
 REMOVED="$(printf '%s' "$DETECT" | sed -n 's/.*removed=\([0-9]*\).*/\1/p' | tail -1)"
 CHANGED="${CHANGED:-0}"; REMOVED="${REMOVED:-0}"
@@ -79,7 +97,7 @@ fi
 
 # 資料抓取本身有異常時（healthcheck.py 產生了 ALERT.md），
 # 即使 push 成功也回報失敗，讓使用者收到通知，不必自己去 GitHub 看。
-if [ -f ALERT.md ]; then
+if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ]; then
   echo "$(date -Is) ALERT.md 存在 → 回報 fail"
   hc_ping /fail
 else

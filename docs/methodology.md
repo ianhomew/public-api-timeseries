@@ -42,7 +42,6 @@
 | **環境部** | 明文禁止 `/Page/`、`/News_Content.aspx` | **排除** |
 | Binance | 全站 `Disallow: /` | **排除** |
 | Smithery `/api/` | `Disallow: /api/` | **排除** |
-
 | Tasker | 限制 | **排除** |
 | udn.com | 禁止商業用途 | **排除** |
 

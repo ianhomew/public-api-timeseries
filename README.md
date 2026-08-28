@@ -4,8 +4,8 @@
 
 每天對一組公開端點各取一次快照，永久保存。這個 repo 只存原始回應，**不做任何分析、解讀或建議**。
 
-- 資料授權：**CC BY 4.0**
-- 程式碼授權：**MIT**（見 [LICENSE](LICENSE)）
+- 資料授權：**CC BY 4.0**（見 [LICENSE](LICENSE)）
+- 程式碼授權：**MIT**（見 [LICENSE-CODE](LICENSE-CODE)）
 - 資料起始日：**2026-08-26（UTC）**
 
 ## 為什麼
