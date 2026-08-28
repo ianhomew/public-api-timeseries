@@ -72,8 +72,25 @@ def check_manifest(track, issues):
         if not v.get("ok"):
             issues.append((f"{track}/{name}", f"manifest 標記失敗：{v.get('error','(無錯誤訊息)')}"))
 
+def check_timestamps(issues):
+    """時間戳是「資料在該時刻已存在」的唯一客觀證據。
+    清單檔產生了卻沒有對應的 .ots，代表當天蓋章失敗 —— 不可靜默略過。
+    （stamp.py 會自動補蓋；若隔日仍缺，就是持續性故障。）"""
+    d = os.path.join(REPO, "timestamps")
+    if not os.path.isdir(d):
+        issues.append(("timestamps", "timestamps/ 目錄不存在 → 從未蓋過時間戳"))
+        return
+    missing = [os.path.basename(p) for p in sorted(glob.glob(os.path.join(d, "SHA256SUMS-*.txt")))
+               if not os.path.exists(p + ".ots")]
+    if missing:
+        issues.append(("timestamps",
+                       "缺少 OpenTimestamps 證明 %d 份：%s（stamp.py 會嘗試補蓋，"
+                       "若隔日仍缺代表 calendar 持續無回應）"
+                       % (len(missing), "、".join(missing))))
+
 def main():
     issues = []
+    check_timestamps(issues)
     for track in ("track-crypto", "track-gov"):
         check_manifest(track, issues)
     for track, key in ACTIVE:

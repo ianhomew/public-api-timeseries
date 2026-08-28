@@ -13,7 +13,7 @@ OTS 把清單的 sha256 寫入 Bitcoin，任何人都能獨立驗證「這份資
   ots verify SHA256SUMS.ots      # 需等 Bitcoin 確認，約數小時
   sha256sum -c SHA256SUMS         # 驗證檔案未被竄改
 """
-import os, sys, hashlib, glob, subprocess
+import os, sys, time, hashlib, glob, subprocess
 from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,7 +51,8 @@ def main():
 
     # 內容未變則不重複蓋章（避免每天產生相同清單的冗餘 .ots）
     if os.path.exists(sums) and open(sums, encoding="utf-8").read().split("\n", 3)[3:] == body.split("\n", 3)[3:]:
-        print("清單內容未變，略過")
+        print("清單內容未變，略過重新產生")
+        backfill()          # 但仍要補蓋先前失敗的日期
         return 0
     with open(sums, "w", encoding="utf-8") as f:
         f.write(body)
@@ -60,14 +61,55 @@ def main():
     if not os.path.exists(OTS):
         print("[WARN] 找不到 ots 客戶端，略過蓋章：%s" % OTS, file=sys.stderr)
         return 1
-    r = subprocess.run([OTS, "stamp", sums], capture_output=True, text=True, timeout=180)
-    out = (r.stdout + r.stderr).strip()
-    print(out[-400:])
-    if os.path.exists(sums + ".ots"):
-        print("✅ 時間戳已提交：%s.ots（%d bytes）" % (os.path.basename(sums), os.path.getsize(sums + ".ots")))
-        return 0
-    print("[ERROR] .ots 未產生", file=sys.stderr)
-    return 1
+
+    ok = do_stamp(sums)
+    backfill()          # 順便補蓋歷史上失敗的日期
+    return 0 if ok else 1
+
+
+def do_stamp(sums):
+    """對單一清單檔蓋章。逐次拉長逾時；仍失敗則降為「至少 1 個 calendar」。
+
+    2026-08-28 實測失敗案例：預設 --timeout 5 秒、-m 2，
+    四個 calendar 只有一個在時限內回應 → 蓋章失敗，但當時只留下一行 WARN。
+    時間戳是本專案「資料在該時刻已存在」的唯一客觀證據，不能靜默失敗。
+    """
+    attempts = [("--timeout", "30", "-m", "2"),
+                ("--timeout", "60", "-m", "2"),
+                ("--timeout", "60", "-m", "1")]   # 最後退讓：1 個 calendar 也算數
+    for n, opts in enumerate(attempts, 1):
+        try:
+            r = subprocess.run([OTS, "stamp", *opts, sums],
+                               capture_output=True, text=True, timeout=180)
+            out = (r.stdout + r.stderr).strip()
+        except subprocess.TimeoutExpired:
+            out = "本機 subprocess 逾時"
+        if os.path.exists(sums + ".ots"):
+            print("✅ 時間戳已提交：%s.ots（%d bytes，第 %d 次嘗試，%s）"
+                  % (os.path.basename(sums), os.path.getsize(sums + ".ots"), n, " ".join(opts)))
+            return True
+        print("[第 %d 次失敗 %s] %s" % (n, " ".join(opts), out[-200:]), file=sys.stderr)
+        time.sleep(5)
+    print("[ERROR] %s 蓋章失敗（已重試 %d 次）" % (os.path.basename(sums), len(attempts)),
+          file=sys.stderr)
+    return False
+
+
+def backfill():
+    """補蓋：任何 SHA256SUMS-*.txt 若缺少對應的 .ots，就再試一次。
+
+    時間戳晚一天蓋仍然有效，只是「證明存在的時點」精度差一天，
+    遠優於永久沒有證明。
+    """
+    missing = [p for p in sorted(glob.glob(os.path.join(STAMPDIR, "SHA256SUMS-*.txt")))
+               if not os.path.exists(p + ".ots")]
+    if not missing:
+        return
+    print("補蓋 %d 份先前失敗的清單：%s"
+          % (len(missing), ", ".join(os.path.basename(p) for p in missing)))
+    for p in missing:
+        do_stamp(p)
+
 
 if __name__ == "__main__":
     sys.exit(main())
