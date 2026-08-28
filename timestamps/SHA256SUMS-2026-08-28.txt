@@ -1,0 +1,41 @@
+# public-api-timeseries 資料完整性清單
+# 產生時間 (UTC): 2026-08-28T03:30:15.931184+00:00
+# 檔案數: 36
+# 驗證: sha256sum -c 此檔；時間證明: ots verify <此檔>.ots
+
+b0cb9bd73b7a88f2345fe7a8f113d79f55aec5514bf73b96fcfd957be1bc3641  track-crypto/data/cex_symbols/2026-08-26.json.gz
+9acb87f93a6a206e2060796a05ae5d6d88810b7565f14e6a6cf872dd9758e8c0  track-crypto/data/cex_symbols/2026-08-27.json.gz
+a8f7e57d5b72c434a84face8c3b3cb78b50946604b1387c9d3727bb644b8f358  track-crypto/data/cex_symbols/2026-08-28.json.gz
+6a1cfe6209b7490c6503fb57e0121347a82e2b5f8f6207030341f7fe318dc702  track-crypto/data/mcp_registry/2026-08-26.json.gz
+3fbcfdc4c9adff141608f8b34f7674a66d885094f581c3748475e3c6d518718e  track-crypto/data/vast_gpu/2026-08-26.json.gz
+b40cce8f19188a991679d4c84ece01adafeb928e453fab331cf2869cb012a1c0  track-crypto/data/vast_gpu/2026-08-27.json.gz
+0f03b6521383f33fe4d2a51f3de2f0230fb6d8fa2f49569cc38c798fed475826  track-crypto/data/vast_gpu/2026-08-27T090856.json.gz
+3d616f52f44ff5c224d1e8df1d727d5d12b41107206710b466be20b6baf06198  track-crypto/data/vast_gpu/2026-08-28.json.gz
+2ac953ad6658bfef9c37d9ad783fd0d35294dc0d535c59e0627bb81b50539fd7  track-crypto/data/x402_bazaar/2026-08-26.json.gz
+7c47f980a41c35381384f0cab7f569963b6f09715824e1195271f25fe5af77dd  track-crypto/data/x402_bazaar/2026-08-27.json.gz
+5f43cdf7f320e4e310840a3e8cae17ba8b03d0179bd3c20970e5b7cc71c2a7b9  track-crypto/data/x402_bazaar/2026-08-28.json.gz
+40dd0d4b2c9468cd3b41a9793a4d9caa63224e512e2b070fb7c7484df4441836  track-gov/data/cbc_press/2026-08-27.json.gz
+1aaf61d13e0d0a34a33ed94c0284cfaa728253b47d2fbce5aebaf2bb012e4fa3  track-gov/data/cbc_press/2026-08-28.json.gz
+a809b3db0007e9c1cc6d20119168e201c6e2e5f1384300bf43afd86b92327d6e  track-gov/data/ey_press/2026-08-27.json.gz
+60b21e9ca2fbb815d205093bc012eec5b29bb519bacc6c18cecd403ed09e9971  track-gov/data/ey_press/2026-08-28.json.gz
+424ce3de3813d98077524acd0214830584ee9e86a5d9de8fda41b78a7c87effd  track-gov/data/fsc_clarification/2026-08-27.json.gz
+df459e6a0a16f96dd5e96b0720e2aee399bfbfefd48fdafaa901f596b46524db  track-gov/data/fsc_clarification/2026-08-27T094917.json.gz
+e6d488557efbbccf867d38397c60e0af67abf0b8365545ab3f0c77387ad387f4  track-gov/data/fsc_clarification/2026-08-27T103945.json.gz
+adeab820844de978e72abeb3bc6a006c1dc4c1a63311a7bc882c1459114b7499  track-gov/data/fsc_clarification/2026-08-28.json.gz
+2d46a5292cec1a04c05009fc80442cf9113e968f3f5116cf634c3418d85966a1  track-gov/data/moda_press/2026-08-27.json.gz
+6f32373d5b9e7331d0e3d606344df468b891c8ad9b145a60ae1377cb7c51319f  track-gov/data/moda_press/2026-08-28.json.gz
+94925eb9c48974c01f29303200c76ce734c30e2c0dfc1e6a0d7fd1e460b85782  track-gov/data/moe_clarify/2026-08-27.json.gz
+b691ab1324b265389145f5d6f85432baa3ec185e44b03cdc61bde8853141a3ef  track-gov/data/moe_clarify/2026-08-28.json.gz
+0925a4cf795d63acdcb39c9a14ed63c3c26336e045a0233306cf2cca75612481  track-gov/data/moe_press/2026-08-27.json.gz
+12cf330bf5f8dab53ecbb240caf516758554792deb1563013bb6167e7356335f  track-gov/data/moe_press/2026-08-28.json.gz
+5743efeea959df9f4a1603f778507aa481fea3d855015af5af96e60df8c81871  track-gov/data/moea_press/2026-08-28.json.gz
+3806b4b6c81d972f09f0a0d9980a93ce3e7a33e54c5543a006430db947600bbb  track-gov/data/mof_press/2026-08-27.json.gz
+670a34a788ca5f2d8e5c6de098f4b2b622ca569e6954daf0b896f3c2d471c227  track-gov/data/mof_press/2026-08-28.json.gz
+39ccd4633c96c471ff911e73a4b579b88e4704ecbf5cdf25062fb1f668945b4d  track-gov/data/mohw_press/2026-08-27.json.gz
+ba2088e60b5f750b6429e2f58877e670f086f435741301741c03990d4896d86a  track-gov/data/mohw_press/2026-08-28.json.gz
+57d230c6f5ff804e245ee9888ac9981a4843583861ecd0dd3833d30afbf62a8f  track-gov/data/moi_press/2026-08-27.json.gz
+d20c89562e638585a8533900babedeeb7850a516f0c9a1fc5df1db8d02d9b7c3  track-gov/data/moi_press/2026-08-28.json.gz
+6e7d3d2643490ab0a445225aed8d83249911eb4ec1f72b75556ff226a5a2d2c7  track-gov/data/moj_press/2026-08-27.json.gz
+c8edce912b9f3142d864c2ccce2ef53f65c0fab8cd2883b234df7d792676f001  track-gov/data/moj_press/2026-08-28.json.gz
+046ee0b5625a6285756bb76195604048ef63b4c2614a7d90d093b267abf0b4b6  track-gov/data/mol_press/2026-08-27.json.gz
+dd17597d3eced733574b62799792acbe72c204ea42e05f09b5ecc5506c55d1c2  track-gov/data/mol_press/2026-08-28.json.gz
