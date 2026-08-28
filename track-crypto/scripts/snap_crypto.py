@@ -1,160 +1,149 @@
 #!/usr/bin/env python3
-"""軌一 snapshotter：加密 / AI 算力市場每日快照
+"""軌一 snapshotter v2：加密 / AI 算力市場每日快照（adapter 架構）
 只存原始數字，不做任何分析或觀點（投顧法鐵律）
 授權：輸出資料 CC BY 4.0
+
+時區鐵律：檔名日期一律 UTC；排程時間為台北時間。兩者不可混用。
+每個來源一支 adapter，放在 track-crypto/adapters/<key>.py。
+
+adapter 介面（與 track-crypto batch5 已交付的三支一致）：
+    KEY = "..."                # 快照子目錄名 / manifest 鍵
+    DESC = "..."                # 人類可讀說明（僅用於 manifest／記錄，不落地進快照本體）
+    SOURCE_HOME = "..."         # 來源首頁或 API 端點（僅用於記錄）
+    ROBOTS_VERIFIED = "..."     # robots.txt 親驗記錄（僅用於記錄）
+    PARSER_VERSION = 1          # 解析邏輯版本號，變動時遞增，供 manifest 追蹤
+    def collect(fetch) -> dict/list:
+        ...                     # fetch(url, headers=None, timeout=45) -> str（原始回應內文，未解析）
+
+🔴 快照本體格式（與軌一今天以前完全相同，不可改動，否則歷史資料無法比較）：
+    {"_meta": {"source": "<key>", "fetched_at": "<UTC ISO>", "license": "CC BY 4.0"},
+     "data": <collect() 的回傳值>}
+注意：_meta 只有這 3 個鍵（軌二的 channels/desc/source_home/robots_verified/parser_version
+等擴充欄位一律不進快照本體，只進 manifest，避免破壞既有比對邏輯）。
 """
-import json, gzip, os, sys, time, urllib.request, urllib.error, urllib.parse
+import json, gzip, os, sys, time, hashlib, importlib.util, urllib.request
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(BASE, "data")
-LOGS = os.path.join(BASE, "logs")
-def load_env():
-    ep = os.path.join(os.path.dirname(os.path.dirname(BASE)), ".env")
-    env = {}
-    if os.path.exists(ep):
-        for line in open(ep):
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.strip().split("=", 1)
-                env[k] = v
-    return env
-
-ENV = load_env()
-UA = "snapshotter-research/1.0 (daily archival; one pass per day; contact: github.com/ianhomew/public-api-timeseries)"
+ADPT = os.path.join(BASE, "adapters")
+UA = ("snapshotter-research/1.0 (daily archival; public accountability; 1 req/sec; "
+      "github.com/ianhomew/public-api-timeseries)")
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 STAMP = datetime.now(timezone.utc).isoformat()
 
-def fetch(url, retries=3, timeout=45):
+
+def fetch(url, headers=None, timeout=45, retries=3):
+    """提供給 adapter 的抓取函式：3 次重試、退避 3/6 秒、可識別 UA，
+    支援自訂 headers 與 timeout。回傳未解析的原始回應內文（str），
+    JSON 解析交由 adapter 自行處理（各來源回應格式不盡相同）。
+    """
+    hdr = {"User-Agent": UA, "Accept": "application/json"}
+    if headers:
+        hdr.update(headers)
     last = None
     for i in range(retries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+            req = urllib.request.Request(url, headers=hdr)
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.loads(r.read().decode("utf-8"))
+                return r.read().decode("utf-8", "ignore")
         except Exception as e:
             last = e
             if i < retries - 1:
                 time.sleep(3 * (i + 1))
     raise last
 
+
+def load_adapters():
+    out = []
+    for fn in sorted(os.listdir(ADPT)):
+        if not fn.endswith(".py") or fn.startswith("_"):
+            continue
+        name = fn[:-3]
+        spec = importlib.util.spec_from_file_location(name, os.path.join(ADPT, fn))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        out.append(mod)
+    return out
+
+
 def write_gz(key, payload):
-    # NEVER_OVERWRITE: 已存在且內容不同時，另存時戳版本，不覆蓋歷史
-    import hashlib as _h
+    """NEVER_OVERWRITE：已存在且內容不同時，另存時戳版本，永不覆蓋歷史。
+    原子寫入：先寫 tmp 檔，再 os.replace 換名。
+    """
     d = os.path.join(DATA, key)
     os.makedirs(d, exist_ok=True)
     blob = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     final = os.path.join(d, TODAY + ".json.gz")
     if os.path.exists(final):
         try:
-            with gzip.open(final, "rt", encoding="utf-8") as _f:
-                old = json.load(_f)
-            oldb = json.dumps(old, ensure_ascii=False, separators=(",", ":")).encode()
-            if _h.sha256(oldb).hexdigest() == _h.sha256(blob).hexdigest():
+            with gzip.open(final, "rt", encoding="utf-8") as f:
+                old = json.dumps(json.load(f), ensure_ascii=False, separators=(",", ":")).encode()
+            if hashlib.sha256(old).hexdigest() == hashlib.sha256(blob).hexdigest():
                 return final, os.path.getsize(final)
         except Exception:
             pass
-        stamp = datetime.now(timezone.utc).strftime("%H%M%S")
-        final = os.path.join(d, TODAY + "T" + stamp + ".json.gz")
+        final = os.path.join(d, TODAY + "T" + datetime.now(timezone.utc).strftime("%H%M%S") + ".json.gz")
     tmp = final + ".tmp"
     with gzip.open(tmp, "wt", encoding="utf-8") as f:
         f.write(blob.decode())
     os.replace(tmp, final)
     return final, os.path.getsize(final)
 
-def src_x402():
-    """x402 Bazaar 全量掛牌（分頁抓完）"""
-    items, offset, limit = [], 0, 1000
-    while True:
-        j = fetch(f"https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources?limit={limit}&offset={offset}")
-        batch = j.get("items", [])
-        items.extend(batch)
-        pg = j.get("pagination", {}) or {}
-        total = pg.get("total")
-        offset += limit
-        if not batch or (total is not None and offset >= total) or offset > 100000:
-            break
-        time.sleep(1)
-    return {"x402Version": j.get("x402Version"), "total": len(items), "items": items}
-
-def src_cex():
-    """十家 CEX 交易對／幣種狀態（排除 Binance：robots 全站 Disallow）"""
-    eps = {
-        "bybit":  "https://api.bybit.com/v5/market/instruments-info?category=spot",
-        "okx":    "https://www.okx.com/api/v5/public/instruments?instType=SPOT",
-        "bitget": "https://api.bitget.com/api/v2/spot/public/symbols",
-        "htx":    "https://api.huobi.pro/v1/common/symbols",
-        "gateio": "https://api.gateio.ws/api/v4/spot/currency_pairs",
-        "kucoin": "https://api.kucoin.com/api/v2/symbols",
-        "mexc":   "https://api.mexc.com/api/v3/exchangeInfo",
-    }
-    out, errs = {}, {}
-    for name, u in eps.items():
-        try:
-            out[name] = fetch(u)
-        except Exception as e:
-            errs[name] = f"{type(e).__name__}: {e}"
-        time.sleep(1)
-    if not out:
-        raise RuntimeError("7 家交易所全部失敗: %s" % errs)
-    return {"exchanges": out, "errors": errs}
-
-def src_vast():
-    q = json.dumps({"limit": 10000, "type": "on-demand", "order": [["dph_total", "asc"]]})
-    url = "https://console.vast.ai/api/v0/bundles/?q=" + urllib.parse.quote(q)
-    key = ENV.get("VAST_API_KEY")
-    hdr = {"User-Agent": UA, "Accept": "application/json"}
-    if key:
-        hdr["Authorization"] = "Bearer " + key
-    req = urllib.request.Request(url, headers=hdr)
-    with urllib.request.urlopen(req, timeout=90) as r:
-        j = json.loads(r.read().decode("utf-8"))
-    j["_authenticated"] = bool(key)
-    return j
-
-def src_mcp():
-    """MCP 官方註冊表 status/statusChangedAt"""
-    servers, cursor, pages = [], None, 0
-    while pages < 2000:
-        u = "https://registry.modelcontextprotocol.io/v0/servers?limit=100"
-        if cursor:
-            u += "&cursor=" + urllib.parse.quote(cursor)
-        j = fetch(u)
-        batch = j.get("servers", [])
-        servers.extend(batch)
-        cursor = (j.get("metadata") or {}).get("nextCursor")
-        pages += 1
-        if not cursor or not batch:
-            break
-        time.sleep(0.25)
-    return {"total": len(servers), "servers": servers}
-
-# mcp_registry 已於 2026-08-27 停止抓取：
-#   複核發現單日快照即含多版本、官方支援 updated_since、抽樣 120 筆零刪除
-#   佔每日抓取 946.9 秒（93%），邊際資訊近乎零。已抓資料保留不刪。
-SOURCES = [("x402_bazaar", src_x402), ("cex_symbols", src_cex),
-           ("vast_gpu", src_vast)]
 
 def main():
-    os.makedirs(LOGS, exist_ok=True)
+    os.makedirs(DATA, exist_ok=True)
     manifest = {"date": TODAY, "fetched_at": STAMP, "sources": {}}
-    for name, fn in SOURCES:
-        t0 = time.time()
+    mods = load_adapters()
+    only = set(sys.argv[1:])
+    if only:
+        mods = [m for m in mods if m.KEY in only]
+    if not mods:
+        print("FATAL 找不到任何 adapter", file=sys.stderr)
+        return 1
+    for mod in mods:
+        key, t0 = mod.KEY, time.time()
+        parser_version = getattr(mod, "PARSER_VERSION", 1)
         try:
-            payload = {"_meta": {"source": name, "fetched_at": STAMP, "license": "CC BY 4.0"},
-                       "data": fn()}
-            path, size = write_gz(name, payload)
-            manifest["sources"][name] = {"ok": True, "bytes": size,
-                                         "secs": round(time.time() - t0, 1)}
-            print(f"OK   {name:14s} {size:>10,}B {round(time.time()-t0,1)}s")
+            data = mod.collect(fetch)
+            payload = {"_meta": {"source": key, "fetched_at": STAMP, "license": "CC BY 4.0"},
+                       "data": data}
+            path, size = write_gz(key, payload)
+            manifest["sources"][key] = {"ok": True, "bytes": size,
+                                        "secs": round(time.time() - t0, 1),
+                                        "parser_version": parser_version}
+            print("OK   %-14s %10s B %.1fs" % (key, format(size, ","), time.time() - t0))
         except Exception as e:
-            manifest["sources"][name] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
-            print(f"FAIL {name:14s} {type(e).__name__}: {e}", file=sys.stderr)
-    mdir = os.path.join(DATA, "_manifest"); os.makedirs(mdir, exist_ok=True)
-    with open(os.path.join(mdir, f"{TODAY}.json"), "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=1)
+            manifest["sources"][key] = {"ok": False, "error": "%s: %s" % (type(e).__name__, e),
+                                        "secs": round(time.time() - t0, 1),
+                                        "parser_version": parser_version}
+            print("FAIL %-14s %s: %s" % (key, type(e).__name__, e), file=sys.stderr)
+    # manifest 合併寫入：單獨重跑一個來源時，不得覆寫當日其他來源的紀錄
+    # （比照軌二 2026-08-28 修過的缺陷：原本用 "w" 無條件覆寫，一次單來源重跑就會蓋掉其他來源）。
+    md = os.path.join(DATA, "_manifest")
+    os.makedirs(md, exist_ok=True)
+    mpath = os.path.join(md, TODAY + ".json")
+    merged = {"date": TODAY, "sources": {}}
+    if os.path.exists(mpath):
+        try:
+            merged = json.load(open(mpath, encoding="utf-8"))
+            merged.setdefault("sources", {})
+        except Exception:
+            merged = {"date": TODAY, "sources": {}}
+    merged["sources"].update(manifest["sources"])
+    merged["date"] = TODAY
+    merged["fetched_at"] = STAMP
+    merged.setdefault("runs", []).append(
+        {"at": STAMP, "sources": sorted(manifest["sources"])})
+    tmp = mpath + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, mpath)
     ok = sum(1 for v in manifest["sources"].values() if v.get("ok"))
-    print(f"--- {ok}/{len(SOURCES)} 成功 ---")
+    print("--- %d/%d 成功 ---" % (ok, len(mods)))
+    # 單一來源失敗不影響其他來源；只有「全部失敗」才回傳非 0（沿用軌一既有行為）
     return 0 if ok else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

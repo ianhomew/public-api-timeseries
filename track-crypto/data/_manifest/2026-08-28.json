@@ -1,21 +1,160 @@
 {
  "date": "2026-08-28",
- "fetched_at": "2026-08-28T01:00:04.172263+00:00",
+ "fetched_at": "2026-08-28T08:59:20.963760+00:00",
  "sources": {
   "x402_bazaar": {
    "ok": true,
-   "bytes": 6100822,
-   "secs": 67.0
+   "bytes": 6074274,
+   "secs": 45.7,
+   "parser_version": 1
   },
   "cex_symbols": {
    "ok": true,
-   "bytes": 404938,
-   "secs": 13.4
+   "bytes": 407584,
+   "secs": 15.5,
+   "parser_version": 1
   },
   "vast_gpu": {
    "ok": true,
-   "bytes": 173150,
-   "secs": 2.5
+   "bytes": 172635,
+   "secs": 2.1,
+   "parser_version": 1
+  },
+  "airdrop_claim_pages": {
+   "ok": true,
+   "bytes": 931,
+   "secs": 0.3,
+   "parser_version": 1
+  },
+  "audit_registry_certik": {
+   "ok": true,
+   "bytes": 662,
+   "secs": 0.1,
+   "parser_version": 1
+  },
+  "cex_announcements": {
+   "ok": true,
+   "bytes": 7166,
+   "secs": 15.6,
+   "parser_version": 1
+  },
+  "cex_currency_status": {
+   "ok": true,
+   "bytes": 292077,
+   "secs": 6.2,
+   "parser_version": 1
+  },
+  "cex_earn_apr": {
+   "ok": true,
+   "bytes": 8749,
+   "secs": 2.5,
+   "parser_version": 1
+  },
+  "cex_symbols_ext": {
+   "ok": true,
+   "bytes": 62981,
+   "secs": 5.6,
+   "parser_version": 1
+  },
+  "cex_withdrawal_limits": {
+   "ok": true,
+   "bytes": 142104,
+   "secs": 1.4,
+   "parser_version": 1
+  },
+  "crypto_project_liveness": {
+   "ok": true,
+   "bytes": 33202,
+   "secs": 0.4,
+   "parser_version": 1
+  },
+  "dao_proposal_snapshot": {
+   "ok": true,
+   "bytes": 395483,
+   "secs": 8.3,
+   "parser_version": 1
+  },
+  "defi_yield_rates": {
+   "ok": true,
+   "bytes": 1501,
+   "secs": 3.7,
+   "parser_version": 1
+  },
+  "eth_validator_queue": {
+   "ok": true,
+   "bytes": 218,
+   "secs": 4.8,
+   "parser_version": 1
+  },
+  "hf_trending_models": {
+   "ok": true,
+   "bytes": 103537,
+   "secs": 1.0,
+   "parser_version": 1
+  },
+  "ofac_sanctions_crypto": {
+   "ok": true,
+   "bytes": 934594,
+   "secs": 13.3,
+   "parser_version": 1
+  },
+  "openrouter_models": {
+   "ok": true,
+   "bytes": 69125,
+   "secs": 0.4,
+   "parser_version": 1
+  },
+  "openrouter_providers": {
+   "ok": true,
+   "bytes": 3627,
+   "secs": 0.1,
+   "parser_version": 1
+  },
+  "oracle_feed_directory": {
+   "ok": true,
+   "bytes": 166213,
+   "secs": 1.6,
+   "parser_version": 1
+  },
+  "payment_protocol_repos": {
+   "ok": true,
+   "bytes": 551,
+   "secs": 0.9,
+   "parser_version": 1
+  },
+  "project_tokenomics_docs": {
+   "ok": true,
+   "bytes": 753,
+   "secs": 0.1,
+   "parser_version": 1
   }
- }
+ },
+ "runs": [
+  {
+   "at": "2026-08-28T08:59:20.963760+00:00",
+   "sources": [
+    "airdrop_claim_pages",
+    "audit_registry_certik",
+    "cex_announcements",
+    "cex_currency_status",
+    "cex_earn_apr",
+    "cex_symbols",
+    "cex_symbols_ext",
+    "cex_withdrawal_limits",
+    "crypto_project_liveness",
+    "dao_proposal_snapshot",
+    "defi_yield_rates",
+    "eth_validator_queue",
+    "hf_trending_models",
+    "ofac_sanctions_crypto",
+    "openrouter_models",
+    "openrouter_providers",
+    "oracle_feed_directory",
+    "payment_protocol_repos",
+    "project_tokenomics_docs",
+    "vast_gpu",
+    "x402_bazaar"
+   ]
+  }
+ ]
 }

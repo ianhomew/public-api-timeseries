@@ -11,25 +11,35 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT  = os.path.join(REPO, "ALERT.md")
 TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
-# 目前應該每日都有新檔的來源。停抓的來源要從這裡移除，否則會持續告警。
-ACTIVE_CRYPTO = ["x402_bazaar", "cex_symbols", "vast_gpu"]
+# 軌一若沒有 adapters 目錄（例如回滾到舊版驅動程式）時的降級清單。
+# 絕對不可讓「adapters 目錄不存在」變成空清單去檢查 —— 那等於自我檢查什麼都不檢查卻回報正常。
+FALLBACK_CRYPTO = ["x402_bazaar", "cex_symbols", "vast_gpu"]
 
-def _gov_keys():
-    """軌二來源自 track-gov/adapters/*.py 自動探索，新增機關不必改這支程式"""
+def _adapter_keys(track):
+    """從 <track>/adapters/*.py 自動探索 KEY，新增來源不必改這支程式。
+    回傳 (keys, adapters目錄是否存在)：呼叫端要用第二個值判斷是否該降級。"""
     import re as _re
-    adir = os.path.join(REPO, "track-gov", "adapters")
+    adir = os.path.join(REPO, track, "adapters")
+    if not os.path.isdir(adir):
+        return [], False
     out = []
-    if os.path.isdir(adir):
-        for fn in sorted(os.listdir(adir)):
-            if fn.endswith(".py") and not fn.startswith("_"):
-                m = _re.search(r'^KEY\s*=\s*["\'](.+?)["\']',
-                               open(os.path.join(adir, fn), encoding="utf-8").read(), _re.M)
-                if m:
-                    out.append(m.group(1))
-    return out
+    for fn in sorted(os.listdir(adir)):
+        if fn.endswith(".py") and not fn.startswith("_"):
+            m = _re.search(r'^KEY\s*=\s*["\'](.+?)["\']',
+                           open(os.path.join(adir, fn), encoding="utf-8").read(), _re.M)
+            if m:
+                out.append(m.group(1))
+    return out, True
 
-ACTIVE = ([("track-crypto", k) for k in ACTIVE_CRYPTO] +
-          [("track-gov", k) for k in _gov_keys()])
+_crypto_keys, _crypto_adapters_exist = _adapter_keys("track-crypto")
+if not _crypto_adapters_exist:
+    # adapters 目錄不存在（例如回滾）：不可變空清單，回退到寫死清單。
+    _crypto_keys = FALLBACK_CRYPTO
+
+_gov_keys, _ = _adapter_keys("track-gov")
+
+ACTIVE = ([("track-crypto", k) for k in _crypto_keys] +
+          [("track-gov", k) for k in _gov_keys])
 LOW, HIGH = 0.5, 3.0   # 體積相對前 7 日中位數的容許區間
 
 def snapshots(track, key):
@@ -41,9 +51,14 @@ def snapshots(track, key):
 
 def check_source(track, key, issues):
     label = f"{track}/{key}"
+    d = os.path.join(REPO, track, "data", key)
     snaps = snapshots(track, key)
     if not snaps:
-        issues.append((label, "沒有任何快照檔"))
+        if not os.path.isdir(d):
+            # adapter 檔案存在（否則不會進到 ACTIVE），但快照目錄從未建立過 → 從沒成功跑過一次
+            issues.append((label, "來源已設定但從未產出：adapter 已部署，但今日完全沒有對應快照目錄"))
+        else:
+            issues.append((label, "沒有任何快照檔"))
         return
     days = sorted(snaps)
     if TODAY not in snaps:
@@ -53,6 +68,7 @@ def check_source(track, key, issues):
     today_sz = max(os.path.getsize(p) for p in snaps[TODAY])
     prev = [max(os.path.getsize(p) for p in snaps[d]) for d in days if d < TODAY][-7:]
     if prev:
+        # 新來源第一天沒有歷史快照可比（prev 為空），不告警；只有累積到至少一天歷史後才比對體積。
         med = statistics.median(prev)
         if med > 0 and (today_sz < med * LOW or today_sz > med * HIGH):
             issues.append((label, f"體積異常：今日 {today_sz:,} B，前 {len(prev)} 日中位數 {med:,.0f} B"

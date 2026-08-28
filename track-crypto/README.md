@@ -4,20 +4,66 @@
 
 這是原始資料存檔，**不含任何分析、觀點或投資建議**。
 
-每天對下列公開端點各取一次快照，一天一檔 `YYYY-MM-DD.json.gz`（日期為 **UTC**），**永不覆蓋**。
+每天對 21 個公開端點各取一次快照，一天一檔 `YYYY-MM-DD.json.gz`（日期為 **UTC**），**永不覆蓋**。
 
-## 收錄來源
+## 收錄來源（21 個）
 
-| 來源 | 端點 | 2026-08-27 筆數 | 狀態 |
+2026-08-28（UTC）實測值。每日壓縮後合計約 **8.8 MB**，總耗時約 **130 秒**。
+
+### 交易所（6）
+| 來源 | 內容 | 體積 | 耗時 |
 |---|---|---|---|
-| `x402_bazaar` | CDP x402 discovery | 14,755 | 每日抓取 |
-| `cex_symbols` | Bybit / OKX / Bitget / HTX / Gate / KuCoin / MEXC（7 家） | 10,744 | 每日抓取 |
-| `vast_gpu` | vast.ai bundles | 512 | 每日抓取 |
-| `mcp_registry` | MCP 官方註冊表 | 82,612（2026-08-26） | **2026-08-27 起停抓**，資料保留 |
+| `cex_symbols` | 7 家交易對／幣種狀態（Bybit/OKX/Bitget/HTX/Gate/KuCoin/MEXC） | 408 KB | 15.5s |
+| `cex_symbols_ext` | 再 3 家（Kraken/Coinbase Exchange/Upbit） | 63 KB | 5.6s |
+| `cex_currency_status` | 幣種層級狀態旗標（Gate delisted／Coinbase status） | 292 KB | 6.2s |
+| `cex_withdrawal_limits` | KuCoin 提幣費與最低提幣額（含各鏈參數） | 142 KB | 1.4s |
+| `cex_announcements` | 交易所公告（只存標題／URL／時間／分類，不存全文） | 7 KB | 15.6s |
+| `cex_earn_apr` | 理財年化率（Bybit 活期／OKX 借貸） | 9 KB | 2.5s |
 
-每日壓縮後合計約 **6.6 MB**，抓取約 67 秒。
+### 鏈上與 DeFi（4）
+| 來源 | 內容 | 體積 | 耗時 |
+|---|---|---|---|
+| `defi_yield_rates` | Lido／Rocket Pool／Ethena／Sky 質押與借貸利率 | 1.5 KB | 3.7s |
+| `eth_validator_queue` | 驗證者進出隊列**各狀態筆數**（不存個別公鑰） | 218 B | 4.8s |
+| `oracle_feed_directory` | Chainlink／Pyth 價格餵送目錄（供逐日比對集合差集） | 166 KB | 1.6s |
+| `dao_proposal_snapshot` | Snapshot DAO 提案中繼資料（偵測提案被刪除，不存投票紀錄） | 395 KB | 8.3s |
 
-端點全文、各交易所筆數、欄位與已知限制 → [docs/sources.md](../docs/sources.md)
+### 支付與 agent 生態（3）
+| 來源 | 內容 | 體積 | 耗時 |
+|---|---|---|---|
+| `x402_bazaar` | x402 全量掛牌（CDP discovery API） | 6.07 MB | 45.7s |
+| `payment_protocol_repos` | x402／AP2／L402 規格版本 repo 中繼資料 | 551 B | 0.9s |
+| `crypto_project_liveness` | DefiLlama 駭客事件清單 | 33 KB | 0.4s |
+
+### AI 算力與定價（4）
+| 來源 | 內容 | 體積 | 耗時 |
+|---|---|---|---|
+| `vast_gpu` | vast.ai GPU 租賃報價 | 173 KB | 2.1s |
+| `openrouter_models` | 全模型清單與定價 | 69 KB | 0.4s |
+| `openrouter_providers` | 供應商清單（隱私政策／服務條款／機房地點） | 3.6 KB | 0.1s |
+| `hf_trending_models` | HuggingFace trending 模型 | 104 KB | 1.0s |
+
+### 合規與文件頁（4）
+| 來源 | 內容 | 體積 | 耗時 |
+|---|---|---|---|
+| `ofac_sanctions_crypto` | OFAC SDN 制裁名單（含 Remarks 內嵌的加密地址） | 935 KB | 13.3s |
+| `project_tokenomics_docs` | 專案官方 tokenomics 文件（目前僅 Arbitrum Foundation） | 753 B | 0.1s |
+| `airdrop_claim_pages` | 空投資格規則頁（目前僅 Starknet Provisions） | 931 B | 0.3s |
+| `audit_registry_certik` | CertiK 首頁「Recently Audited」清單（約 8 筆，非完整資料庫） | 662 B | 0.1s |
+
+### 已停抓
+| 來源 | 說明 |
+|---|---|
+| `mcp_registry` | 2026-08-27 起停抓（單日快照即含多版本、官方支援 `updated_since`、佔每日 93% 時間）。已抓資料保留 |
+
+### 未收錄（實測後排除）
+| 目標 | 原因 |
+|---|---|
+| Circle 定價頁 | `circle.com/pricing` 已 301 導向行銷表單頁，**無任何費率數字** |
+| Binance | robots.txt 全站 `Disallow: /` |
+| Jupiter／EigenLayer／Hyperliquid 相關頁 | 網域 DNS 已失效或 404 |
+
+端點全文、欄位與已知限制 → [docs/sources.md](../docs/sources.md)
 
 ## 需要先知道的兩件事
 
@@ -42,7 +88,8 @@
 data/<source>/YYYY-MM-DD.json.gz    {"_meta":{...},"data":{...}}
 data/_manifest/YYYY-MM-DD.json      當日各來源成敗、大小、耗時
 data/cex_events/events.jsonl        上／下架事件流
-scripts/snap_crypto.py              抓取程式
+adapters/<key>.py                   各來源抓取規則（一個來源一支）
+scripts/snap_crypto.py              主程式，自動載入 adapters/
 logs/cron.log                       執行日誌（不入 GitHub）
 ```
 
@@ -53,7 +100,7 @@ logs/cron.log                       執行日誌（不入 GitHub）
 
 ## 授權
 
-資料 **CC BY 4.0**，程式碼 **MIT**。使用時請標示來源。
+資料 **CC BY 4.0**（見 [LICENSE](../LICENSE)）／程式碼 **MIT**（見 [LICENSE-CODE](../LICENSE-CODE)）。
 
 ## 免責
 
