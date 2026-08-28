@@ -61,7 +61,20 @@ python3 "$R/scripts/stamp.py" >> logs/stamp.log 2>&1 || echo "$(date -Is) [WARN]
 python3 "$R/scripts/milestone.py" >> logs/milestone.log 2>&1 || echo "$(date -Is) [WARN] milestone 失敗" >> logs/milestone.log
 
 # 4b) 自我檢查：沉默即異常（缺檔／體積異常／manifest 失敗 → 產生 ALERT.md）
-python3 "$R/scripts/healthcheck.py" >> logs/healthcheck.log 2>&1 || echo "$(date -Is) [WARN] healthcheck 失敗" >> logs/healthcheck.log
+if ! python3 "$R/scripts/healthcheck.py" >> logs/healthcheck.log 2>&1; then
+  # 自我檢查自己掛掉，不能當成「沒異常」——那是最危險的靜默失敗
+  echo "$(date -Is) [FATAL] healthcheck 失敗" >> logs/healthcheck.log
+  {
+    echo "# 🔴 自我檢查程式失敗"
+    echo
+    echo "檢查時間（UTC）：$(date -u -Is)"
+    echo
+    echo "\`scripts/healthcheck.py\` 執行失敗，本日**未進行**缺檔／體積／manifest 檢查。"
+    echo "資料是否正常抓取，本日無法由自動機制確認。"
+  } > ALERT-HEALTH.md
+else
+  rm -f ALERT-HEALTH.md
+fi
 
 # 4) 提交
 git add -A
@@ -97,7 +110,7 @@ fi
 
 # 資料抓取本身有異常時（healthcheck.py 產生了 ALERT.md），
 # 即使 push 成功也回報失敗，讓使用者收到通知，不必自己去 GitHub 看。
-if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ]; then
+if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ]; then
   echo "$(date -Is) ALERT.md 存在 → 回報 fail"
   hc_ping /fail
 else
