@@ -76,6 +76,13 @@ else
   rm -f ALERT-HEALTH.md
 fi
 
+# 4c) 每日巡檢報告（主動回報，非只在異常時通知）
+#     失敗不得中斷提交流程：報告是附加價值，資料保存才是主線。
+if ! python3 "$R/scripts/daily_report.py" >> logs/daily_report.log 2>&1; then
+  echo "$(date -Is) [WARN] daily_report 失敗" >> logs/daily_report.log
+  printf '# 每日巡檢報告產生失敗\n\n產生時間（UTC）：%s\n\n請執行 python3 scripts/daily_report.py 查看錯誤。\n' "$(date -u -Is)" > REPORT.md
+fi
+
 # 4) 提交
 git add -A
 if git diff --cached --quiet; then

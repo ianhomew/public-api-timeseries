@@ -18,8 +18,19 @@ DESC = {
     "x402_bazaar":       ("軌一", "x402 協議全量掛牌：誰在賣什麼 API、賣多少錢"),
     "cex_symbols":       ("軌一", "7 家交易所的交易對與幣種狀態（下架即從 API 消失）"),
     "vast_gpu":          ("軌一", "vast.ai GPU 現貨報價（512 筆，已認證）"),
-    "mcp_registry":      ("軌一", "MCP 官方註冊表（約 82,000 個 server 與其狀態）"),
+    "mcp_registry":      ("軌一", "MCP 官方註冊表（約 82,000 個 server 與其狀態，已停抓，僅供檢視歷史快照）"),
     "fsc_clarification": ("軌二", "金管會即時新聞澄清全文（全部歷史 50 筆）"),
+    "moe_clarify":       ("軌二", "教育部即時新聞澄清"),
+    "moj_press":         ("軌二", "法務部新聞發布"),
+    "cbc_press":         ("軌二", "中央銀行新聞稿"),
+    "mof_press":         ("軌二", "財政部本部新聞"),
+    "mol_press":         ("軌二", "勞動部新聞稿"),
+    "moda_press":        ("軌二", "數位發展部新聞發布"),
+    "moi_press":         ("軌二", "內政部新聞稿"),
+    "ey_press":          ("軌二", "行政院本院新聞"),
+    "mohw_press":        ("軌二", "衛生福利部焦點新聞"),
+    "moe_press":         ("軌二", "教育部即時新聞"),
+    "moea_press":        ("軌二", "經濟部本部新聞"),
 }
 
 def sources():
@@ -96,12 +107,20 @@ def summarize(name, j):
                     "publishedAt": meta.get("publishedAt"),
                     "desc": str(core.get("description") or "")[:60]}
         return len(srv), [_g(x) for x in srv[:50]]
-    if name == "fsc_clarification":
-        items = d.get("items", j.get("items", []))
-        s = [{"date": i.get("date"), "title": i.get("title", "")[:60],
-              "chars": len(i.get("body_text", "")), "sha": i.get("body_sha256", "")[:12]}
-             for i in items[:50]]
-        return len(items), s
+    items = d.get("items", j.get("items", []))
+    if items and isinstance(items[0], dict) and "body_sha256" in items[0] and "body_text" in items[0]:
+        # track-gov 通用格式（snap_gov.py 統一產生）：依資料結構判斷，不依來源名稱清單
+        s = []
+        for i in items[:50]:
+            row = {"date": i.get("date"), "title": i.get("title", "")[:60],
+                   "chars": len(i.get("body_text", "")), "sha": i.get("body_sha256", "")[:12]}
+            if i.get("id") is not None:
+                row["id"] = i.get("id")
+            s.append(row)
+        total = d.get("total")
+        if total is None:
+            total = len(items)
+        return total, s
     return None, []
 
 def stats_path(f):
@@ -149,7 +168,7 @@ def overview():
     print("=" * 78)
     tot_files = tot_bytes = 0
     for name, files in src.items():
-        track, desc = DESC.get(name, ("?", ""))
+        track, desc = DESC.get(name, ("?", name))
         days = [os.path.basename(f)[:10] for f in files]
         size = sum(os.path.getsize(f) for f in files)
         tot_files += len(files); tot_bytes += size
@@ -192,7 +211,7 @@ def show(name, date, n, raw):
         if st.get("sample_head"):
             print("=" * 78)
             print("%s  %s   (快取)" % (name, date))
-            print("說明：%s" % DESC.get(name, ("", ""))[1])
+            print("說明：%s" % DESC.get(name, ("", name))[1])
             print("抓取時間：%s" % st.get("fetched_at"))
             print("=" * 78)
             print("總筆數：%s" % format(st["total"], ",") if st.get("total") else "")
@@ -209,7 +228,7 @@ def show(name, date, n, raw):
     meta = j.get("_meta", {})
     print("=" * 78)
     print("%s  %s" % (name, date))
-    print("說明：%s" % DESC.get(name, ("", ""))[1])
+    print("說明：%s" % DESC.get(name, ("", name))[1])
     print("抓取時間：%s" % meta.get("fetched_at", "?"))
     print("授權：%s" % meta.get("license", "?"))
     print("=" * 78)
