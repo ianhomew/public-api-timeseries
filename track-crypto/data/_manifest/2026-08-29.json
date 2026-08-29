@@ -1,125 +1,124 @@
 {
- "date": "2026-08-28",
- "fetched_at": "2026-08-28T10:29:41.105912+00:00",
+ "date": "2026-08-29",
  "sources": {
-  "x402_bazaar": {
+  "agent_virtuals": {
    "ok": true,
-   "bytes": 6074274,
-   "secs": 45.7,
-   "parser_version": 1
-  },
-  "cex_symbols": {
-   "ok": true,
-   "bytes": 407584,
-   "secs": 15.5,
-   "parser_version": 1
-  },
-  "vast_gpu": {
-   "ok": true,
-   "bytes": 172635,
-   "secs": 2.1,
-   "parser_version": 1
+   "bytes": 829118,
+   "secs": 608.0,
+   "parser_version": 2
   },
   "airdrop_claim_pages": {
    "ok": true,
-   "bytes": 931,
-   "secs": 0.3,
+   "bytes": 929,
+   "secs": 0.4,
    "parser_version": 1
   },
   "audit_registry_certik": {
    "ok": true,
-   "bytes": 662,
+   "bytes": 660,
    "secs": 0.1,
    "parser_version": 1
   },
   "cex_announcements": {
    "ok": true,
-   "bytes": 7166,
-   "secs": 15.6,
+   "bytes": 6995,
+   "secs": 16.1,
    "parser_version": 1
   },
   "cex_currency_status": {
    "ok": true,
-   "bytes": 292077,
-   "secs": 6.2,
+   "bytes": 292155,
+   "secs": 5.9,
    "parser_version": 1
   },
   "cex_earn_apr": {
    "ok": true,
-   "bytes": 8749,
+   "bytes": 8710,
    "secs": 2.5,
+   "parser_version": 1
+  },
+  "cex_symbols": {
+   "ok": true,
+   "bytes": 408067,
+   "secs": 14.4,
    "parser_version": 1
   },
   "cex_symbols_ext": {
    "ok": true,
-   "bytes": 62981,
-   "secs": 5.6,
+   "bytes": 62997,
+   "secs": 5.1,
    "parser_version": 1
   },
   "cex_withdrawal_limits": {
    "ok": true,
-   "bytes": 142104,
-   "secs": 1.4,
+   "bytes": 142100,
+   "secs": 0.5,
    "parser_version": 1
   },
   "crypto_project_liveness": {
    "ok": true,
-   "bytes": 33202,
-   "secs": 0.4,
+   "bytes": 33210,
+   "secs": 0.1,
    "parser_version": 1
   },
   "dao_proposal_snapshot": {
    "ok": true,
-   "bytes": 395483,
-   "secs": 8.3,
+   "bytes": 395599,
+   "secs": 9.0,
    "parser_version": 1
   },
   "defi_yield_rates": {
    "ok": true,
-   "bytes": 1501,
-   "secs": 3.7,
+   "bytes": 1496,
+   "secs": 3.4,
    "parser_version": 1
   },
   "eth_validator_queue": {
    "ok": true,
-   "bytes": 218,
+   "bytes": 216,
    "secs": 4.8,
    "parser_version": 1
   },
   "hf_trending_models": {
    "ok": true,
-   "bytes": 103537,
-   "secs": 1.0,
+   "bytes": 103752,
+   "secs": 0.3,
    "parser_version": 1
+  },
+  "mcp_smithery": {
+   "ok": true,
+   "bytes": 82920,
+   "secs": 6.6,
+   "parser_version": 2
   },
   "ofac_sanctions_crypto": {
    "ok": true,
-   "bytes": 934594,
-   "secs": 13.3,
+   "bytes": 934696,
+   "secs": 12.2,
    "parser_version": 1
   },
   "openrouter_models": {
    "ok": true,
-   "bytes": 69125,
-   "secs": 0.4,
+   "bytes": 69335,
+   "secs": 0.2,
    "parser_version": 1
   },
   "openrouter_providers": {
    "ok": true,
-   "bytes": 3627,
-   "secs": 0.1,
+   "bytes": 3657,
+   "secs": 0.0,
    "parser_version": 1
   },
   "oracle_feed_directory": {
    "ok": true,
-   "bytes": 166213,
-   "secs": 1.6,
+   "bytes": 166670,
+   "secs": 1.7,
    "parser_version": 1
   },
   "payment_protocol_repos": {
    "ok": true,
-   "bytes": 551,
-   "secs": 0.9,
+   "bytes": 557,
+   "secs": 0.7,
    "parser_version": 1
   },
   "project_tokenomics_docs": {
@@ -128,29 +127,31 @@
    "secs": 0.1,
    "parser_version": 1
   },
-  "x402_index_thirdparty": {
+  "vast_gpu": {
    "ok": true,
-   "bytes": 23433,
-   "secs": 1.3,
+   "bytes": 173542,
+   "secs": 1.6,
    "parser_version": 1
   },
-  "agent_virtuals": {
+  "x402_bazaar": {
    "ok": true,
-   "bytes": 914279,
-   "secs": 601.9,
-   "parser_version": 2
+   "bytes": 5963543,
+   "secs": 39.5,
+   "parser_version": 1
   },
-  "mcp_smithery": {
+  "x402_index_thirdparty": {
    "ok": true,
-   "bytes": 83242,
-   "secs": 7.2,
-   "parser_version": 2
+   "bytes": 23431,
+   "secs": 1.3,
+   "parser_version": 1
   }
  },
+ "fetched_at": "2026-08-29T01:00:01.901806+00:00",
  "runs": [
   {
-   "at": "2026-08-28T08:59:20.963760+00:00",
+   "at": "2026-08-29T01:00:01.901806+00:00",
    "sources": [
+    "agent_virtuals",
     "airdrop_claim_pages",
     "audit_registry_certik",
     "cex_announcements",
@@ -164,6 +165,7 @@
     "defi_yield_rates",
     "eth_validator_queue",
     "hf_trending_models",
+    "mcp_smithery",
     "ofac_sanctions_crypto",
     "openrouter_models",
     "openrouter_providers",
@@ -171,20 +173,8 @@
     "payment_protocol_repos",
     "project_tokenomics_docs",
     "vast_gpu",
-    "x402_bazaar"
-   ]
-  },
-  {
-   "at": "2026-08-28T10:18:03.957868+00:00",
-   "sources": [
+    "x402_bazaar",
     "x402_index_thirdparty"
-   ]
-  },
-  {
-   "at": "2026-08-28T10:29:41.105912+00:00",
-   "sources": [
-    "agent_virtuals",
-    "mcp_smithery"
    ]
   }
  ]

@@ -58,3 +58,11 @@
 {"date": "2026-08-28", "exchange": "mexc", "symbol": "ZEROUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-08-28", "exchange": "mexc", "symbol": "币有USD1", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-08-28", "exchange": "mexc", "symbol": "币有USDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-08-28", "exchange": "kucoin", "symbol": "BLESS-USDT", "event": "LISTED", "from": null, "to": "False"}
+{"date": "2026-08-29", "exchange": "bitget", "symbol": "BTRUSDT", "event": "DELISTED", "from": "online", "to": null}
+{"date": "2026-08-29", "exchange": "bitget", "symbol": "ZKJUSDT", "event": "DELISTED", "from": "online", "to": null}
+{"date": "2026-08-29", "exchange": "kucoin", "symbol": "BLESS-USDT", "event": "STATUS_CHANGED", "from": "False", "to": "True"}
+{"date": "2026-08-29", "exchange": "mexc", "symbol": "BASELINEUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-08-29", "exchange": "mexc", "symbol": "BASELINEUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-08-29", "exchange": "mexc", "symbol": "VYNEXUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-08-29", "exchange": "mexc", "symbol": "VYNEXUSDT", "event": "LISTED", "from": null, "to": "1"}
