@@ -6,6 +6,38 @@ daily_report.py
 依 REPORT_SPEC.md 產生 <REPO>/REPORT.md。
 只用 Python 標準函式庫；只讀取資料，唯一寫入的檔案是 REPORT.md。
 任何一段資料缺失都不可讓程式崩潰：一律顯示「—」或「無紀錄」並繼續下一段。
+
+2026-08-31 改版（SPEC-daily-report.md）：
+1. 來源清單改為「自動探索」：直接沿用 healthcheck.py 既有的
+   `<track>/adapters/*.py` 掃描寫法（本檔不重新發明一套），新增來源
+   （新增 adapter 檔）不必再改這支程式。目前應可探索到 42 個來源
+   （軌一 track-crypto 24 個 + 軌二 track-gov 18 個）。
+2. 修正「悄悄漏列」：
+   - 舊版硬編碼的來源清單漏了 fda_clarify／fsc_lawnotice／fsc_penalty／
+     ftc_decision／pres_news／tpe_clarify 六個軌二來源，這些來源從未出現在
+     報告的來源對照表——本版改為自動探索後不會再發生。
+   - 舊版 `logs/detect.log` 解析器只認得「改寫/下架/新增」與「快照不足 2 份，
+     略過」兩種行；「解析器版本 X→Y，跳過本次比對」（moi_press 等）與
+     「下架截斷，不判定」（fda_clarify／moj_press／tpe_clarify 截斷當天）
+     這兩種行格式都無法比對到既有 regex，會被目前的「無法辨識的行：忽略但
+     不崩潰」機制悄悄吃掉——本版新增對應 regex，兩者都會明確列出並標註原因。
+3. 異常總數改為「與 ALERT.md 採用完全相同的判定函式」：直接呼叫
+   healthcheck.py 的 check_timestamps / check_manifest /
+   check_truncation_streak / check_source（唯讀，不寫檔），取得的 issues
+   清單即為 ALERT.md 產生所用的同一份清單，因此本報告「一句話結論」與
+   「異常摘要」的異常數會與當日 ALERT.md 完全一致（同一套邏輯，非另外估算）。
+   來源對照表另外顯示 ok/truncated/attempts/parse_failed 供人工判讀，
+   這屬於補充資訊，不重複計入異常總數（避免同一件事被算兩次）。
+4. 新增欄位：`parse_failed`（v5 空正文守門新增，尚未在任何 manifest 出現過，
+   欄位已就緒，屆時會自動顯示，不需再改本檔）、`truncated`、`attempts`。
+5. 相容 track-gov 用 `channels` 鍵、track-crypto 用 `sources` 鍵。
+
+回放測試（不影響正式排程行為）：
+  可用環境變數 HEALTHCHECK_NOW（ISO8601 UTC）／HEALTHCHECK_TODAY（YYYY-MM-DD）
+  覆寫「現在時刻」／「今天日期」——這兩個變數與 healthcheck.py 共用同一套
+  機制（本檔透過 import healthcheck 直接讀 healthcheck.NOW_UTC / TODAY，
+  確保回放時兩邊日期判斷完全同步，不會出現「report 用今天、healthcheck 用
+  昨天」的錯位）。正式環境（cron）不會設定這兩個變數，行為與改動前一致。
 """
 
 import os
@@ -13,23 +45,77 @@ import sys
 import json
 import glob
 import re
+import importlib.util
 import statistics
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, date, timedelta, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 UTC = timezone.utc
 TPE = timezone(timedelta(hours=8))
 
-CRYPTO_SOURCES = ["x402_bazaar", "cex_symbols", "vast_gpu"]
-GOV_CHANNELS = [
-    "fsc_clarification", "moe_clarify", "moj_press", "cbc_press",
-    "mof_press", "mol_press", "moda_press", "moi_press",
-    "ey_press", "mohw_press", "moe_press", "moea_press",
-]
+DASH = "—"
+
+
+def _load_healthcheck_module():
+    """以路徑載入 healthcheck.py（不透過 sys.path，避免與其他同名模組衝突）。
+    只讀取其模組層級常數與純函式（check_* 系列都只寫入呼叫端傳入的 list，
+    不寫檔；main() 才會寫 ALERT.md，本檔完全不呼叫 main()）。"""
+    path = os.path.join(SCRIPT_DIR, "healthcheck.py")
+    spec = importlib.util.spec_from_file_location("healthcheck", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+try:
+    healthcheck = _load_healthcheck_module()
+except Exception:
+    healthcheck = None
+
+
+def _discover_sources():
+    """回傳 (active, name_hint)：
+    active：[(track, key), ...]，直接沿用 healthcheck.ACTIVE（若載入失敗則退回
+            健檢模組同一套 _adapter_keys 邏輯的最小複製版，仍然是「掃描
+            adapters 目錄」而非另一份寫死清單）。
+    """
+    if healthcheck is not None and getattr(healthcheck, "ACTIVE", None):
+        return list(healthcheck.ACTIVE)
+
+    # 降級路徑：healthcheck.py 載入失敗時，仍用同一種「掃描 adapters」寫法，
+    # 不退回寫死清單，避免重蹈舊版「硬編碼漏列」的覆轍。
+    def adapter_keys(track):
+        adir = os.path.join(REPO, track, "adapters")
+        if not os.path.isdir(adir):
+            return []
+        out = []
+        for fn in sorted(os.listdir(adir)):
+            if fn.endswith(".py") and not fn.startswith("_"):
+                try:
+                    txt = open(os.path.join(adir, fn), encoding="utf-8").read()
+                except Exception:
+                    continue
+                m = re.search(r'^KEY\s*=\s*["\'](.+?)["\']', txt, re.M)
+                if m:
+                    out.append(m.group(1))
+        return out
+
+    active = [("track-crypto", k) for k in adapter_keys("track-crypto")]
+    active += [("track-gov", k) for k in adapter_keys("track-gov")]
+    return active
+
+
+ACTIVE = _discover_sources()
+TRACK_KEY_FIELD = {"track-crypto": "sources", "track-gov": "channels"}
+TRACK_LABEL = {"track-crypto": "軌一", "track-gov": "軌二"}
 
 NAME_MAP = {
+    # 軌二（track-gov）
     "fsc_clarification": "金管會即時新聞澄清",
+    "fsc_lawnotice": "金管會法令函釋",
+    "fsc_penalty": "金管會裁罰案件",
     "moe_clarify": "教育部即時新聞澄清",
     "moj_press": "法務部新聞發布",
     "cbc_press": "中央銀行新聞稿",
@@ -41,12 +127,58 @@ NAME_MAP = {
     "mohw_press": "衛生福利部焦點新聞",
     "moe_press": "教育部即時新聞",
     "moea_press": "經濟部本部新聞",
+    "fda_clarify": "食藥署即時新聞澄清",
+    "ftc_decision": "公平會決議案件",
+    "pres_news": "總統府新聞稿",
+    "tpe_clarify": "台北市政府即時新聞澄清",
+    # 軌一（track-crypto）
     "x402_bazaar": "x402 協議掛牌",
     "cex_symbols": "交易所交易對",
     "vast_gpu": "vast.ai GPU 報價",
+    "agent_virtuals": "Virtuals Protocol agent 清單",
+    "airdrop_claim_pages": "空投領取頁面",
+    "audit_registry_certik": "CertiK 稽核登錄",
+    "cex_announcements": "交易所公告",
+    "cex_currency_status": "交易所幣別狀態",
+    "cex_earn_apr": "交易所理財年化利率",
+    "cex_symbols_ext": "交易所交易對（擴充）",
+    "cex_withdrawal_limits": "交易所提領限額",
+    "crypto_project_liveness": "加密專案存活狀態",
+    "dao_proposal_snapshot": "DAO 提案快照",
+    "defi_yield_rates": "DeFi 收益率",
+    "eth_validator_queue": "以太坊驗證者佇列",
+    "hf_trending_models": "HuggingFace 熱門模型",
+    "mcp_smithery": "MCP Smithery 註冊表",
+    "ofac_sanctions_crypto": "OFAC 加密制裁清單",
+    "openrouter_models": "OpenRouter 模型清單",
+    "openrouter_providers": "OpenRouter 供應商清單",
+    "oracle_feed_directory": "預言機餵價目錄",
+    "payment_protocol_repos": "支付協議程式庫",
+    "project_tokenomics_docs": "專案代幣經濟文件",
+    "x402_index_thirdparty": "x402 第三方索引",
 }
 
-DASH = "—"
+
+_DESC_CACHE = {}
+
+
+def adapter_desc(track, key):
+    """來源中文名以 adapter 自己的 DESC 常數為準（單一事實來源），
+    取第一個全形括號或逗號之前的短名；讀不到就回 None，由 NAME_MAP 兜底。"""
+    ck = (track, key)
+    if ck in _DESC_CACHE:
+        return _DESC_CACHE[ck]
+    name = None
+    try:
+        path = os.path.join(REPO, track, "adapters", key + ".py")
+        with open(path, "r", encoding="utf-8") as f:
+            m = re.search(r'^DESC\s*=\s*["\'](.+?)["\']', f.read(), re.M)
+        if m:
+            name = re.split(r'[（(,，]', m.group(1))[0].strip() or None
+    except Exception:
+        name = None
+    _DESC_CACHE[ck] = name
+    return name
 
 
 def safe(fn, default=None):
@@ -109,6 +241,12 @@ def fmt_secs(n):
         return f"{float(n):.1f}s"
     except Exception:
         return DASH
+
+
+def fmt_bool(v):
+    if v is None:
+        return DASH
+    return "是" if v else "否"
 
 
 def pct_change(today, yesterday):
@@ -213,63 +351,86 @@ def all_manifest_dates(track_dir):
 
 def build_source_table(today_str, yesterday_str):
     """
-    回傳 (rows, anomaly_count)
-    rows: list of dict，欄位：來源, 中文名, 今日筆數, 昨日筆數, 增減, 今日體積, 體積增減%, 耗時
+    回傳 (rows, anomaly_count)。
+    rows 涵蓋 `ACTIVE`（自動探索得到的全部來源，目前應為 42 個），逐一標註：
+    今日筆數／昨日筆數／增減／今日體積／體積增減%／耗時／嘗試次數／截斷／
+    解析失敗（parse_failed）／備註（缺 manifest 紀錄、抓取失敗原因等，
+    確保「截斷／解析器改版/抓取失敗」都明確列出、不靜默略過）。
+
+    anomaly_count 為本表自行統計的「ok=false 或 truncated=true 或
+    parse_failed=true」筆數，僅供本節內部參考；報告的官方異常總數改用
+    build_health_issues() 取得的 healthcheck 同源清單，兩者用途不同見
+    main() 內說明，避免同一件事被算兩次。
     """
     rows = []
-    anomalies = 0
+    anomaly_count = 0
 
-    crypto_dir = os.path.join(REPO, "track-crypto")
-    gov_dir = os.path.join(REPO, "track-gov")
+    track_dirs = {t: os.path.join(REPO, t) for t in TRACK_KEY_FIELD}
+    manifest_today = {t: load_manifest(d, today_str) for t, d in track_dirs.items()}
+    manifest_yday = {t: load_manifest(d, yesterday_str) for t, d in track_dirs.items()}
 
-    crypto_manifest_today = load_manifest(crypto_dir, today_str)
-    crypto_manifest_yday = load_manifest(crypto_dir, yesterday_str)
-    gov_manifest_today = load_manifest(gov_dir, today_str)
-    gov_manifest_yday = load_manifest(gov_dir, yesterday_str)
+    for track, key in ACTIVE:
+        key_field = TRACK_KEY_FIELD.get(track, "sources")
+        track_dir = track_dirs.get(track, os.path.join(REPO, track))
+        cn = adapter_desc(track, key) or NAME_MAP.get(key, key)
 
-    # 軌一：crypto，3 個來源
-    for src in CRYPTO_SOURCES:
-        cn = NAME_MAP.get(src, src)
-        today_n = None
-        today_bytes = None
-        secs = None
-        ok = None
+        m_today_container = (manifest_today.get(track) or {}).get(key_field) if manifest_today.get(track) else None
+        m_yday_container = (manifest_yday.get(track) or {}).get(key_field) if manifest_yday.get(track) else None
+        m_today = m_today_container.get(key) if isinstance(m_today_container, dict) else None
+        m_yday = m_yday_container.get(key) if isinstance(m_yday_container, dict) else None
 
-        m_today = None
-        if crypto_manifest_today and isinstance(crypto_manifest_today.get("sources"), dict):
-            m_today = crypto_manifest_today["sources"].get(src)
-        if m_today:
-            today_bytes = m_today.get("bytes")
-            secs = m_today.get("secs")
-            ok = m_today.get("ok")
+        today_bytes = m_today.get("bytes") if m_today else None
+        secs = m_today.get("secs") if m_today else None
+        ok = m_today.get("ok") if m_today else None
+        attempts = m_today.get("attempts") if m_today else None
+        truncated = m_today.get("truncated") if m_today else None
+        parse_failed = m_today.get("parse_failed") if m_today else None
 
-        # 筆數：crypto 從 stats.json 的 total 取
-        source_dir = os.path.join(crypto_dir, "data", src)
-        _, stats_path = latest_snapshot_for_date(source_dir, today_str)
-        if stats_path:
-            stats = safe(lambda: read_json(stats_path))
-            if stats:
-                today_n = stats.get("total")
+        yday_bytes = m_yday.get("bytes") if m_yday else None
 
-        yday_n = None
-        yday_source_dir = os.path.join(crypto_dir, "data", src)
-        _, yday_stats_path = latest_snapshot_for_date(yday_source_dir, yesterday_str)
-        if yday_stats_path:
-            yday_stats = safe(lambda: read_json(yday_stats_path))
-            if yday_stats:
-                yday_n = yday_stats.get("total")
+        # 筆數：軌二直接讀 manifest 的 n（stats.total 是 null，不可用）；
+        # 軌一目前 manifest 沒有 n 欄位，改讀當日快照的 stats.json 的 total。
+        if key_field == "channels":
+            today_n = m_today.get("n") if m_today else None
+            yday_n = m_yday.get("n") if m_yday else None
+        else:
+            today_n = None
+            source_dir = os.path.join(track_dir, "data", key)
+            _, stats_path = latest_snapshot_for_date(source_dir, today_str)
+            if stats_path:
+                stats = safe(lambda p=stats_path: read_json(p))
+                if stats:
+                    today_n = stats.get("total")
+            yday_n = None
+            _, yday_stats_path = latest_snapshot_for_date(source_dir, yesterday_str)
+            if yday_stats_path:
+                yday_stats = safe(lambda p=yday_stats_path: read_json(p))
+                if yday_stats:
+                    yday_n = yday_stats.get("total")
 
-        yday_bytes = None
-        if crypto_manifest_yday and isinstance(crypto_manifest_yday.get("sources"), dict):
-            m_yday = crypto_manifest_yday["sources"].get(src)
-            if m_yday:
-                yday_bytes = m_yday.get("bytes")
+        notes = []
+        if m_today is None:
+            container_exists = isinstance(m_today_container, dict)
+            if container_exists:
+                notes.append("今日 manifest 未列出此來源（可能新增 adapter 尚未跑過，或本次執行未涵蓋）")
+            else:
+                notes.append(f"今日（{today_str}）manifest 不存在或無法解析")
+        else:
+            if ok is False:
+                notes.append(f"抓取失敗：{m_today.get('error', '(manifest 未附錯誤訊息)')}")
+            if truncated:
+                items_fetched = m_today.get("items_fetched")
+                extra = f"，已取得 {fmt_num(items_fetched)} 筆" if items_fetched is not None else ""
+                notes.append(f"今日截斷（truncated=true{extra}，未跑滿目標筆數）")
+            if parse_failed:
+                notes.append("解析失敗（parse_failed=true，空正文守門攔截）")
 
-        if ok is False:
-            anomalies += 1
+        if ok is False or truncated or parse_failed:
+            anomaly_count += 1
 
         rows.append({
-            "來源": src,
+            "軌": TRACK_LABEL.get(track, track),
+            "來源": key,
             "中文名": cn,
             "今日筆數": fmt_num(today_n),
             "昨日筆數": fmt_num(yday_n),
@@ -277,59 +438,25 @@ def build_source_table(today_str, yesterday_str):
             "今日體積": fmt_bytes(today_bytes),
             "體積增減%": pct_change(today_bytes, yday_bytes),
             "耗時": fmt_secs(secs),
-            "軌": "軌一",
+            "嘗試": fmt_num(attempts) if attempts is not None else DASH,
+            "截斷": fmt_bool(truncated),
+            "解析失敗": fmt_bool(parse_failed),
+            "備註": "；".join(notes) if notes else "",
         })
 
-    # 軌二：gov，12 個機關，筆數一律讀 manifest 的 n（stats.total 是 null，不可用）
-    for ch in GOV_CHANNELS:
-        cn = NAME_MAP.get(ch, ch)
-        today_n = None
-        today_bytes = None
-        secs = None
-        ok = None
-
-        if gov_manifest_today and isinstance(gov_manifest_today.get("channels"), dict):
-            m_today = gov_manifest_today["channels"].get(ch)
-            if m_today:
-                today_n = m_today.get("n")
-                today_bytes = m_today.get("bytes")
-                secs = m_today.get("secs")
-                ok = m_today.get("ok")
-
-        yday_n = None
-        yday_bytes = None
-        if gov_manifest_yday and isinstance(gov_manifest_yday.get("channels"), dict):
-            m_yday = gov_manifest_yday["channels"].get(ch)
-            if m_yday:
-                yday_n = m_yday.get("n")
-                yday_bytes = m_yday.get("bytes")
-
-        if ok is False:
-            anomalies += 1
-
-        rows.append({
-            "來源": ch,
-            "中文名": cn,
-            "今日筆數": fmt_num(today_n),
-            "昨日筆數": fmt_num(yday_n),
-            "增減": diff_str(today_n, yday_n),
-            "今日體積": fmt_bytes(today_bytes),
-            "體積增減%": pct_change(today_bytes, yday_bytes),
-            "耗時": fmt_secs(secs),
-            "軌": "軌二",
-        })
-
-    return rows, anomalies
+    return rows, anomaly_count
 
 
 def render_source_table(rows):
-    header = "| 軌 | 來源 | 中文名 | 今日筆數 | 昨日筆數 | 增減 | 今日體積 | 體積增減% | 耗時 |"
-    sep = "|---|---|---|---|---|---|---|---|---|"
+    header = ("| 軌 | 來源 | 中文名 | 今日筆數 | 昨日筆數 | 增減 | 今日體積 | 體積增減% | "
+              "耗時 | 嘗試 | 截斷 | 解析失敗 | 備註 |")
+    sep = "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     lines = [header, sep]
     for r in rows:
         lines.append(
             f"| {r['軌']} | {r['來源']} | {r['中文名']} | {r['今日筆數']} | "
-            f"{r['昨日筆數']} | {r['增減']} | {r['今日體積']} | {r['體積增減%']} | {r['耗時']} |"
+            f"{r['昨日筆數']} | {r['增減']} | {r['今日體積']} | {r['體積增減%']} | {r['耗時']} | "
+            f"{r['嘗試']} | {r['截斷']} | {r['解析失敗']} | {r['備註']} |"
         )
     return "\n".join(lines)
 
@@ -366,42 +493,63 @@ def parse_detect_log_last_round(path):
     return block, summary
 
 
+# 一般改寫/下架/新增行；「下架」欄位可能是數字，也可能因本日快照截斷而是
+# 「截斷，不判定」（detect_changes.py 的 skip_removed 分支）——舊版 regex
+# 只認數字，截斷當天的這行會整行比對失敗、被「無法辨識」機制悄悄吃掉
+# （2026-08-31 實證：fda_clarify／moj_press／tpe_clarify 皆屬此況），
+# 這裡改成兩種都能比對到。
 CHANGE_LINE_RE = re.compile(
     r"^(?P<key>[^:]+): (?P<d1>\d{4}-\d{2}-\d{2})→(?P<d2>\d{4}-\d{2}-\d{2}) "
-    r"改寫(?P<changed>\d+) 下架(?P<removed>\d+) 新增(?P<added>\d+)"
-    r"(?:（另有 (?P<rolled>\d+) 筆滾動移出視窗，不計為下架）)?$"
+    r"改寫(?P<changed>\d+) 下架(?P<removed>截斷，不判定|\d+) 新增(?P<added>\d+)"
+    r"(?:（另有 (?P<rolled>\d+) 筆滾動移出視窗，不計為下架）)?"
+    r"(?P<trunc_marker>（⚠️ 本日快照截斷，下架判定已跳過）)?$"
 )
 SKIP_LINE_RE = re.compile(r"^(?P<key>[^:]+): 快照不足 2 份，略過$")
+# 解析器改版時 detect_changes.py 會整批跳過比對（避免假警報），舊版沒有對應
+# regex，這種行也會被「無法辨識」機制悄悄吃掉（2026-08-31 實證：moi_press／
+# ey_press／fsc_clarification／moda_press 皆曾出現）。
+PARSER_SKIP_LINE_RE = re.compile(
+    r"^(?P<key>[^:]+): 解析器版本 (?P<v1>\S+)→(?P<v2>\S+)，跳過本次比對（非內容改寫）$"
+)
 SUMMARY_LINE_RE = re.compile(r"^SUMMARY changed=(?P<changed>\d+) removed=(?P<removed>\d+)$")
 
 
 def parse_change_detection_rows(block):
-    """把 detect.log 一輪的行解析成結構化資料：(rows, skipped_keys, summary_dict)。"""
+    """把 detect.log 一輪的行解析成結構化資料：
+    (rows, skipped_keys, parser_skipped, summary_dict)。"""
     rows = []
     skipped = []
+    parser_skipped = []
     summary = None
     for line in block:
         m = CHANGE_LINE_RE.match(line)
         if m:
+            truncated_line = m.group("removed") == "截斷，不判定"
             rows.append({
                 "來源": m.group("key"),
                 "區間": f"{m.group('d1')}→{m.group('d2')}",
                 "改寫": int(m.group("changed")),
-                "下架": int(m.group("removed")),
+                "下架": "N/A（截斷）" if truncated_line else int(m.group("removed")),
+                "下架數值": 0 if truncated_line else int(m.group("removed")),
                 "新增": int(m.group("added")),
                 "滾動移出": int(m.group("rolled")) if m.group("rolled") else 0,
+                "截斷": truncated_line,
             })
             continue
         m = SKIP_LINE_RE.match(line)
         if m:
             skipped.append(m.group("key"))
             continue
+        m = PARSER_SKIP_LINE_RE.match(line)
+        if m:
+            parser_skipped.append((m.group("key"), m.group("v1"), m.group("v2")))
+            continue
         m = SUMMARY_LINE_RE.match(line)
         if m:
             summary = {"changed": int(m.group("changed")), "removed": int(m.group("removed"))}
             continue
         # 無法辨識的行：忽略但不崩潰
-    return rows, skipped, summary
+    return rows, skipped, parser_skipped, summary
 
 
 def render_change_table(rows):
@@ -414,7 +562,7 @@ def render_change_table(rows):
             f"| {r['來源']} | {r['區間']} | {r['改寫']} | {r['下架']} | {r['新增']} | {r['滾動移出']} |"
         )
         total_changed += r["改寫"]
-        total_removed += r["下架"]
+        total_removed += r["下架數值"]
         total_added += r["新增"]
         total_rolled += r["滾動移出"]
     lines.append(f"| **總計** |  | {total_changed} | {total_removed} | {total_added} | {total_rolled} |")
@@ -426,18 +574,30 @@ def build_change_detection_section():
     detect_log = os.path.join(REPO, "logs", "detect.log")   # 實際位置在 repo 根的 logs/，不在 track-gov/logs/
     block, _unused_summary = safe(lambda: parse_detect_log_last_round(detect_log), (None, None))
     if block:
-        rows, skipped, summary = safe(lambda: parse_change_detection_rows(block), ([], [], None))
+        rows, skipped, parser_skipped, summary = safe(
+            lambda: parse_change_detection_rows(block), ([], [], [], None))
         if rows:
             lines.append("最近一輪變動偵測：")
             lines.append("")
             lines.append(render_change_table(rows))
+            truncated_keys = [r["來源"] for r in rows if r.get("截斷")]
+            if truncated_keys:
+                lines.append("")
+                lines.append(
+                    "⚠️ 以下來源今日快照截斷（truncated=true），下架判定已跳過、"
+                    "非「零下架」：" + "、".join(truncated_keys))
         if skipped:
             lines.append("")
             lines.append("略過（快照不足 2 份）：" + "、".join(skipped))
+        if parser_skipped:
+            lines.append("")
+            lines.append(
+                "因解析器改版跳過本次比對（非內容改寫，非異常）：" +
+                "、".join(f"{k}（v{v1}→v{v2}）" for k, v1, v2 in parser_skipped))
         if summary:
             lines.append("")
             lines.append(f"本輪彙總：changed={summary.get('changed', DASH)}，removed={summary.get('removed', DASH)}。")
-        if not rows and not skipped and not summary:
+        if not rows and not skipped and not parser_skipped and not summary:
             lines.append("`logs/detect.log` 有內容但無法解析任何一行，原始內容如下：")
             lines.append("")
             lines.append("```")
@@ -553,17 +713,22 @@ def build_cron_section(today_str):
     今日是否執行：改用 manifest 的 fetched_at 欄位判斷（可靠的 UTC 時間戳），
     不再用 cron.log 最後一個摘要列判斷（cron.log 只 append、無日期欄位，不可靠）。
     cron.log 僅用來取「耗時」與歷史成功率比較，以及與 manifest 來源數互相對照。
+
+    本節統計的「疑似問題」數字（回傳值第二項）僅供本節內部參考，
+    不計入報告的官方異常總數（見 main() 說明），避免與 healthcheck 判定重複計數。
     """
     lines = []
     anomalies = 0
     for track, label, key_field, expected_sources in [
-        ("track-crypto", "軌一（track-crypto）", "sources", CRYPTO_SOURCES),
-        ("track-gov", "軌二（track-gov）", "channels", GOV_CHANNELS),
+        ("track-crypto", "軌一（track-crypto）", "sources",
+         [k for t, k in ACTIVE if t == "track-crypto"]),
+        ("track-gov", "軌二（track-gov）", "channels",
+         [k for t, k in ACTIVE if t == "track-gov"]),
     ]:
         track_dir = os.path.join(REPO, track)
         log_path = os.path.join(track_dir, "logs", "cron.log")
         info = safe(lambda lp=log_path: parse_cron_log(lp, None), {"today_found": False, "today_summary": None, "history": []})
-        lines.append(f"**{label}**：")
+        lines.append(f"**{label}**（自動探索到 {len(expected_sources)} 個來源）：")
 
         manifest_today = safe(lambda td=track_dir: load_manifest(td, today_str))
         fetched_date = manifest_fetched_at_date(manifest_today)
@@ -573,6 +738,10 @@ def build_cron_section(today_str):
         if manifest_today is not None and fetched_date == today_str:
             count_str = channel_count if channel_count is not None else DASH
             lines.append(f"- 今日已執行（依 manifest `fetched_at`={fetched_date} 判斷），manifest 記錄 {count_str} 個來源。")
+            if channel_count is not None and channel_count < len(expected_sources):
+                lines.append(
+                    f"- ⚠️ manifest 來源數（{channel_count}）少於目前已部署的 adapter 數（{len(expected_sources)}），"
+                    f"可能有新增來源尚未執行過，或本次執行未涵蓋全部來源。")
             if runs:
                 lines.append(f"- manifest 由 {len(runs)} 次執行合併寫入（`runs` 陣列）。")
         elif manifest_today is not None:
@@ -724,12 +893,45 @@ def build_alert_section():
     return "\n".join(lines), any_alert
 
 
-def main():
-    now_utc = datetime.now(UTC)
-    now_tpe = now_utc.astimezone(TPE)
+def build_health_issues():
+    """呼叫 healthcheck.py 產生 ALERT.md 所用的**同一套**唯讀判定函式，
+    取得 (issues, pending)。這是本報告「官方異常總數」的唯一依據，
+    確保與 ALERT.md 逐項一致（同一套邏輯，同一份程式碼路徑）。
+    healthcheck.py 載入失敗時回傳 (None, None)，呼叫端要能處理。"""
+    if healthcheck is None:
+        return None, None
+    issues = []
+    pending = []
+    try:
+        healthcheck.check_timestamps(issues)
+        for track in ("track-crypto", "track-gov"):
+            healthcheck.check_manifest(track, issues, pending)
+            healthcheck.check_truncation_streak(track, issues)
+        for track, key in healthcheck.ACTIVE:
+            healthcheck.check_source(track, key, issues, pending)
+    except Exception:
+        return None, None
+    return issues, pending
 
-    today_str = now_utc.strftime("%Y-%m-%d")
-    yesterday_str = (now_utc - timedelta(days=1)).strftime("%Y-%m-%d")
+
+def render_health_issues_table(issues):
+    header = "| 來源 | 問題（與 healthcheck.py / ALERT.md 同一套判定） |"
+    sep = "|---|---|"
+    lines = [header, sep]
+    for a, b in issues:
+        lines.append(f"| `{a}` | {b} |")
+    return "\n".join(lines)
+
+
+def main():
+    if healthcheck is not None:
+        now_utc = healthcheck.NOW_UTC
+        today_str = healthcheck.TODAY
+    else:
+        now_utc = datetime.now(UTC)
+        today_str = now_utc.strftime("%Y-%m-%d")
+    now_tpe = now_utc.astimezone(TPE)
+    yesterday_str = (date.fromisoformat(today_str) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     sections = []
 
@@ -740,24 +942,28 @@ def main():
     cex_section, cex_count = safe(lambda: build_cex_events_section(today_str), ("無法讀取交易所事件。", 0))
     change_section = safe(build_change_detection_section, "無法讀取變動偵測紀錄。")
     cumulative_section = safe(build_cumulative_stats, "無法計算累積統計。")
+    health_issues, health_pending = safe(build_health_issues, (None, None))
 
-    total_anomalies = 0
-    try:
-        total_anomalies += int(source_anomalies or 0)
-    except Exception:
-        pass
-    try:
-        total_anomalies += int(cron_anomalies or 0)
-    except Exception:
-        pass
-    try:
-        total_anomalies += int(ts_missing or 0)
-    except Exception:
-        pass
-    if has_alert:
-        total_anomalies += 1
+    # 官方異常總數：優先採用與 healthcheck.py／ALERT.md 完全相同的判定結果
+    # （見 build_health_issues 說明）。只有在 healthcheck.py 無法載入／執行時
+    # （理論上不應發生，屬防禦性後備），才退回舊版的加總方式，並在結論註明
+    # 這是後備估計值，避免程式崩潰或報告開天窗。
+    if health_issues is not None:
+        total_anomalies = len(health_issues)
+        anomaly_source_note = "（與 ALERT.md 採同一套 healthcheck.py 判定邏輯，逐項一致）"
+    else:
+        total_anomalies = 0
+        for v in (source_anomalies, cron_anomalies, ts_missing):
+            try:
+                total_anomalies += int(v or 0)
+            except Exception:
+                pass
+        if has_alert:
+            total_anomalies += 1
+        anomaly_source_note = "（⚠️ healthcheck.py 無法載入，改用本檔後備估計，可能與 ALERT.md 不一致，請人工核對）"
 
-    conclusion = "一切正常。" if total_anomalies == 0 else f"有 {total_anomalies} 項異常，詳見下方各節。"
+    conclusion = ("一切正常。" if total_anomalies == 0
+                  else f"有 {total_anomalies} 項異常{anomaly_source_note}，詳見下方各節。")
 
     sections.append(f"# 每日資料蒐集報告\n")
     sections.append(
@@ -765,10 +971,18 @@ def main():
         f"（台北時間 {now_tpe.strftime('%Y-%m-%d %H:%M:%S')} UTC+8）\n"
     )
     sections.append(f"## 一句話結論\n\n{conclusion}\n")
+    sections.append(
+        f"（本輪自動探索到 {len(ACTIVE)} 個來源：軌一 "
+        f"{len([1 for t, _ in ACTIVE if t == 'track-crypto'])} 個、軌二 "
+        f"{len([1 for t, _ in ACTIVE if t == 'track-gov'])} 個；新增來源不需再修改本程式。）\n"
+    )
 
     sections.append("## 來源對照表\n")
     sections.append(render_source_table(rows) if rows else "無法讀取來源資料。")
-    sections.append("")
+    sections.append(
+        "\n註：本表「截斷」「解析失敗」欄位標記的來源屬於資料品質提示；"
+        "官方異常總數以下方〈異常摘要〉為準，避免同一件事重複計數。\n"
+    )
 
     sections.append("## 變動偵測\n")
     sections.append(change_section)
@@ -791,6 +1005,28 @@ def main():
     sections.append("")
 
     sections.append("## 異常摘要\n")
+    if health_issues is not None:
+        sections.append(
+            f"以下 {len(health_issues)} 項為官方異常清單，判定邏輯直接呼叫 "
+            f"`healthcheck.py` 的 `check_timestamps`／`check_manifest`／"
+            f"`check_truncation_streak`／`check_source`（唯讀，本檔不寫入 ALERT.md），"
+            f"與當日 ALERT.md 逐項一致：\n"
+        )
+        if health_issues:
+            sections.append(render_health_issues_table(health_issues))
+        else:
+            sections.append("（無異常）")
+        if health_pending:
+            sections.append("")
+            sections.append(f"另有 {len(health_pending)} 項尚在排程寬限期內（非異常）：")
+            sections.append("")
+            sections.append("| 來源 | 狀態 |")
+            sections.append("|---|---|")
+            for a, b in health_pending:
+                sections.append(f"| `{a}` | {b} |")
+        sections.append("")
+        sections.append("以下為 ALERT.md 等檔案的原始內容（供交叉核對）：")
+        sections.append("")
     sections.append(alert_section)
     sections.append("")
 
