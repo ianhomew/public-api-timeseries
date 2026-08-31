@@ -1,155 +1,567 @@
-# 來源細節
+# 來源細節（草稿）
 
-回上層：[README](../README.md)　｜　相關：[data-format.md](data-format.md)、[why.md](why.md)
+回上層：[README](../README.md)　｜　相關：[track-gov-README.md](track-gov-README.md)、[DOC-DIFF.md](DOC-DIFF.md)
 
-所有筆數與體積為 **2026-08-27（UTC）** 快照實測值，除非另外標註日期。
+> 本檔為**本機草稿**，未上傳、未 commit。用途：把 `docs/sources.md` 更新到目前 VPS 上實際存在的 **42 個 adapter**
+> （`track-crypto/adapters/` 24 個 + `track-gov/adapters/` 18 個）。
 
-## track-crypto
+資料來源：2026-08-31 直接讀取 VPS `/home/agentops/snap/public-api-timeseries/{track-crypto,track-gov}/adapters/*.py` 原始碼，
+欄位取自各檔案內的 `KEY`／`DESC`／`SOURCE_HOME`／`ROBOTS_VERIFIED`／`PARSER_VERSION`／`MAX_ITEMS`／`MAX_PAGES` 等常數，
+以及 VPS `crontab -l` 的排程設定。**缺的欄位一律標「未記載」，不臆造。**
 
-抓取程式：`track-crypto/scripts/snap_crypto.py`
+## 抓取頻率（全部來源共通）
 
-### `x402_bazaar`
+依 VPS `crontab -l`（2026-08-31 查核）：
+
+| 項目 | 排程（台北時間） | 執行程式 |
+|---|---|---|
+| `track-crypto`（24 個來源） | 每日 09:00 | `track-crypto/scripts/snap_crypto.py` |
+| `track-gov`（18 個來源） | 每日 09:30（`flock -w 1800` 等抓取鎖，最多等 30 分鐘） | `track-gov/scripts/snap_gov.py` |
+| git push | 每日 11:30（`flock -w 7200`，最多等 2 小時） | `scripts/push.sh` |
+
+每個來源**每日僅抓取一輪**，同一 track 內部無來源別排程差異；`fetch()` 請求間隔固定 1 秒。
+
+## track-crypto（24 個來源）
+
+抓取程式：`track-crypto/scripts/snap_crypto.py`（自動載入 `track-crypto/adapters/*.py`）
+
+> 已停抓來源 `mcp_registry`（2026-08-27 起停止，已抓資料保留）**不計入本次 24 個**，
+> 因其 adapter 檔已不在 `track-crypto/adapters/` 目錄下（沿用既有文件記載，本輪未重新驗證，見下方 DOC-DIFF）。
+
+### `agent_virtuals`
 
 | 項目 | 值 |
 |---|---|
-| 端點 | `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` |
-| 分頁 | `limit=1000` + `offset`，一輪約 16 次請求 |
-| 筆數 | 14,755（2026-08-26 為 15,122） |
-| 壓縮後 | 6,045,267 B |
-| 耗時 | 約 52 秒 |
-| robots.txt | 無（回 404） |
-| 已知限制 | 回應為賣家自報內容，本專案不驗證其真偽 |
+| 中文名／內容 | Virtuals Protocol agent 清單 |
+| 程式內 DESC | Virtuals Protocol agent 清單（精簡欄位：id/status/tokenAddress 等，用於偵測代幣消失與狀態變更） |
+| 端點 | `https://api.virtuals.io/api/virtuals?pagination[page]=N&pagination[pageSize]=500` |
+| parser_version | 2 |
+| MAX_ITEMS／等效上限 | MAX_PAGES=200 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.virtuals.io/robots.txt：Content-Signal 格式，search=yes（預設）, ai-train=no；User-agent: * 未見路徑 Disallow |
+| 實測值（2026-08-31 UTC） | 36,000 筆（官方回報總數 82,317 筆；`truncated=true`，600 秒時間預算截斷於第 72/165 頁，屬預期降級非異常）；887,296 B（約 867 KB）；耗時 608.7s；已累積天數 4 天（2026-08-28～08-31） |
+
+### `airdrop_claim_pages`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 空投資格規則頁（Starknet Provisions） |
+| 程式內 DESC | 空投資格規則頁（本輪僅收錄 Starknet Provisions 地區限制規則頁，見模組說明） |
+| 端點 | `https://www.starknet.io/provisions-geo-regulations/` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.starknet.io/robots.txt：HTTP 200，User-agent: * 的 Disallow 清單（查詢參數、/wp-admin、/tag/ 等）未涵蓋 /provisions-geo-regulations/，允許存取 |
+
+### `audit_registry_certik`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | CertiK Skynet 首頁「Recently Audited」清單 |
+| 程式內 DESC | CertiK Skynet 首頁「Recently Audited」最新審計清單（僅約 8 筆，非完整審計資料庫，見模組說明） |
+| 端點 | `https://skynet.certik.com/` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MIN_ITEMS=3（驗收下限，非上限） |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://skynet.certik.com/robots.txt：HTTP 200，User-agent: * 為 Allow: /，但 Disallow: /api/、/my/、/mobile/；本 adapter 只抓首頁 / 本體，未觸碰 /api/ |
+
+### `cex_announcements`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 交易所公告（標題／URL／時間／分類） |
+| 程式內 DESC | 交易所公告（新幣上架等分類），僅存標題/URL/時間/分類，不存全文 |
+| 端點（共 4 個） | `https://www.binance.com/bapi/composite/v1/public/cms/article/list/query`；`https://api.bybit.com/v5/announcements/index`；`https://www.okx.com/api/v5/support/announcements`；`https://api-manager.upbit.com/api/v1/announcements` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書實測結論：www.binance.com 此 API 路徑本輪未被 WAF 攔截（但主機同時存在會被 WAF 擋的頁面，每次改版須重新確認）；api.bybit.com、www.okx.com 本輪正常回應；api-manager.upbit.com 本輪撞到 HTTP 429，限流比 api.upbit.com 更嚴格，未親驗 robots.txt 內容（見已知的坑） |
+
+### `cex_currency_status`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 交易所幣種層級狀態旗標 |
+| 程式內 DESC | 交易所幣種層級狀態旗標（Gate delisted／Coinbase status），HTX 沿用既有 cex_symbols 欄位 |
+| 端點（共 2 個） | `https://api.gateio.ws/api/v4/spot/currencies`；`https://api.exchange.coinbase.com/currencies` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：Gate api.gateio.ws/robots.txt 未見 Disallow；Coinbase Exchange api.exchange.coinbase.com/robots.txt 回 401 Unauthorized（與 A6 相同的不尋常行為，但 /currencies 資料端點本輪實測不需認證、正常回 200） |
+
+### `cex_earn_apr`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | CEX 理財年化率 |
+| 程式內 DESC | CEX 理財年化率（Bybit 活期理財 FlexibleSaving／OKX 借貸利率總覽） |
+| 端點（共 2 個） | `https://api.bybit.com/v5/earn/product?category=FlexibleSaving`；`https://www.okx.com/api/v5/finance/savings/lending-rate-summary` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：api.bybit.com、www.okx.com 本輪皆正常回應 200，規格書已列出實測筆數（Bybit 229 筆／OKX 169 筆），本 adapter 實作時另行親驗 robots.txt。 |
 
 ### `cex_symbols`
 
 | 項目 | 值 |
 |---|---|
-| 交易所 | bybit、okx、bitget、htx、gateio、kucoin、mexc（共 **7** 家） |
-| 筆數 | 合計 10,744 |
-| 壓縮後 | 407,121 B |
-| 耗時 | 約 13 秒 |
-| 已排除 | **Binance**（robots.txt 全站 `Disallow: /`） |
+| 中文名／內容 | 7 家 CEX 交易對／幣種狀態 |
+| 程式內 DESC | 7 家 CEX 交易對／幣種狀態（Bybit／OKX／Bitget／HTX／Gate／KuCoin／MEXC） |
+| 端點（共 7 個） | `https://api.bybit.com/v5/market/instruments-info?category=spot`；`https://www.okx.com/api/v5/public/instruments?instType=SPOT`；`https://api.bitget.com/api/v2/spot/public/symbols`；`https://api.huobi.pro/v1/common/symbols`；`https://api.gateio.ws/api/v4/spot/currency_pairs`；`https://api.kucoin.com/api/v2/symbols`；`https://api.mexc.com/api/v3/exchangeInfo` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：api.bybit.com/robots.txt HTTP 404（無限制）；www.okx.com/robots.txt HTTP 200，User-agent: * 的 Disallow 清單未涵蓋 /api/v5/public/instruments（允許）；api.bitget.com/robots.txt HTTP 403（略過，沿用既有實作已在抓取的行為，未變更）；api.huobi.pro/robots.txt HTTP 404（無限制）；api.gateio.ws/robots.txt HTTP 404（無限制）；api.kucoin.com/robots.txt HTTP 404（無限制）；api.mexc.com/robots.txt HTTP 404（無限制）。Binance 沿用既有實作排除（既有程式碼註記：robots 全站 Disallow），本輪未重新驗證 Binance，維持既有排除決定 |
 
-各交易所端點：
+### `cex_symbols_ext`
 
-| 交易所 | 端點 | 2026-08-27 筆數 |
-|---|---|---|
-| bybit | `api.bybit.com/v5/market/instruments-info?category=spot` | 546 |
-| okx | `www.okx.com/api/v5/public/instruments?instType=SPOT` | 1,383 |
-| bitget | `api.bitget.com/api/v2/spot/public/symbols` | 1,296 |
-| htx | `api.huobi.pro/v1/common/symbols` | 2,159 |
-| gateio | `api.gateio.ws/api/v4/spot/currency_pairs` | 2,231 |
-| kucoin | `api.kucoin.com/api/v2/symbols` | 1,006 |
-| mexc | `api.mexc.com/api/v3/exchangeInfo` | 2,123 |
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 再 3 家 CEX 交易對清單（Kraken／Coinbase Exchange／Upbit） |
+| 程式內 DESC | 新增 3 家交易所（Kraken／Coinbase Exchange／Upbit）交易對清單，擴充既有 cex_symbols |
+| 端點（共 3 個） | `https://api.kraken.com/0/public/AssetPairs`；`https://api.exchange.coinbase.com/products`；`https://api.upbit.com/v1/market/all` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：Kraken api.kraken.com/robots.txt 無限制；Coinbase Exchange api.exchange.coinbase.com/robots.txt 回 401 Unauthorized（不尋常，但資料端點 /products 本身本輪實測不需認證、正常回 200，每次改版建議重新確認）；Upbit api.upbit.com/robots.txt 未見 Disallow（該站另一子網域 api-manager.upbit.com 對高頻請求會回 429，已於本 adapter 對 Upbit 使用較保守的 sleep） |
 
-已知限制：bybit、okx、mexc 只回傳存活標的，回應中不含下架紀錄。
+### `cex_withdrawal_limits`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | KuCoin 幣種提幣費與最低提幣額 |
+| 程式內 DESC | KuCoin 幣種提幣費與最低提幣額（含各鏈參數） |
+| 端點 | `https://api.kucoin.com/api/v3/currencies` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MIN_ITEMS=1500（驗收下限，非上限） |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.kucoin.com/robots.txt：404（無 robots.txt，視為無限制） |
+
+### `crypto_project_liveness`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | DefiLlama 駭客事件清單 |
+| 程式內 DESC | DefiLlama 駭客事件清單（死亡監控資料面；網域存活監控面本輪列為未實作，見模組說明） |
+| 端點 | `https://api.llama.fi/hacks` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MIN_ITEMS=300（驗收下限，非上限） |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.llama.fi/robots.txt：HTTP 404（無 robots.txt，視為無限制） |
+
+### `dao_proposal_snapshot`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | Snapshot DAO 提案中繼資料 |
+| 程式內 DESC | Snapshot DAO 提案中繼資料快照（用於偵測提案被管理員刪除，不存投票紀錄） |
+| 端點 | `https://hub.snapshot.org/graphql` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_PAGES=5；MIN_ITEMS=1（驗收下限，非上限） |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://hub.snapshot.org/robots.txt：60B 版本號 JSON banner（非傳統 robots.txt 格式，無路徑限制內容，依慣例視同無限制） |
+
+### `defi_yield_rates`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | LST/LRT 質押與 DeFi 借貸利率 |
+| 程式內 DESC | LST/LRT 質押與 DeFi 借貸利率（Lido／Rocket Pool／Ethena／Sky，四個原始回應各自一個子 key） |
+| 端點（共 4 個） | `https://eth-api.lido.fi/v1/protocol/steth/apr/last`；`https://api.rocketpool.net/api/mainnet/payload`；`https://app.ethena.fi/api/yields/protocol-and-staking-yield`；`https://info-sky.blockanalitica.com/api/v1/overall/` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：四個端點本輪皆正常回應 200（Lido 137B／Rocket Pool 1,379B／Ethena 448B／Sky 1,084B），本 adapter 實作時另行親驗 robots.txt。 |
+
+### `eth_validator_queue`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 以太坊驗證者進出隊列各狀態筆數 |
+| 程式內 DESC | 以太坊驗證者進出隊列各狀態筆數（pending_queued／pending_initialized／active_exiting／exited_unslashed），僅存計數不存個別公鑰 |
+| 端點 | `https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/states/head/validators?status={status}` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：ethereum-beacon-api.publicnode.com 本輪 4 個 status 皆正常回應 200，本 adapter 實作時另行親驗 robots.txt。 |
+
+### `hf_trending_models`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | HuggingFace trending 模型清單 |
+| 程式內 DESC | HuggingFace trending 模型清單（id / likes / downloads / trendingScore 等） |
+| 端點 | `https://huggingface.co/api/models?sort=trendingScore&limit=1000` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MIN_ITEMS=500（驗收下限，非上限） |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://huggingface.co/robots.txt：HTTP 200，User-Agent: * / Allow: / （全站無 Disallow） |
+
+### `mcp_smithery`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | Smithery MCP 註冊表 |
+| 程式內 DESC | Smithery MCP 註冊表（依 API 預設排序前段可見範圍，非全量；覆蓋率實測約 271 筆 / 官方宣稱總數約 10,916 筆，約 2.5%。API 硬性只能翻到第 5 頁，且跨頁排序會漂移造成大量重疊，271 筆左右是去重後可拿到的實際上限，非人為限量） |
+| 端點 | `https://registry.smithery.ai/servers?page=N&pageSize=100` |
+| parser_version | 2 |
+| MAX_ITEMS／等效上限 | MAX_PAGE=5；MIN_ITEMS=200（驗收下限，非上限） |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://registry.smithery.ai/robots.txt：Content-Signal 格式，User-agent: * 未見 Disallow（一般語意為 Allow: /），僅具名爬蟲黑名單（ClaudeBot/GPTBot/CCBot 等 token）才會被排除；本 adapter 使用的 UA 字串不含這些具名 token |
+| 實測值（2026-08-31 UTC） | 271 筆（官方回報總數約 11,103 筆，覆蓋率約 2.4%；端點硬性只能翻到第 5 頁，跨頁排序漂移，271 筆為去重後可得上限，非人為限量）；83,890 B（約 82 KB）；耗時 6.8s；已累積天數 4 天（2026-08-28～08-31） |
+
+### `ofac_sanctions_crypto`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | OFAC SDN 制裁名單（美國財政部） |
+| 程式內 DESC | OFAC SDN 制裁名單（美國財政部），含內嵌於 Remarks 的加密貨幣地址欄位 |
+| 端點 | `https://www.treasury.gov/ofac/downloads/sdn.csv` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：www.treasury.gov/robots.txt 回 HTTP 200 但為一般 HTML 頁面（78,495B，非傳統 robots.txt 格式，無法解析出 Disallow 規則，依慣例視同無限制）；sanctionslistservice.ofac.treas.gov/robots.txt 回 404（無限制，備選端點未採用）；已另外實測確認 /ofac/downloads/sdn.csv 本身可直接 200 下載，不會被導向首頁 |
+
+### `openrouter_models`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | OpenRouter 全模型清單與定價 |
+| 程式內 DESC | OpenRouter 全模型清單與定價（id / pricing / context_length 等） |
+| 端點 | `https://openrouter.ai/api/v1/models` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://openrouter.ai/robots.txt：HTTP 200，User-Agent: * / Allow: / / Disallow: /seo/ （只擋 /seo/，不影響 /api/v1/models） |
+
+### `openrouter_providers`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | OpenRouter 供應商清單 |
+| 程式內 DESC | OpenRouter 供應商清單（隱私政策 / 服務條款 / 資料中心地點等） |
+| 端點 | `https://openrouter.ai/api/v1/providers` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://openrouter.ai/robots.txt：HTTP 200，User-Agent: * / Allow: / / Disallow: /seo/ （同 openrouter_models，同一主機） |
+
+### `oracle_feed_directory`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | Chainlink／Pyth 價格餵送目錄 |
+| 程式內 DESC | Chainlink／Pyth 價格餵送目錄（目前存在哪些餵送，供下游逐日比對集合差集） |
+| 端點（共 2 個） | `https://reference-data-directory.vercel.app/feeds-mainnet.json`；`https://hermes.pyth.network/v2/price_feeds` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：兩個托管網域的 robots.txt 皆為 404（視為無限制），本輪皆正常回應 200（Chainlink 292 筆／Pyth 1,843 筆），本 adapter 實作時另行親驗 robots.txt。 |
+
+### `payment_protocol_repos`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 支付協議規格版本 GitHub Repo 中繼資料 |
+| 程式內 DESC | 支付協議規格版本 GitHub Repo 中繼資料（x402／AP2／L402，含併入的 B3） |
+| 端點（共 3 個） | `https://api.github.com/repos/x402-foundation/x402`；`https://api.github.com/repos/google-agentic-commerce/AP2`；`https://api.github.com/repos/lightninglabs/L402` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.github.com/robots.txt：HTTP 404（無限制） |
+
+### `project_tokenomics_docs`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | 專案官方 tokenomics 文件頁 |
+| 程式內 DESC | 專案官方 tokenomics 文件頁（本輪僅收錄 Arbitrum Foundation 空投分配文件，見模組說明） |
+| 端點 | `https://docs.arbitrum.foundation/airdrop-eligibility-distribution` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://docs.arbitrum.foundation/robots.txt：HTTP 404（該站沒有 robots.txt，視為無限制；根路徑本身可正常存取，非封鎖造成的 404） |
 
 ### `vast_gpu`
 
 | 項目 | 值 |
 |---|---|
-| 端點 | `https://console.vast.ai/api/v0/bundles/`（`type=on-demand`，依 `dph_total` 遞增排序） |
-| 筆數 | 512 |
-| 壓縮後 | 173,851 B |
-| 耗時 | 約 2 秒 |
-| robots.txt | `Allow: /` |
-| 已知限制 | **未帶 API 金鑰時端點只回 64 筆**。2026-08-26 快照即為 64 筆；2026-08-27 起改用金鑰認證，回 512 筆。快照中的 `_authenticated` 欄位記錄該次是否認證。 |
+| 中文名／內容 | Vast.ai GPU 租賃市場報價 |
+| 程式內 DESC | Vast.ai GPU 租賃市場報價（on-demand bundles，依 dph_total 由低到高排序） |
+| 端點 | `https://console.vast.ai/api/v0/bundles/` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://console.vast.ai/robots.txt：HTTP 200，User-agent: * / Allow: /（全站無 Disallow） |
 
-### `mcp_registry`（已停抓）
+### `x402_bazaar`
 
 | 項目 | 值 |
 |---|---|
-| 端點 | `https://registry.modelcontextprotocol.io/v0/servers` |
-| 最後一份快照 | 2026-08-26，82,612 筆，6,625,684 B |
-| 停抓日 | 2026-08-27 |
-| 停抓理由 | 官方支援 `updated_since`，且單日快照即含多版本，逐日快照的邊際資訊近乎零。該來源佔當日抓取時間 946.9 秒（約 93%）。詳見 [revisions.md](revisions.md) |
+| 中文名／內容 | x402 Bazaar 全量掛牌 |
+| 程式內 DESC | x402 Bazaar 全量掛牌（Coinbase CDP x402 discovery API，分頁抓完） |
+| 端點 | `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.cdp.coinbase.com/robots.txt：HTTP 404（無 robots.txt，視為無限制；與既有 track-crypto/scripts/snap_crypto.py 沿用至今的抓取行為一致） |
 
-已抓資料保留不刪。
+### `x402_index_thirdparty`
 
-## track-gov
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | x402scan 第三方索引 sitemap URL 清單 |
+| 程式內 DESC | x402scan 第三方索引 sitemap URL 清單（僅涵蓋約官方 x402 Bazaar 掛牌數的 6.8%，屬輔助視角非核心資料源） |
+| 端點 | `https://www.x402scan.com/sitemap.xml` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載 |
+| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.x402scan.com/robots.txt：Allow: /，Content-Signal: search=yes, ai-train=no, ai-input=yes |
+| 實測值（2026-08-31 UTC） | 1,044 個 URL（`/server/` 前綴 1,000 個，約為同日 `x402_bazaar` 官方掛牌數 14,410 筆的 6.9%）；23,431 B（約 23 KB）；耗時 1.5s；已累積天數 4 天（2026-08-28～08-31） |
+
+## track-gov（18 個來源）
 
 抓取程式：`track-gov/scripts/snap_gov.py`（自動載入 `track-gov/adapters/*.py`）
 
-一個機關一支 adapter。每份快照的 `_meta` 內含該來源的 `robots_verified` 親驗紀錄。
-每筆欄位：`id`、`url`、`title`、`date`、`body_text`、`body_sha256`
-（`fsc_clarification` 另保留 `dataserno`，與 2026-08-27 前的快照相容）。
+每筆欄位：`id`、`url`、`title`、`date`、`body_text`、`body_sha256`（`fsc_clarification` 另保留 `dataserno`）。
 
-下表為 2026-08-27（UTC）在 VPS（德國 IP）實測值。「唯一 sha256」= 該來源所有正文互不重複的比例，
-用來確認抓到的是正文而非頁面框架。
+### `cbc_press`
 
-| channel | 機關與類別 | 筆數 | 唯一 sha256 | 壓縮後 | 耗時 | robots.txt 親驗結果 |
-|---|---|---|---|---|---|---|
-| `fsc_clarification` | 金管會 即時新聞澄清 | 50（全部歷史） | 50/50 | 40,066 B | 142s | 僅 `Disallow: /uploaddowndoc`（附件） |
-| `moe_clarify` | 教育部 即時新聞澄清 | 80（全部歷史 82 筆，2 筆舊稿無正文） | 80/80 | 72,944 B | 327s | 4 條，皆為 `/WebResource.axd`、`/src`、`/Scripts/…`、`/search` |
-| `moj_press` | 法務部 新聞發布 | 99 | 99/99 | 107,121 B | 596s | 全檔只有 `Sitemap:` 一行，無任何 Disallow |
-| `cbc_press` | 中央銀行 新聞稿／新聞參考資料 | 99 | 99/99 | 47,464 B | 304s | 該站不提供 robots.txt（請求被導回首頁） |
-| `mof_press` | 財政部 本部新聞 | 99 | 99/99 | 82,376 B | 308s | 僅 `Disallow: /download/` |
-| `mol_press` | 勞動部 新聞稿 | 100 | 100/100 | 132,533 B | 289s | `/bin/`、`/App_Data/`、`/App_Plugins/`、`/Umbraco/` |
-| `moda_press` | 數位發展部 新聞發布 | 100 | 100/100 | 98,098 B | 120s | robots.txt 404，無 Disallow |
-| `moi_press` | 內政部 新聞稿 | 100 | 100/100 | 98,560 B | 381s | robots.txt 404，無 Disallow |
-| `ey_press` | 行政院 本院新聞 | 100 | 100/100 | 175,792 B | 356s | `/Upload`、`/Program/EY/Hope_decision.ascx` |
-| `mohw_press` | 衛生福利部 焦點新聞 | 100 | 100/100 | 117,701 B | 277s | 全檔僅 `User-agent: *`，零 Disallow |
-| `moe_press` | 教育部 即時新聞 | 100 | 100/100 | 121,438 B | 420s | 同 `moe_clarify` |
-| `moea_press` | 經濟部 本部新聞 | 100 | 100/100 | 114,500 B | 226s | 只有 `User-Agent:ZoomEye` 被全站封鎖；對 `*` 僅禁 `/MNS_OLD/` |
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 中央銀行 新聞稿／新聞參考資料 |
+| 程式內 DESC | 中央銀行新聞稿 |
+| SOURCE_HOME（清單頁） | `https://www.cbc.gov.tw/tw/lp-302-1.html` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=5 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.cbc.gov.tw/robots.txt：伺服器不提供 robots.txt，而是以 302 導向中文首頁 https://www.cbc.gov.tw/tw/mp-1.html 回傳 HTML，因此全站沒有任何 Disallow 規則 → 目標路徑 /tw/lp-302-*.html 與 /tw/cp-302-*.html 未被禁止 |
 
-合計每日約 **1.19 MB**、約 1,260 次請求、約 62 分鐘。
+### `ey_press`
 
-### 各來源的已知限制與踩過的坑
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 行政院 本院新聞 |
+| 程式內 DESC | 行政院本院新聞（新聞與公告） |
+| SOURCE_HOME（清單頁） | `https://www.ey.gov.tw/Page/6485009ABEC1CB9C` |
+| parser_version | 2 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=1 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.ey.gov.tw/robots.txt，全文為 'user-agent: *' / 'disallow: /Upload' / 'disallow:/Program/EY/Hope_decision.ascx' → 目標路徑 /Page/* 未被 Disallow（不抓 /Upload 下的附件） |
 
-- **`fsc_clarification`**：內頁 URL 必須帶 `&dtable=News`，否則回傳的頁面不含正文；分頁參數是
-  `&page=N`；`class="page-edit"` **是內容容器不是頁尾**。正文含「瀏覽人次」計數器，已在寫入前過濾。
-- **`moe_press` / `moe_clarify`**：分頁為真正的 GET 參數 `page=N&PageSize=20`；`p=`、`pageIndex=` 無效。
-  日期為民國年（`115-08-27`），依規格保留原文不轉換。
-- **`moj_press`**：清單頁**不含日期**，必須進內頁才拿得到。Umbraco 產出，正文被大量 `<span>` 切碎。
-- **`cbc_press`**：內頁 URL 含隨機 5 碼雜湊，**不可自行組裝**，必須沿用清單連結。節點 id 錯誤時
-  **不回 404 而是靜默 302 導回首頁**，極易誤判為「全部下架」，因此 0 筆時一律 raise。
-  ⚠️ **相當比例為統計類新聞稿，正文只有一兩句，實質數字在 XLSX 附件內。本專案不抓附件，
-  因此偵測不到附件被抽換。**
-- **`mof_press`**：側欄「即時新聞澄清」也含 `cntId`，必須只解析 `<table class="table-list">`；
-  頁尾也有 `<article>`，需先錨定 `<span class="span-page-title">`。
-- **`mol_press`**：正文是 Word 貼上產生的巢狀 HTML，需抓 `section.cp` 內最內層的 `<body>`。
-  該節點只滾動保留約一年（實測 289 筆，最舊 2025-08-28），更舊者移入「歷史新聞」。
-- **`moda_press`**：分頁為純前端 JS，7 種 URL 參數實測全部無效；改用官網自己呼叫的公開端點
-  `POST www-api.moda.gov.tw/WebsiteList/NewsList`（回傳 HTML 片段），`Dep` 參數必填。
-- **`moi_press`**：頁面帶 UTF-8 BOM。日期為民國年。
-- **`moea_press`**：換頁是 ASP.NET WebForms postback，必須帶 `__VIEWSTATE` 等 3 個隱藏欄位
-  與 2 個 Cookie；缺 Cookie 時**回 HTTP 200 但內容是錯誤頁**，不能只看狀態碼判斷成功。
-  8 種 GET 分頁參數實測全部無效。頁面 `<meta name="DC.Date">` 是全站樣板固定值
-  （每篇都是 2009-09-09），不是真實發布日期，改用清單頁的 `lblBeginDate`。
-  正文卡片外有「點閱數」計數器，但在切取範圍之外；已用「同篇間隔 1 秒重抓兩次」
-  驗證 body_text 逐位元組相同，確認不含揮發性內容。
-- **`ey_press`**：節點頁不能裸開，需帶 GUID 或 `?page=&PS=`；清單混入影音節點需過濾；
-  內頁底部「最新新聞」連結列若混入正文會讓多筆高度雷同，已排除。
-  「即時新聞澄清」欄目大量外連到其他部會（含全站禁止的經濟部），**刻意不收錄**，只取本院新聞。
+### `fda_clarify`
 
-法律依據：著作權法第 9 條第 2 項明文「公文包括公務員職務上草擬之文告、講稿、**新聞稿**」，
-不受著作權保護。一律不抓附件。
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 衛生福利部食品藥物管理署（食藥署） 食藥闢謠專區 |
+| 程式內 DESC | 食藥署 食藥闢謠專區 |
+| SOURCE_HOME（清單頁） | `https://www.fda.gov.tw/TC/news.aspx?cid=5049` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=50 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.fda.gov.tw/robots.txt：User-agent: * 僅 Disallow /TC/personalized*.aspx /TC/pwd.aspx /TraceClick.aspx，目標 news.aspx / newsContent.aspx 不在其下 → 允許（另有 User-agent: ClaudeBot / GPTBot 具名 Disallow: /，本 adapter 使用自訂識別性 UA，非 ClaudeBot/GPTBot，不受此條款拘束） |
+| 實測值（2026-08-31 UTC） | 33 筆（`truncated=true`，600 秒時間預算截斷，目標 MAX_ITEMS=50 未達成）；14,937 B（約 14.6 KB）；耗時 610.3s；已累積天數 4 天（2026-08-28～08-31） |
 
-### 個資揭露（2026-08-28 稽核後補充）
+### `fsc_clarification`
 
-本專案**照原文保存，不做遮蔽**。理由：存檔的意義在於保留機關當時實際發布的原貌，
-任何遮蔽都會讓「內容是否被改寫」的比對失去基準。
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 金融監督管理委員會（金管會） 即時新聞澄清 |
+| 程式內 DESC | 金管會即時新聞澄清 |
+| SOURCE_HOME（清單頁） | `https://www.fsc.gov.tw/ch/home.jsp?id=609&parentpath=0,7,478` |
+| parser_version | 2 |
+| MAX_ITEMS／等效上限 | MAX_PAGES=50 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-26 親驗 https://www.fsc.gov.tw/robots.txt：唯一 Disallow 為 /uploaddowndoc（附件下載），目標 home.jsp 不在其下 → 允許 |
 
-已知情況，如實揭露：
+### `fsc_lawnotice`
 
-- **`moea_press`（經濟部）** — **規模最大**：100 篇中 **89 篇**的新聞稿結尾聯絡資訊含
-  **公務員個人行動電話**，涉及約 40–50 位不同人員。這是機關自行刊登於官網新聞稿內文的
-  公務聯絡方式，本專案原樣保存。
-- **`mof_press`（財政部）**：部分新聞稿的聯絡人簽名檔含**承辦人姓名與個人行動電話**，
-  重複出現於 4 篇以上。
-- 其他 10 個機關抽驗結果：聯絡電話多為機關代表號或分機，無個人號碼。
-- 掃描範圍：12 個機關、2 個日期、**2,254 筆正文**。身分證字號／email／地址／生日類別皆乾淨。
-- 1,127 筆正文的結構化掃描：**0 筆**台灣身分證字號格式命中。
-- 政府新聞稿中的裁罰對象多為法人；自然人姓名官方多已遮罩（如「林00先生」）。
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 金融監督管理委員會（金管會） 法規草案預告 |
+| 程式內 DESC | 金管會法規草案預告 |
+| SOURCE_HOME（清單頁） | `https://www.fsc.gov.tw/ch/home.jsp?id=133&parentpath=0,3` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_PAGES=8 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.fsc.gov.tw/robots.txt：User-agent: Googlebot / Disallow: /uploaddowndoc（附件下載目錄）。與 fsc_clarification 同網域，重新親驗結果一致：僅對 Googlebot 禁止 /uploaddowndoc，對 * 無限制，目標 home.jsp 不在其下 → 允許 |
+| 實測值（2026-08-31 UTC） | 100 筆；25,281 B（約 24.7 KB）；耗時 244.4s；已累積天數 4 天（2026-08-28～08-31） |
 
-若當事人要求移除，請至 GitHub 開 issue。
+### `fsc_penalty`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 金融監督管理委員會（金管會） 裁罰案件 |
+| 程式內 DESC | 金管會裁罰案件 |
+| SOURCE_HOME（清單頁） | `https://www.fsc.gov.tw/ch/home.jsp?id=131&parentpath=0,2` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_PAGES=8 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.fsc.gov.tw/robots.txt：User-agent: Googlebot / Disallow: /uploaddowndoc（附件下載目錄）。與 fsc_clarification 同網域，重新親驗結果一致：僅對 Googlebot 禁止 /uploaddowndoc，對 * 無限制，目標 home.jsp 不在其下 → 允許 |
+| 實測值（2026-08-31 UTC） | 100 筆；140,021 B（約 136.7 KB）；耗時 300.7s；已累積天數 4 天（2026-08-28～08-31） |
+
+### `ftc_decision`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 公平交易委員會 本會行政決定（處分書及不處分決議書） |
+| 程式內 DESC | 公平交易委員會 本會行政決定（處分書及不處分決議書） |
+| SOURCE_HOME（清單頁） | `https://www.ftc.gov.tw/internet/main/decision/decisionList.aspx?mid=11` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_PAGES=10 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.ftc.gov.tw/robots.txt：GET 回 200，但內容是首頁 HTML（與亂數不存在路徑 /this-path-should-not-exist-zzz 回應長度相同，屬 ASP.NET 對未匹配路徑的預設頁，非真正 robots.txt）→ 判定無真正 robots.txt，技術上無 Disallow 限制存在 |
+| 實測值（2026-08-31 UTC） | 100 筆；17,478 B（約 17.1 KB）；耗時 187.3s；已累積天數 4 天（2026-08-28～08-31） |
+
+### `moda_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 數位發展部 新聞發布 |
+| 程式內 DESC | 數位發展部新聞發布 |
+| SOURCE_HOME（清單頁） | `https://moda.gov.tw/press/press-releases/372` |
+| parser_version | 2 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=1 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://moda.gov.tw/robots.txt 與 https://www.moda.gov.tw/robots.txt：兩者皆 HTTP 404 Not Found（全站無 robots.txt，即無任何 Disallow 規則）→ 目標路徑 /press/press-releases/* 未被 Disallow |
+
+### `moe_clarify`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 教育部 即時新聞澄清 |
+| 程式內 DESC | 教育部即時新聞澄清（對外界報導的官方澄清稿） |
+| SOURCE_HOME（清單頁） | `https://www.edu.tw/News.aspx?n=FD56C961F1677400&sms=E6059C30DDBD5135` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=2 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.edu.tw/robots.txt，全文僅 5 行：User-agent: * / Disallow: /WebResource.axd / Disallow: /src / Disallow: /Scripts/fu_Accessibility.js / Disallow: /search。本 adapter 只取 /News.aspx 與 /News_Content.aspx，兩者皆不在上述 4 條 Disallow 之下 → 目標路徑未被 Disallow。 |
+
+### `moe_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 教育部 即時新聞 |
+| 程式內 DESC | 教育部即時新聞（新聞稿） |
+| SOURCE_HOME（清單頁） | `https://www.edu.tw/News.aspx?n=9E7AC85F1954DDA8&sms=169B8E91BB75571F` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=2 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.edu.tw/robots.txt，全文僅 5 行：User-agent: * / Disallow: /WebResource.axd / Disallow: /src / Disallow: /Scripts/fu_Accessibility.js / Disallow: /search。本 adapter 只取 /News.aspx 與 /News_Content.aspx，兩者皆不在上述 4 條 Disallow 之下 → 目標路徑未被 Disallow。 |
+
+### `moea_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 經濟部 本部新聞 |
+| 程式內 DESC | 經濟部本部新聞（新聞稿） |
+| SOURCE_HOME（清單頁） | `https://www.moea.gov.tw/MNS/populace/news/News.aspx?kind=1&menu_id=40` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=10 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.moea.gov.tw/robots.txt（HTTP 200，64 bytes，last-modified 2023-09-25，快取穩定，非動態產生）。全文只有四行：\n  User-Agent:ZoomEye\n  Disallow:/\n  User-Agent:*\n  Disallow:/MNS_OLD/\n第一段只針對具名爬蟲 ZoomEye 全站封鎖，與本 adapter 的 UA 無關；第二段 'User-Agent:*' 對所有其他 UA（含本 adapter）只禁止 /MNS_OLD/ 這個舊站目錄。本 adapter 目標路徑 /MNS/populace/news/News.aspx 屬於 /MNS/（新站），不是 /MNS_OLD/，不落在任何 Disallow 之下 → 允許抓取。先前文件將第一段 ZoomEye 專屬的 'Disallow:/' 誤讀為全站封鎖，經本次重新親驗證實為誤讀；本次親驗結果與誤讀說法不同，以本次親驗為準。 |
+
+### `mof_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 財政部 本部新聞 |
+| 程式內 DESC | 財政部本部新聞（新聞稿） |
+| SOURCE_HOME（清單頁） | `https://www.mof.gov.tw/multiplehtml/384fb3077bb349ea973e7fc6f13b6974` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=10 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.mof.gov.tw/robots.txt：全文僅兩行 'User-agent: *' / 'Disallow: /download/'；本 adapter 只取 /multiplehtml/ 與 /singlehtml/，未落在 /download/ 之下 → 未被 Disallow |
+
+### `mohw_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 衛生福利部 焦點新聞 |
+| 程式內 DESC | 衛生福利部焦點新聞（新聞稿） |
+| SOURCE_HOME（清單頁） | `https://www.mohw.gov.tw/lp-16-1.html` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=5 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.mohw.gov.tw/robots.txt：全檔僅一行 'User-agent: *'，沒有任何 Disallow 行 → 目標路徑 /lp-16-*.html 與 /cp-16-*.html 未被 Disallow |
+
+### `moi_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 內政部 新聞稿 |
+| 程式內 DESC | 內政部新聞稿 |
+| SOURCE_HOME（清單頁） | `https://www.moi.gov.tw/News.aspx?n=4&sms=9009` |
+| parser_version | 2 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=1 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.moi.gov.tw/robots.txt：HTTP 404 Not Found（全站無 robots.txt，即無任何 Disallow 規則）→ 目標路徑 /News.aspx、/News_Content.aspx 未被 Disallow |
+
+### `moj_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 法務部 新聞發布 |
+| 程式內 DESC | 法務部新聞發布 |
+| SOURCE_HOME（清單頁） | `https://www.moj.gov.tw/2204/2795/2796/Lpsimplelist` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=50；MAX_PAGES=5 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.moj.gov.tw/robots.txt（伺服器 301 導向 https://www.moj.gov.tw/robots）：全檔只有兩行空白與一行 'Sitemap: https://www.moj.gov.tw/sitemap?id=2204'，沒有任何 User-agent / Disallow 規則 → 目標路徑 /2204/2795/2796/** 未被 Disallow |
+
+### `mol_press`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 勞動部 新聞稿 |
+| 程式內 DESC | 勞動部新聞稿 |
+| SOURCE_HOME（清單頁） | `https://www.mol.gov.tw/1607/1632/1633/lpsimplelist` |
+| parser_version | 未記載 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100；MAX_PAGES=3 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-27 親驗 https://www.mol.gov.tw/robots.txt：全文為 'user-agent: *' + 'disallow: /bin/*'、'disallow: /App_Data/*'、'disallow: /App_Plugins/*'、'disallow: /Umbraco/*'；本 adapter 只取 /1607/1632/1633/ 之下的清單與內頁 → 未被 Disallow |
+
+### `pres_news`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 總統府 本府新聞稿 |
+| 程式內 DESC | 總統府新聞（本府新聞稿） |
+| SOURCE_HOME（清單頁） | `https://www.president.gov.tw/Page/35` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.president.gov.tw/robots.txt：User-agent: * / Allow: / ，全站無任何 Disallow → 允許 |
+| 實測值（2026-08-31 UTC） | 15 筆（官方清單本身僅 15 筆可取，非截斷，DESC 已誠實標註）；42,216 B（約 41.2 KB）；耗時 39.2s；已累積天數 4 天（2026-08-28～08-31） |
+
+### `tpe_clarify`
+
+| 項目 | 值 |
+|---|---|
+| 機關與類別 | 台北市政府 即時新聞澄清 |
+| 程式內 DESC | 台北市政府即時新聞澄清 |
+| SOURCE_HOME（清單頁） | `https://www.gov.taipei/News.aspx?n=74806083EBDF5A03&sms=72544237BBE4C5F6` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=50；MAX_PAGES=8 |
+| 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.gov.taipei/robots.txt：HTTP 404 Not Found（全站無 robots.txt，即無任何 Disallow 規則）→ 目標路徑 /News.aspx、/News_Content.aspx 未被 Disallow |
+| 實測值（2026-08-31 UTC） | 39 筆（`truncated=true`，600 秒時間預算截斷，目標 MAX_ITEMS=50 未達成）；27,850 B（約 27.2 KB）；耗時 603.6s；已累積天數 4 天（2026-08-28～08-31） |
 
 ## 已排除的來源
+
+以下清單沿用既有 `docs/sources.md` 記載，本輪未重新驗證（唯讀規則，未連線這些網站覆核）：
 
 | 來源 | 排除理由 |
 |---|---|
 | Binance | robots.txt 全站 `Disallow: /` |
 | Smithery `/api/` | robots.txt `Disallow: /api/` |
-| **環境部** | robots.txt 明文禁止 `/Page/`、`/page/`、`/News_Content.aspx`、`/*?page=*`，新聞稿清單與內頁**全部**落在禁止路徑，無合規替代路徑；且全站 Cloudflare JS 挑戰（`Cf-Mitigated: challenge`），標準函式庫無法取得內容，繞過等同規避防護措施。舊網域 `epa.gov.tw` 已 DNS 不存在 |
+| 環境部 | robots.txt 明文禁止 `/Page/`、`/page/`、`/News_Content.aspx`、`/*?page=*`；且全站 Cloudflare JS 挑戰 |
 | Tasker | robots.txt 限制 |
 | udn.com | robots.txt 禁止商業用途 |
+| Circle 定價頁 | `circle.com/pricing` 已 301 導向行銷表單頁，無任何費率數字 |
+| Jupiter／EigenLayer／Hyperliquid 相關頁 | 網域 DNS 已失效或 404 |
+
+## 免責
+
+本檔僅記錄公開端點／網頁在特定時間點的技術規格與 robots.txt 親驗結論，不對資料正確性作任何保證，
+不構成任何投資建議、法律意見或分析觀點。

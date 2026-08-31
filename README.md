@@ -1,4 +1,8 @@
-# public-api-timeseries
+# public-api-timeseries（草稿）
+
+> 本檔為**本機草稿**，未上傳、未 commit。取代既有專案根目錄 `README.md`，
+> 把收錄來源數字從舊文件的 21（crypto）＋12（gov）＝ 33，更新為 VPS 實際的
+> **24（crypto）＋ 18（gov）＝ 42** 個來源（2026-08-31 查核 `track-crypto/adapters/`、`track-gov/adapters/` 目錄）。
 
 保存那些「官方不留歷史」的公開數字。
 
@@ -15,44 +19,109 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 
 每個來源納入前都要通過三步驗證。判準與逐一查證結果見 [docs/why.md](docs/why.md)。
 
-## 目前收錄
+## 目前收錄（共 42 個來源）
 
-### `track-crypto/` — 加密貨幣與 AI 算力市場
+### `track-crypto/` — 加密貨幣與 AI 算力市場（24 個來源）
 
-| 來源 | 內容 | 最近一次筆數 | 狀態 |
-|---|---|---|---|
-| `x402_bazaar` | x402 協議全量掛牌 | 14,755 | 每日抓取 |
-| `cex_symbols` | 7 家交易所交易對與狀態 | 10,744 | 每日抓取 |
-| `vast_gpu` | vast.ai GPU 現貨報價 | 512 | 每日抓取 |
-| `mcp_registry` | MCP 官方註冊表 | 82,612 | **2026-08-27 起停止抓取**，已抓資料保留 |
+既有文件（2026-08-28 UTC 實測）記載的 21 個來源仍有效，另有 **3 個新來源**
+（`agent_virtuals`／`mcp_smithery`／`x402_index_thirdparty`）本輪盤點中發現已存在於 VPS，
+但先前**未出現在任何既有文件**。本輪已補齊實測數字（唯讀，讀取既有 manifest／logs，未執行新抓取）：
 
-筆數為 2026-08-27（UTC）快照實測值。每日壓縮後合計約 **6.6 MB**。
+| 來源 | 今日筆數（2026-08-31 UTC） | 今日體積 | 耗時 | 已累積天數 |
+|---|---|---|---|---|
+| `agent_virtuals` | 36,000 筆（官方回報總數 82,317 筆；600 秒時間預算截斷於第 72/165 頁，`truncated=true`，此為預期降級，非異常） | 887,296 B（約 867 KB） | 608.7s | 4 天（2026-08-28～08-31） |
+| `mcp_smithery` | 271 筆（官方回報總數約 11,103 筆，覆蓋率約 2.4%；API 硬性只能翻到第 5 頁且跨頁排序漂移，271 筆為去重後可得上限，非人為限量） | 83,890 B（約 82 KB） | 6.8s | 4 天（2026-08-28～08-31） |
+| `x402_index_thirdparty` | 1,044 個 URL（其中 `/server/` 前綴 1,000 個，約為軌一 `x402_bazaar` 官方掛牌數 14,410 筆的 6.9%） | 23,431 B（約 23 KB） | 1.5s | 4 天（2026-08-28～08-31） |
 
-### `track-gov/` — 台灣政府公告（可問責性存檔）
+來源：VPS `track-crypto/data/_manifest/2026-08-31.json`、`track-crypto/logs/cron.log`、
+`ls track-crypto/data/<source>/ | wc -l`（本輪唯讀查核，未修改任何 VPS 檔案）。
+
+| 來源 | 內容 | 狀態 |
+|---|---|---|
+| `agent_virtuals` | Virtuals Protocol agent 清單 | **新來源，文件未記載** |
+| `airdrop_claim_pages` | 空投資格規則頁（Starknet Provisions） | 每日抓取 |
+| `audit_registry_certik` | CertiK Skynet 首頁「Recently Audited」清單 | 每日抓取 |
+| `cex_announcements` | 交易所公告（標題／URL／時間／分類） | 每日抓取 |
+| `cex_currency_status` | 交易所幣種層級狀態旗標 | 每日抓取 |
+| `cex_earn_apr` | CEX 理財年化率 | 每日抓取 |
+| `cex_symbols` | 7 家 CEX 交易對／幣種狀態 | 每日抓取 |
+| `cex_symbols_ext` | 再 3 家 CEX 交易對清單（Kraken／Coinbase Exchange／Upbit） | 每日抓取 |
+| `cex_withdrawal_limits` | KuCoin 幣種提幣費與最低提幣額 | 每日抓取 |
+| `crypto_project_liveness` | DefiLlama 駭客事件清單 | 每日抓取 |
+| `dao_proposal_snapshot` | Snapshot DAO 提案中繼資料 | 每日抓取 |
+| `defi_yield_rates` | LST/LRT 質押與 DeFi 借貸利率 | 每日抓取 |
+| `eth_validator_queue` | 以太坊驗證者進出隊列各狀態筆數 | 每日抓取 |
+| `hf_trending_models` | HuggingFace trending 模型清單 | 每日抓取 |
+| `mcp_smithery` | Smithery MCP 註冊表 | **新來源，文件未記載** |
+| `ofac_sanctions_crypto` | OFAC SDN 制裁名單（美國財政部） | 每日抓取 |
+| `openrouter_models` | OpenRouter 全模型清單與定價 | 每日抓取 |
+| `openrouter_providers` | OpenRouter 供應商清單 | 每日抓取 |
+| `oracle_feed_directory` | Chainlink／Pyth 價格餵送目錄 | 每日抓取 |
+| `payment_protocol_repos` | 支付協議規格版本 GitHub Repo 中繼資料 | 每日抓取 |
+| `project_tokenomics_docs` | 專案官方 tokenomics 文件頁 | 每日抓取 |
+| `vast_gpu` | Vast.ai GPU 租賃市場報價 | 每日抓取 |
+| `x402_bazaar` | x402 Bazaar 全量掛牌 | 每日抓取 |
+| `x402_index_thirdparty` | x402scan 第三方索引 sitemap URL 清單 | **新來源，文件未記載** |
+
+> `mcp_registry` 已於 2026-08-27 起停止抓取（已抓資料保留），其 adapter 檔已不在
+> `track-crypto/adapters/` 目錄下，故不計入本次 24 個之內（沿用既有文件記載，本輪未重新驗證）。
+
+舊 21 個來源 2026-08-31 UTC 實測合計每日壓縮後約 **8.38 MB**（8,786,335 B）；
+加計新 3 個來源後，24 個來源合計約 **9.33 MB**（9,780,952 B，2026-08-31 UTC 實測，
+來源：`track-crypto/data/_manifest/2026-08-31.json` 逐來源 `bytes` 加總）。
+
+### `track-gov/` — 台灣政府公告（可問責性存檔）（18 個來源）
 
 每日抓各機關新聞稿／澄清稿全文，用來偵測**發布後被靜默改寫或下架**。
 
-| 來源 | 機關與類別 | 最近一次筆數 | 每年新增（估） |
-|---|---|---|---|
-| `fsc_clarification` | 金管會 即時新聞澄清（全部歷史） | 50 | ~5 |
-| `moe_clarify` | 教育部 即時新聞澄清（全部歷史 82 筆中 80 筆有正文） | 80 | ~9 |
-| `moj_press` | 法務部 新聞發布 | 99 | ~98 |
-| `cbc_press` | 中央銀行 新聞稿／新聞參考資料 | 99 | ~270 |
-| `mol_press` | 勞動部 新聞稿 | 100 | ~270 |
-| `moda_press` | 數位發展部 新聞發布 | 100 | ~67 |
-| `moi_press` | 內政部 新聞稿 | 100 | ~640 |
-| `ey_press` | 行政院 本院新聞 | 100 | ~720 |
-| `mohw_press` | 衛生福利部 焦點新聞 | 100 | ~790 |
-| `moe_press` | 教育部 即時新聞 | 100 | ~1,050 |
-| `mof_press` | 財政部 本部新聞 | 99 | ~1,650 |
-| `moea_press` | 經濟部 本部新聞 | 100 | ~1,290 |
+既有文件記載 12 個機關，本輪盤點確認 VPS 上實際已有 **18 個來源**，新增 6 個：
+`fda_clarify`（食藥署）／`fsc_lawnotice`（金管會法規草案預告）／`fsc_penalty`（金管會裁罰案件）／
+`ftc_decision`（公平會行政決定）／`pres_news`（總統府）／`tpe_clarify`（台北市政府）。
+本輪已補齊新 6 個來源的實測數字（唯讀，讀取既有 manifest／logs，未執行新抓取）：
 
-除「全部歷史」者外，每日抓各來源**最新 100 筆**。每日壓縮後合計約 **1.19 MB**（12 個來源）。
+| 來源 | 今日筆數（2026-08-31 UTC） | 今日體積 | 耗時 | 已累積天數 |
+|---|---|---|---|---|
+| `fda_clarify` | 33 筆（`truncated=true`，600 秒時間預算截斷，目標 MAX_ITEMS=50 未達成） | 14,937 B（約 14.6 KB） | 610.3s | 4 天（2026-08-28～08-31） |
+| `fsc_lawnotice` | 100 筆 | 25,281 B（約 24.7 KB） | 244.4s | 4 天（2026-08-28～08-31） |
+| `fsc_penalty` | 100 筆 | 140,021 B（約 136.7 KB） | 300.7s | 4 天（2026-08-28～08-31） |
+| `ftc_decision` | 100 筆 | 17,478 B（約 17.1 KB） | 187.3s | 4 天（2026-08-28～08-31） |
+| `pres_news` | 15 筆（官方清單本身只有 15 筆可取，非截斷，DESC 已誠實標註） | 42,216 B（約 41.2 KB） | 39.2s | 4 天（2026-08-28～08-31） |
+| `tpe_clarify` | 39 筆（`truncated=true`，600 秒時間預算截斷，目標 MAX_ITEMS=50 未達成） | 27,850 B（約 27.2 KB） | 603.6s | 4 天（2026-08-28～08-31） |
+
+新 6 個來源 2026-08-31 UTC 實測合計每日壓縮後約 **262 KB**（267,783 B）。
+來源：VPS `track-gov/data/_manifest/2026-08-31.json`、`track-gov/logs/cron.log`、
+`ls track-gov/data/<source>/ | wc -l`（本輪唯讀查核，未修改任何 VPS 檔案）。
+
+| 來源 | 機關與類別 | 狀態 |
+|---|---|---|
+| `cbc_press` | 中央銀行 新聞稿／新聞參考資料 | 每日抓取 |
+| `ey_press` | 行政院 本院新聞 | 每日抓取 |
+| `fda_clarify` | 衛生福利部食品藥物管理署（食藥署） 食藥闢謠專區 | **新來源，文件未記載** |
+| `fsc_clarification` | 金融監督管理委員會（金管會） 即時新聞澄清 | 每日抓取 |
+| `fsc_lawnotice` | 金融監督管理委員會（金管會） 法規草案預告 | **新來源，文件未記載** |
+| `fsc_penalty` | 金融監督管理委員會（金管會） 裁罰案件 | **新來源，文件未記載** |
+| `ftc_decision` | 公平交易委員會 本會行政決定（處分書及不處分決議書） | **新來源，文件未記載** |
+| `moda_press` | 數位發展部 新聞發布 | 每日抓取 |
+| `moe_clarify` | 教育部 即時新聞澄清 | 每日抓取 |
+| `moe_press` | 教育部 即時新聞 | 每日抓取 |
+| `moea_press` | 經濟部 本部新聞 | 每日抓取 |
+| `mof_press` | 財政部 本部新聞 | 每日抓取 |
+| `mohw_press` | 衛生福利部 焦點新聞 | 每日抓取 |
+| `moi_press` | 內政部 新聞稿 | 每日抓取 |
+| `moj_press` | 法務部 新聞發布 | 每日抓取 |
+| `mol_press` | 勞動部 新聞稿 | 每日抓取 |
+| `pres_news` | 總統府 本府新聞稿 | **新來源，文件未記載** |
+| `tpe_clarify` | 台北市政府 即時新聞澄清 | **新來源，文件未記載** |
+
+舊 12 個來源 2026-08-31 UTC 實測合計每日壓縮後約 **1.13 MB**（1,152,708 B，與 2026-08-27 舊實測
+約 1.19 MB 為同一量級的正常日常波動）；加計新 6 個來源後，18 個來源合計約 **1.35 MB**
+（1,420,491 B，2026-08-31 UTC 實測，來源：`track-gov/data/_manifest/2026-08-31.json` 逐來源 `bytes` 加總）。
 
 **未收錄**：環境部（robots.txt 明文禁止新聞稿路徑 `/Page/`、`/News_Content.aspx`，
 且全站 Cloudflare JS 挑戰）。理由與親驗紀錄見 [docs/sources.md](docs/sources.md)。
 
-各來源的端點、分頁方式、已知限制見 [docs/sources.md](docs/sources.md)。
+各來源的端點、分頁方式、已知限制見 [docs/sources.md](docs/sources.md)（本輪更新草稿見
+[drafts/sources.md](drafts/sources.md)）。
 
 ## 資料長什麼樣
 
@@ -97,22 +166,29 @@ python3 scripts/explore.py --diff fsc_clarification 2026-08-27 2026-08-28
 
 ```
 CHANGES.md                              累積索引
-changes/<source>/YYYY-MM-DD.md          當日 unified diff
+changes/<source>/YYYY-MM-DD.md           當日 unified diff
 ```
-
-> 截至 2026-08-27（UTC）尚未偵測到任何改寫或下架，因此上列檔案尚未產生。
 
 `track-crypto/data/cex_events/events.jsonl` 記錄交易所上架／下架事件流，
 需累積兩份以上快照才會產生。細節見 [docs/operations.md](docs/operations.md)。
 
+### 首次偵測到的改寫紀錄（2026-08-29）
+
+2026-08-29，`mof_press`（財政部本部新聞）一篇既有公告的正文中，有一行聯絡資訊
+被刪除，機關未另行公告此項變更。變動紀錄與逐字 diff 見
+`changes/mof_press/2026-08-29.md`（已隨當日資料一併 push，commit `9122f81`）。
+本存檔僅如實記載「該行被刪除、未公告」此一事實，不評論刪除原因或動機。
+
 ## 目前狀態
 
-| 項目 | 值（2026-08-27 UTC 查核） |
+| 項目 | 值（2026-08-31 UTC 本輪唯讀查核） |
 |---|---|
-| 已累積天數 | 2 天（track-gov 新增 10 個機關自 2026-08-27 起） |
-| 每日排程 | 09:00 / 09:30 / 11:30（**台北時間**） |
+| 收錄來源總數 | **42**（track-crypto 24 ＋ track-gov 18） |
+| 每日排程 | 09:00（track-crypto）／09:30（track-gov）／11:30（push）（**台北時間**，VPS `crontab -l` 查核） |
 | 自我檢查 | `ALERT.md` 存在時代表偵測到異常 |
-| 變動紀錄 | 尚未產生 |
+| 每日壓縮後合計體積 | 約 **10.68 MB**（track-crypto 9.33 MB ＋ track-gov 1.35 MB，2026-08-31 UTC 實測） |
+| 新 9 個來源實測數字 | 已補齊，見上方 track-crypto／track-gov 各表（2026-08-31 UTC，來源：manifest、cron.log、`ls` 累積天數） |
+| 首次改寫偵測 | 2026-08-29，`mof_press` 1 起（見上方「首次偵測到的改寫紀錄」） |
 
 ## 這個專案不做什麼
 
@@ -125,13 +201,13 @@ changes/<source>/YYYY-MM-DD.md          當日 unified diff
 | 文件 | 內容 |
 |---|---|
 | [docs/why.md](docs/why.md) | 收錄判準與三步驗證結果 |
-| [docs/sources.md](docs/sources.md) | 每個來源的端點、欄位、已知限制 |
+| [docs/sources.md](docs/sources.md) | 每個來源的端點、欄位、已知限制（本輪更新草稿：[drafts/sources.md](drafts/sources.md)） |
 | [docs/data-format.md](docs/data-format.md) | 檔名規則、JSON 結構、讀取範例 |
 | [docs/methodology.md](docs/methodology.md) | 抓取原則、robots.txt、原子寫入、時間戳 |
 | [docs/revisions.md](docs/revisions.md) | 經複核被推翻或收斂的宣稱 |
 | [docs/operations.md](docs/operations.md) | 排程、自我檢查、里程碑 |
-| [track-crypto/README.md](track-crypto/README.md) | 軌一速覽 |
-| [track-gov/README.md](track-gov/README.md) | 軌二速覽 |
+| [track-crypto/README.md](track-crypto/README.md) | 軌一速覽（本輪更新草稿：[drafts/track-crypto-README.md](drafts/track-crypto-README.md)） |
+| [track-gov/README.md](track-gov/README.md) | 軌二速覽（本輪更新草稿：[drafts/track-gov-README.md](drafts/track-gov-README.md)） |
 
 ## 免責
 
