@@ -46,6 +46,7 @@ manifest 記錄 attempts（1 或 2）與 first_error（第一次失敗訊息，�
 與 fetch() 內既有的「單一 HTTP 請求」重試（3 次、退避 2/4 秒）是兩個不同層級，互不取代。
 """
 import json, gzip, os, sys, re, time, html, hashlib, importlib.util, inspect, urllib.request
+import requests
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -73,20 +74,50 @@ BODY_MIN_LEN_DEFAULT = 50  # 共用層預設門檻：依 18 來源既有快照�
                             # 低於任何一個來源觀察到的真實最短值，不會誤傷本來就很短的正文。
                             # adapter 可宣告模組級 MIN_BODY_LEN 覆寫（例如 tpe_clarify 內容本來就精簡）。
 
+# --- keep-alive Session（方案 C，見 SPEC-keepalive.md）---
+# 每個「來源」（一次 collect_with_retry 呼叫）共用一個 requests.Session 以重用 TCP+TLS
+# 連線；來源之間、以及同一來源的重試之間，一律呼叫 _reset_session() 關閉舊連線池、
+# 重建全新 Session，確保不會有連線狀態跨來源／跨重試殘留（例如伺服器已把閒置連線
+# 主動關閉，殘留的 Session 物件裡還握著失效的 socket）。
+_SESSION = None
+
+def _get_session():
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = requests.Session()
+        _SESSION.headers.update({"User-Agent": UA})
+    return _SESSION
+
+def _reset_session():
+    """關閉目前的 Session（釋放連線池），下次 fetch() 呼叫 _get_session() 會重建全新的。
+    在每個來源開始前、每次重試前、來源結束後都會呼叫，確保不跨來源／跨重試殘留連線。"""
+    global _SESSION
+    if _SESSION is not None:
+        try:
+            _SESSION.close()
+        except Exception:
+            pass
+        _SESSION = None
+
 def fetch(url, retries=3):
     last = None
     for i in range(retries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                raw = r.read()
-                enc = "utf-8"
-                m = re.search(rb'charset=["\']?([\w-]+)', raw[:2000], re.I)
-                if m:
-                    enc = m.group(1).decode("ascii", "ignore")
-                return raw.decode(enc, "ignore")
+            sess = _get_session()
+            resp = sess.get(url, headers={"User-Agent": UA}, timeout=(20, 20))
+            resp.raise_for_status()
+            raw = resp.content
+            enc = "utf-8"
+            m = re.search(rb'charset=["\']?([\w-]+)', raw[:2000], re.I)
+            if m:
+                enc = m.group(1).decode("ascii", "ignore")
+            return raw.decode(enc, "ignore")
         except Exception as e:
             last = e
+            # 連線可能已被伺服器主動關閉或已失效：換下一次重試前重建 Session，
+            # 避免用一條壞掉的連線繼續重試（requests 的連線池遇到 RemoteDisconnected
+            # 等情形通常會自動處理，這裡是額外保險，確保重試永遠拿到乾淨連線）。
+            _reset_session()
             if i < retries - 1:
                 time.sleep(2 * (i + 1))
     raise last
@@ -233,11 +264,13 @@ def collect_with_retry(mod, key):
     first_error = None
     last_error = None
     budget = source_budget_secs(mod)
+    _reset_session()  # keep-alive：每個來源開始前重建全新 Session，不沿用上一來源的連線
     while True:
         attempts += 1
         deadline = time.time() + budget
         try:
             items, truncated, parse_failed = _collect_once(mod, deadline)
+            _reset_session()  # 來源成功結束：關閉本來源用的連線，不留給下一個來源
             return True, items, truncated, attempts, first_error, None, False, parse_failed
         except Exception as e:
             err = "%s: %s" % (type(e).__name__, e)
@@ -245,15 +278,18 @@ def collect_with_retry(mod, key):
             if first_error is None:
                 first_error = err
             if attempts >= MAX_ATTEMPTS:
+                _reset_session()  # 來源最終失敗：關閉本來源用的連線，不留給下一個來源
                 return False, None, False, attempts, first_error, last_error, False, 0
             elapsed = time.time() - RUN_START
             if elapsed + RETRY_WAIT_SECS > MAX_RUN_SECS:
                 # 總時間保護：本輪已跑太久，不再等待重試，直接記為失敗，避免拖垮 11:30 的 push 排程。
                 print("SKIP_RETRY %-20s 已執行 %.0f 分鐘，超過 90 分鐘總時間保護，放棄重試：%s"
                       % (key, elapsed / 60, err), file=sys.stderr, flush=True)
+                _reset_session()  # 來源最終失敗（time budget skip）：關閉連線，不留給下一個來源
                 return False, None, False, attempts, first_error, last_error, True, 0
             print("RETRY %-20s 第 1 次失敗：%s；等待 %d 秒後重試（第 2 次，也是最後一次）"
                   % (key, err, RETRY_WAIT_SECS), flush=True)
+            _reset_session()  # 重試前重建 Session：120 秒閒置期間伺服器很可能已關閉舊連線
             time.sleep(RETRY_WAIT_SECS)
 
 def main():
