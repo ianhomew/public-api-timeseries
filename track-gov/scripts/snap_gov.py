@@ -1,14 +1,34 @@
 #!/usr/bin/env python3
-"""軌二 snapshotter v4：政府公告每日快照（adapter 架構 + 來源層級重試 + 每來源時間預算）
+"""軌二 snapshotter v5：政府公告每日快照（adapter 架構 + 來源層級重試 + 每來源時間預算 + 空正文守門）
 目的：偵測靜默改寫、下架、撤稿。只存原文，不做任何解讀。
 授權：輸出資料 CC BY 4.0（著作權法第 9 條：公文含新聞稿，不受著作權保護）
 
 時區鐵律：檔名日期一律 UTC；排程時間為台北時間。兩者不可混用。
 每個來源一支 adapter，放在 track-gov/adapters/<key>.py，介面見 adapters/README.md。
 
+v5 變更（R3-budget，依 SPEC-r3-budget.md，修正 moda_press／ey_press／moi_press 內頁解析失敗時
+仍寫入空 body_text 的問題，以及讓 SOURCE_BUDGET_SECS 可依來源覆寫）：
+1. 【R3 空正文守門】新增共用層守門 guard_parse_failures()：collect() 正規化後，任何一筆
+   body_text 長度小於門檻（預設 BODY_MIN_LEN_DEFAULT=50）一律視為「該筆解析失敗」，不寫入
+   快照，並累計 parse_failed 計數寫進 manifest（entry["parse_failed"]）。
+   門檻依據：對 18 個來源既有快照（4–7 天，共 7,602 筆真實正文）實測長度分布，所有來源的
+   真實最短正文都遠高於 50（各來源最小值介於 58～678 字，中位數介於 113～1951 字），50 這個門檻
+   低於任何一個來源觀察到的真實最短值，不會誤傷「本來就很短的正文」，但足以擋下「切點抓
+   失敗、body_text 變成空字串或只剩幾個字」的解析失敗案例。
+   放在共用層（snap_gov.py）而非各 adapter 的理由：18 個 adapter 中已有 12 個各自寫了
+   `if len(body) < 50: continue`（或等效的 truthy 檢查）守門，但 moda_press／ey_press／
+   moi_press 這 3 個完全沒有 —— 這正是「每支 adapter 各自記得寫」在真實世界失守的證據
+   （R3 稽核發現）。放在共用層之後，新增 adapter 忘記寫守門也會被自動接住，不必逐支複查；
+   既有 12 支 adapter 自己的門檻更嚴格或相同時完全是 no-op，不會改變既有行為。
+   個別來源如有理由需要更低的門檻（例如 tpe_clarify 因内容本來就精簡，adapter 內部已用
+   30），可用模組級 MIN_BODY_LEN 覆寫，向下相容、不強迫所有來源統一成同一個數字。
+2. 【依來源覆寫時間預算】adapter 可宣告模組級 SOURCE_BUDGET_SECS（例如某來源已知需要更久），
+   collect_with_retry() 讀不到就沿用全域預設 SOURCE_BUDGET_SECS=600。向下相容：未宣告的
+   adapter 完全沿用舊行為。
+
 v4 變更（2026-08-31，依 PERF_FIX_SPEC.md，修正來源站台間歇性變慢被我方逾時/重試放大的問題）：
-1. fetch() timeout 45→20 秒；重試退避 3/6 秒 → 2/4 秒（重試次數維持 3 次不變）。
-   單筆最壞情況：45*3+9=144 秒 → 20*3+6=66 秒。
+1. fetch() timeout 45→20 秒；重試退避 3s/6s → 2s/4s（重試次數維持 3 次不變）。
+   單筆最壞情況：45×3+9=144 秒 → 20×3+6=66 秒。
 2. 新增「每來源時間預算」SOURCE_BUDGET_SECS=600 秒（硬上限，比照軌一 agent_virtuals 做法）。
    驅動程式無法中斷 adapter 內部迴圈，所以改用 deadline（UNIX 時間戳）傳給 adapter，
    adapter 自行在每次翻頁／每抓一筆內頁前檢查 time.time() < deadline，超過就停止並回傳已取得的資料。
@@ -43,8 +63,15 @@ MAX_ATTEMPTS = 2            # 最多嘗試次數（1 次原始 + 1 次重試）
 MAX_RUN_SECS = 90 * 60      # 本輪總時間保護：超過 90 分鐘不再等待重試
 RUN_START = time.time()
 
-# --- 每來源時間預算（v4 新增，見 PERF_FIX_SPEC.md 修正 2） ---
-SOURCE_BUDGET_SECS = 600    # 每次 collect() 嘗試的硬上限（每次重試各自重新計算）
+# --- 每來源時間預算（v4 新增，見 PERF_FIX_SPEC.md 修正 2；v5 起可依來源覆寫） ---
+SOURCE_BUDGET_SECS = 600    # 全域預設：每次 collect() 嘗試的硬上限（每次重試各自重新計算）。
+                            # adapter 可宣告模組級 SOURCE_BUDGET_SECS 覆寫此預設值（見
+                            # collect_with_retry() 的 getattr 讀取），未宣告則沿用本值。
+
+# --- 空正文守門（R3，v5 新增，見 SPEC-r3-budget.md） ---
+BODY_MIN_LEN_DEFAULT = 50  # 共用層預設門檻：依 18 來源既有快照實測長度分布決定（見檔頭 v5 說明），
+                            # 低於任何一個來源觀察到的真實最短值，不會誤傷本來就很短的正文。
+                            # adapter 可宣告模組級 MIN_BODY_LEN 覆寫（例如 tpe_clarify 內容本來就精簡）。
 
 def fetch(url, retries=3):
     last = None
@@ -162,45 +189,69 @@ def _call_collect(mod, deadline):
         return raw_items, truncated
     return mod.collect(fetch, clean), False
 
+def guard_parse_failures(mod, items):
+    """R3 空正文守門（共用層）：body_text 過短視為該筆解析失敗，不寫入正文，
+    只計數、不中止整批（除非全部都失敗，那會在 _collect_once 觸發既有的『0 筆』例外）。
+    門檻可用 adapter 模組級 MIN_BODY_LEN 覆寫；未宣告則用全域 BODY_MIN_LEN_DEFAULT。
+    回傳 (kept_items, parse_failed_count)。"""
+    min_len = getattr(mod, "MIN_BODY_LEN", BODY_MIN_LEN_DEFAULT)
+    kept, parse_failed = [], 0
+    for it in items:
+        if len(it.get("body_text") or "") < min_len:
+            parse_failed += 1
+            continue
+        kept.append(it)
+    return kept, parse_failed
+
 def _collect_once(mod, deadline):
-    """單次嘗試：抓取＋正規化＋合法性檢查。失敗一律拋例外，交給重試層處理。"""
+    """單次嘗試：抓取＋正規化＋空正文守門＋合法性檢查。失敗一律拋例外，交給重試層處理。"""
     raw_items, truncated = _call_collect(mod, deadline)
     items = normalize(raw_items)
+    items, parse_failed = guard_parse_failures(mod, items)
     if not items:
-        raise RuntimeError("collect() 回傳 0 筆 —— 視為抓取失敗，不寫入快照"
-                           "（避免下游誤判為全部下架）")
+        raise RuntimeError("collect() 正規化＋守門後 0 筆（parse_failed=%d）—— 視為抓取失敗，"
+                           "不寫入快照（避免下游誤判為全部下架）" % parse_failed)
     ids = [i["id"] for i in items]
     if len(set(ids)) != len(ids):
         raise RuntimeError("id 重複 %d/%d —— adapter 的識別碼不穩定" % (len(ids) - len(set(ids)), len(ids)))
-    return items, truncated
+    return items, truncated, parse_failed
+
+def source_budget_secs(mod):
+    """依來源覆寫時間預算（v5）：adapter 可宣告模組級 SOURCE_BUDGET_SECS 覆寫全域預設；
+    讀不到（AttributeError）就用全域 SOURCE_BUDGET_SECS=600。向下相容：
+    未宣告 SOURCE_BUDGET_SECS 的既有 adapter 完全不受影響。"""
+    return getattr(mod, "SOURCE_BUDGET_SECS", SOURCE_BUDGET_SECS)
 
 def collect_with_retry(mod, key):
-    """來源層級重試（v3）＋每來源時間預算（v4）：
-    失敗等 120 秒後重試一次；只重試一次；每次嘗試各自有 600 秒硬上限。
-    回傳 (ok, items_or_None, truncated, attempts, first_error_or_None, last_error_or_None, skipped_by_budget)。
+    """來源層級重試（v3）＋每來源時間預算（v4，v5 起可依來源覆寫）：
+    失敗等 120 秒後重試一次；只重試一次；每次嘗試各自有 SOURCE_BUDGET_SECS 秒硬上限
+    （全域預設 600 秒，adapter 可用模組級 SOURCE_BUDGET_SECS 覆寫）。
+    回傳 (ok, items_or_None, truncated, attempts, first_error_or_None, last_error_or_None,
+          skipped_by_budget, parse_failed)。
     第一次就成功時完全不呼叫 time.sleep，沒有任何額外延遲。"""
     attempts = 0
     first_error = None
     last_error = None
+    budget = source_budget_secs(mod)
     while True:
         attempts += 1
-        deadline = time.time() + SOURCE_BUDGET_SECS
+        deadline = time.time() + budget
         try:
-            items, truncated = _collect_once(mod, deadline)
-            return True, items, truncated, attempts, first_error, None, False
+            items, truncated, parse_failed = _collect_once(mod, deadline)
+            return True, items, truncated, attempts, first_error, None, False, parse_failed
         except Exception as e:
             err = "%s: %s" % (type(e).__name__, e)
             last_error = err
             if first_error is None:
                 first_error = err
             if attempts >= MAX_ATTEMPTS:
-                return False, None, False, attempts, first_error, last_error, False
+                return False, None, False, attempts, first_error, last_error, False, 0
             elapsed = time.time() - RUN_START
             if elapsed + RETRY_WAIT_SECS > MAX_RUN_SECS:
                 # 總時間保護：本輪已跑太久，不再等待重試，直接記為失敗，避免拖垮 11:30 的 push 排程。
                 print("SKIP_RETRY %-20s 已執行 %.0f 分鐘，超過 90 分鐘總時間保護，放棄重試：%s"
                       % (key, elapsed / 60, err), file=sys.stderr, flush=True)
-                return False, None, False, attempts, first_error, last_error, True
+                return False, None, False, attempts, first_error, last_error, True, 0
             print("RETRY %-20s 第 1 次失敗：%s；等待 %d 秒後重試（第 2 次，也是最後一次）"
                   % (key, err, RETRY_WAIT_SECS), flush=True)
             time.sleep(RETRY_WAIT_SECS)
@@ -216,7 +267,8 @@ def main():
         return 1
     for mod in mods:
         key, t0 = mod.KEY, time.time()
-        ok, items, truncated, attempts, first_error, last_error, skipped = collect_with_retry(mod, key)
+        ok, items, truncated, attempts, first_error, last_error, skipped, parse_failed = \
+            collect_with_retry(mod, key)
         if ok:
             try:
                 meta = {"channel": key, "desc": mod.DESC,
@@ -225,20 +277,22 @@ def main():
                         "parser_version": getattr(mod, "PARSER_VERSION", 1),
                         "fetched_at": STAMP, "license": "CC BY 4.0",
                         "note": "raw government notices; no interpretation",
-                        "truncated": truncated, "items_fetched": len(items)}
+                        "truncated": truncated, "items_fetched": len(items),
+                        "parse_failed": parse_failed}
                 payload = {"_meta": meta, "total": len(items), "errors": {}, "items": items}
                 path, size = write_gz(key, payload)
                 entry = {"ok": True, "n": len(items), "bytes": size,
                          "errors": 0, "secs": round(time.time() - t0, 1), "attempts": attempts,
-                         "truncated": truncated}
+                         "truncated": truncated, "parse_failed": parse_failed}
                 if truncated:
                     entry["items_fetched"] = len(items)
                 if attempts > 1 and first_error:
                     entry["first_error"] = first_error
                 manifest["channels"][key] = entry
-                print("OK   %-20s %4d 筆 %9d B %.1fs（attempts=%d%s）"
+                print("OK   %-20s %4d 筆 %9d B %.1fs（attempts=%d%s%s）"
                       % (key, len(items), size, time.time() - t0, attempts,
-                         "，TRUNCATED" if truncated else ""))
+                         "，TRUNCATED" if truncated else "",
+                         "，parse_failed=%d" % parse_failed if parse_failed else ""))
             except Exception as e:
                 # write_gz 等寫入階段失敗不屬於「來源抓取失敗」，不重試，直接記錄。
                 err = "%s: %s" % (type(e).__name__, e)
