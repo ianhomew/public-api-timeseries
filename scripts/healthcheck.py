@@ -18,11 +18,17 @@ from datetime import timezone, timedelta
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT  = os.path.join(REPO, "ALERT.md")
-TODAY = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d")
+# 回放測試用：可用環境變數覆寫「現在時刻」／「今天日期」。
+# 正式環境（cron）不會設定這兩個變數，行為與改動前完全相同。
+# HEALTHCHECK_NOW 格式：ISO8601 UTC，例如 2026-08-28T23:59:00+00:00
+_NOW_OVERRIDE = os.environ.get("HEALTHCHECK_NOW")
+NOW_UTC = (datetime.datetime.fromisoformat(_NOW_OVERRIDE) if _NOW_OVERRIDE
+           else datetime.datetime.now(timezone.utc))
+TODAY = os.environ.get("HEALTHCHECK_TODAY") or NOW_UTC.strftime("%Y-%m-%d")
 
 # 台北 = UTC+8，固定時差（台灣不實施日光節約時間），不可用系統本地時區（本機可能不是台北時區）。
 TAIPEI = timezone(timedelta(hours=8))
-NOW_TAIPEI = datetime.datetime.now(timezone.utc).astimezone(TAIPEI)
+NOW_TAIPEI = NOW_UTC.astimezone(TAIPEI)
 
 # 排程起跑時間（台北）：僅供狀態文字顯示用。
 SCHEDULE_TAIPEI = {"track-crypto": "09:00", "track-gov": "09:30"}
@@ -71,6 +77,11 @@ ACTIVE = ([("track-crypto", k) for k in _crypto_keys] +
           [("track-gov", k) for k in _gov_keys])
 LOW, HIGH = 0.5, 3.0   # 體積相對前 7 日中位數的容許區間
 
+# 連續截斷告警（SPEC-trunc-alert.md，2026-08-31 新增）：
+# 同一來源連續 N 天 manifest 的 truncated=true 就告警。預設 2（每日一輪，連兩天即異常）。
+# 可用環境變數覆寫，正式環境不設定，等同預設值 2。
+TRUNC_STREAK_N = int(os.environ.get("TRUNC_STREAK_N", "2"))
+
 def snapshots(track, key):
     d = os.path.join(REPO, track, "data", key)
     out = {}
@@ -111,6 +122,82 @@ def check_source(track, key, issues, pending):
         if med > 0 and (today_sz < med * LOW or today_sz > med * HIGH):
             issues.append((label, f"體積異常：今日 {today_sz:,} B，前 {len(prev)} 日中位數 {med:,.0f} B"
                                   f"（{today_sz/med:.2f}×，容許 {LOW}–{HIGH}×）"))
+
+def _fmt_num(v):
+    """千分位格式化；非數字原樣轉字串（manifest 欄位理論上都是數字，防禦性處理）。"""
+    return f"{v:,}" if isinstance(v, (int, float)) else str(v)
+
+def check_truncation_streak(track, issues):
+    """連續 TRUNC_STREAK_N 天 truncated=true 就告警（SPEC-trunc-alert.md，2026-08-31 新增）。
+    讀 <track>/data/_manifest/*.json 每來源的 truncated 欄位（由 snap_gov.py v4 寫入）。
+    沒有這個欄位的軌道（目前軌一 track-crypto 尚無每來源時間預算/截斷機制）自動略過，不會誤判。
+    只用 <= TODAY 的 manifest，今日 manifest 不存在時交給 check_manifest 處理，避免重複告警。
+    異常排除（連續天數 < 門檻）後，這裡自然不會再產生任何項目 → issues 為空 → ALERT.md 自動移除，
+    比照本檔既有行為，不留永久殘留。"""
+    mdir = os.path.join(REPO, track, "data", "_manifest")
+    if not os.path.isdir(mdir):
+        return
+    all_dates = sorted(os.path.basename(p)[:10]
+                        for p in glob.glob(os.path.join(mdir, "*.json")))
+    dates = [d for d in all_dates if d <= TODAY]
+    if not dates or dates[-1] != TODAY:
+        return
+    cache = {}
+    def load(d):
+        if d not in cache:
+            p = os.path.join(mdir, d + ".json")
+            try:
+                cache[d] = json.load(open(p, encoding="utf-8"))
+            except Exception:
+                cache[d] = None
+        return cache[d]
+    m_today = load(TODAY)
+    if not m_today:
+        return
+    channels_today = m_today.get("channels") or m_today.get("sources") or {}
+    idx_today = len(dates) - 1
+    for name, v in channels_today.items():
+        if "truncated" not in v or not v.get("truncated"):
+            continue
+        # 由今天往前累計連續截斷天數
+        streak = []
+        for back in range(0, len(dates)):
+            di = idx_today - back
+            if di < 0:
+                break
+            d = dates[di]
+            m = load(d)
+            if not m:
+                break
+            ch = (m.get("channels") or m.get("sources") or {})
+            cv = ch.get(name)
+            if not cv or "truncated" not in cv or not cv.get("truncated"):
+                break
+            streak.append((d, cv))
+        if len(streak) < TRUNC_STREAK_N:
+            continue
+        # 找連續截斷開始前，最近一次「未截斷」當日的筆數，當作目標筆數參考。
+        target_n = None
+        for back in range(len(streak), len(dates)):
+            di = idx_today - back
+            if di < 0:
+                break
+            d = dates[di]
+            m = load(d)
+            if not m:
+                continue
+            ch = (m.get("channels") or m.get("sources") or {})
+            cv = ch.get(name)
+            if cv and not cv.get("truncated") and cv.get("n") is not None:
+                target_n = cv.get("n")
+                break
+        target_str = f"{_fmt_num(target_n)} 筆" if target_n is not None else "未知（近期無未截斷紀錄可比對）"
+        day_desc = "；".join(
+            f"{d} 實際 {_fmt_num(cv.get('n'))} 筆／耗時 {_fmt_num(cv.get('secs'))}s"
+            for d, cv in reversed(streak))
+        issues.append((f"{track}/{name}",
+            f"連續 {len(streak)} 天截斷（truncated=true，達門檻 {TRUNC_STREAK_N} 天）："
+            f"{day_desc}；目標（近期未截斷）約 {target_str}"))
 
 def check_manifest(track, issues, pending):
     p = os.path.join(REPO, track, "data", "_manifest", TODAY + ".json")
@@ -153,6 +240,7 @@ def main():
     check_timestamps(issues)
     for track in ("track-crypto", "track-gov"):
         check_manifest(track, issues, pending)
+        check_truncation_streak(track, issues)
     for track, key in ACTIVE:
         check_source(track, key, issues, pending)
 
@@ -170,7 +258,7 @@ def main():
     lines = [
         "# 🔴 每日自我檢查發現異常",
         "",
-        f"檢查時間（UTC）：{datetime.datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+        f"檢查時間（UTC）：{NOW_UTC.isoformat(timespec='seconds')}",
         f"檢查時間（台北）：{NOW_TAIPEI.isoformat(timespec='seconds')}",
         f"檢查基準日（UTC）：{TODAY}",
         "",
