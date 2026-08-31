@@ -574,6 +574,20 @@
 
 若當事人要求移除，請至 GitHub 開 issue。
 
+## 人工封存來源（非每日 cron，manual_adapters）
+
+### `mcp_pulsemcp`
+
+程式在 `track-crypto/manual_adapters/mcp_pulsemcp.py`，**不在 `snap_crypto.py` 每日排程內**，
+為人工手動執行的一次性/多次封存，端點 `https://api.pulsemcp.com/v0beta/servers`。
+官方已公告 v0beta API 排程性棄用：2026-01 起 1% 請求隨機失敗、2026-04 起 10%、2026-06 起 50%，
+**2026-09 全面停用（100% 失敗）**。2026-08-31 UTC 停用前加抓一次：官方回報 `total_count=21983` 筆，
+本次人工執行完整分頁抓取（沿用官方 `next` 分頁連結，遇隨機 410 逐頁重試），
+去重後實得 **21982 筆**（覆蓋率約 99.995%，`_meta.truncated=true`，差 1 筆記錄為分頁邊界筆數波動，
+非請求失敗漏抓），存於 `track-crypto/data/mcp_pulsemcp/2026-08-31.json.gz`；
+上一次封存為 2026-08-28（單頁 250 筆）。個資掃描結果與判斷詳見
+`docs/pulsemcp-archive-report.md`。
+
 ## 已排除的來源
 
 以下清單沿用既有 `docs/sources.md` 記載，本輪未重新驗證（唯讀規則，未連線這些網站覆核）：
