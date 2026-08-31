@@ -1,9 +1,6 @@
-# 來源細節（草稿）
+# 來源細節
 
-回上層：[README](../README.md)　｜　相關：[track-gov-README.md](track-gov-README.md)、[DOC-DIFF.md](DOC-DIFF.md)
-
-> 本檔為**本機草稿**，未上傳、未 commit。用途：把 `docs/sources.md` 更新到目前 VPS 上實際存在的 **42 個 adapter**
-> （`track-crypto/adapters/` 24 個 + `track-gov/adapters/` 18 個）。
+回上層：[README](../README.md)　｜　相關：[track-gov README](../track-gov/README.md)
 
 資料來源：2026-08-31 直接讀取 VPS `/home/agentops/snap/public-api-timeseries/{track-crypto,track-gov}/adapters/*.py` 原始碼，
 欄位取自各檔案內的 `KEY`／`DESC`／`SOURCE_HOME`／`ROBOTS_VERIFIED`／`PARSER_VERSION`／`MAX_ITEMS`／`MAX_PAGES` 等常數，
@@ -26,7 +23,7 @@
 抓取程式：`track-crypto/scripts/snap_crypto.py`（自動載入 `track-crypto/adapters/*.py`）
 
 > 已停抓來源 `mcp_registry`（2026-08-27 起停止，已抓資料保留）**不計入本次 24 個**，
-> 因其 adapter 檔已不在 `track-crypto/adapters/` 目錄下（沿用既有文件記載，本輪未重新驗證，見下方 DOC-DIFF）。
+> 因其 adapter 檔已不在 `track-crypto/adapters/` 目錄下（沿用既有文件記載，本輪未重新驗證）。
 
 ### `agent_virtuals`
 

@@ -1,8 +1,4 @@
-# public-api-timeseries（草稿）
-
-> 本檔為**本機草稿**，未上傳、未 commit。取代既有專案根目錄 `README.md`，
-> 把收錄來源數字從舊文件的 21（crypto）＋12（gov）＝ 33，更新為 VPS 實際的
-> **24（crypto）＋ 18（gov）＝ 42** 個來源（2026-08-31 查核 `track-crypto/adapters/`、`track-gov/adapters/` 目錄）。
+# public-api-timeseries
 
 保存那些「官方不留歷史」的公開數字。
 
@@ -120,8 +116,7 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 **未收錄**：環境部（robots.txt 明文禁止新聞稿路徑 `/Page/`、`/News_Content.aspx`，
 且全站 Cloudflare JS 挑戰）。理由與親驗紀錄見 [docs/sources.md](docs/sources.md)。
 
-各來源的端點、分頁方式、已知限制見 [docs/sources.md](docs/sources.md)（本輪更新草稿見
-[drafts/sources.md](drafts/sources.md)）。
+各來源的端點、分頁方式、已知限制見 [docs/sources.md](docs/sources.md)。
 
 ## 資料長什麼樣
 
@@ -201,13 +196,13 @@ changes/<source>/YYYY-MM-DD.md           當日 unified diff
 | 文件 | 內容 |
 |---|---|
 | [docs/why.md](docs/why.md) | 收錄判準與三步驗證結果 |
-| [docs/sources.md](docs/sources.md) | 每個來源的端點、欄位、已知限制（本輪更新草稿：[drafts/sources.md](drafts/sources.md)） |
+| [docs/sources.md](docs/sources.md) | 每個來源的端點、欄位、已知限制 |
 | [docs/data-format.md](docs/data-format.md) | 檔名規則、JSON 結構、讀取範例 |
 | [docs/methodology.md](docs/methodology.md) | 抓取原則、robots.txt、原子寫入、時間戳 |
 | [docs/revisions.md](docs/revisions.md) | 經複核被推翻或收斂的宣稱 |
 | [docs/operations.md](docs/operations.md) | 排程、自我檢查、里程碑 |
-| [track-crypto/README.md](track-crypto/README.md) | 軌一速覽（本輪更新草稿：[drafts/track-crypto-README.md](drafts/track-crypto-README.md)） |
-| [track-gov/README.md](track-gov/README.md) | 軌二速覽（本輪更新草稿：[drafts/track-gov-README.md](drafts/track-gov-README.md)） |
+| [track-crypto/README.md](track-crypto/README.md) | 軌一速覽 |
+| [track-gov/README.md](track-gov/README.md) | 軌二速覽 |
 
 ## 免責
 

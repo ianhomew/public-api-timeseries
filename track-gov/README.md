@@ -1,10 +1,6 @@
-# track-gov — 台灣政府公告每日快照（可問責性存檔）（草稿）
+# track-gov — 台灣政府公告每日快照（可問責性存檔）
 
-回上層：[專案總覽](README.md)
-
-> 本檔為**本機草稿**，未上傳、未 commit。取代既有 `track-gov/README.md`（仍寫 12 個機關），
-> 更新為 VPS 上實際的 **18 個來源**（2026-08-31 查核 `track-gov/adapters/` 目錄）。
-> 本輪已補齊新 6 個來源的實測筆數／體積／耗時（唯讀，讀取既有 manifest／logs，未執行新抓取）。
+回上層：[專案總覽](../README.md)
 
 這是原始公告存檔，**不含任何分析、解讀或評論**。
 
@@ -70,7 +66,33 @@ def collect(fetch, clean) -> list[dict]   # id, url, title, date, body_text
 
 單獨執行一個來源：`python3 scripts/snap_gov.py fsc_clarification`
 
-端點、欄位、踩過的坑 → [docs/sources.md](../docs/sources.md)（本輪草稿見 [../drafts/sources.md](../drafts/sources.md)）
+端點、欄位、踩過的坑 → [docs/sources.md](../docs/sources.md)
+
+## 為什麼存
+
+50 篇中 **49 篇已存在於 Internet Archive**，但抽樣中位擷取數僅 **1 次**，
+其中 56% 的篇目無法用 Wayback 偵測發布後的改寫（此為 `fsc_clarification` 頻道抽樣結果，
+2026-08-27 UTC 實測；本輪新增的 6 個機關未重新抽測 Wayback 覆蓋率）。
+
+因此本軌的價值是**高頻改寫偵測**，不是「唯一副本」。
+早期文件曾宣稱「內頁 Wayback 存檔 0 份」，該測法有誤，已更正 →
+[docs/revisions.md](../docs/revisions.md)
+
+## 怎麼偵測改寫
+
+每筆包含 `id`、`url`、`title`、`date`、`body_text`、`body_sha256`。
+（金管會另保留 `dataserno` 欄位，與 2026-08-27 之前的快照相容。）
+
+比對相同 `id` 在**不同日期**的 `body_sha256`，不同即為改寫。
+同一 UTC 日期內的多份快照屬於重跑產物，只取當日最後一份，不視為改寫事件。
+
+**揮發性內容過濾**：部分機關頁面正文含「瀏覽人次」計數器，每次抓取都會變。
+這類行在寫入前即被移除，否則每日 diff 會天天誤報改寫，真訊號被雜訊淹沒。
+`scripts/detect_changes.py` 每日自動執行，有變動才產生 `changes/` 與 `CHANGES.md`。
+截至目前已偵測到 1 起改寫（2026-08-29，`mof_press`，見專案根目錄 [README.md](../README.md)
+「首次偵測到的改寫紀錄」）。
+
+可執行範例 → [docs/data-format.md](../docs/data-format.md)
 
 ## 排程
 

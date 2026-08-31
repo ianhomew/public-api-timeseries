@@ -1,11 +1,6 @@
-# track-crypto — 加密貨幣與 AI 算力市場每日快照（草稿）
+# track-crypto — 加密貨幣與 AI 算力市場每日快照
 
-回上層：[專案總覽](README.md)
-
-> 本檔為**本機草稿**，未上傳、未 commit。取代既有 `track-crypto/README.md`（仍寫 21 個來源），
-> 更新為 VPS 上實際的 **24 個來源**（2026-08-31 查核 `track-crypto/adapters/` 目錄，24 個 `.py` 檔逐一核對），
-> 新增 3 個先前完全未被任何文件記載的來源：`agent_virtuals`／`mcp_smithery`／`x402_index_thirdparty`（皆屬
-> 2026-08-28 交付的 Batch 3：MCP／agent 生態目錄）。
+回上層：[專案總覽](../README.md)
 
 這是原始資料存檔，**不含任何分析、觀點或投資建議**。
 
@@ -90,7 +85,7 @@
 | Binance | robots.txt 全站 `Disallow: /` |
 | Jupiter／EigenLayer／Hyperliquid 相關頁 | 網域 DNS 已失效或 404 |
 
-端點全文、欄位與已知限制 → [docs/sources.md](../docs/sources.md)（本輪更新草稿見 [../drafts/sources.md](../drafts/sources.md)）
+端點全文、欄位與已知限制 → [docs/sources.md](../docs/sources.md)
 
 ## 需要先知道的兩件事
 
@@ -122,7 +117,7 @@ def collect(fetch) -> dict/list:
 
 > **注意（本輪查核修正）**：軌一（track-crypto）的 adapter 介面**沒有** `clean` 參數，
 > 也**不支援** `deadline` 參數；`collect(fetch, clean, deadline=None)` 是軌二（track-gov）
-> 的介面（見 [track-gov/README.md](track-gov/README.md)），兩軌介面不同，不可混用。
+> 的介面（見 [track-gov/README.md](../track-gov/README.md)），兩軌介面不同，不可混用。
 > 軌一目前唯一的逾時／截斷機制是 `agent_virtuals` adapter 自行在函式內實作的
 > `TIME_BUDGET_SECS=600` 秒總時間預算（`truncated` 欄位寫入回傳的 `data` 內層，
 > 不在 `_meta` 裡；其餘 23 個 adapter 沒有這個機制）。
