@@ -6,7 +6,7 @@
 時區鐵律：所有快照檔名一律用 **UTC 日期**，本檢查也一律用 UTC 比對。
 
 排程時間判定（2026-08-31 修正）：
-軌一 track-crypto 09:00 台北起跑（實測約 12 分鐘）、
+軌一 track-crypto 08:00 台北起跑（agent_virtuals 全量後預估 35～60 分鐘）、
 軌二 track-gov   09:30 台北起跑（實測約 72 分鐘）、
 push.sh 11:30 台北起跑（本檢查在此流程內執行）。
 在「該軌預期完成時間」之前，「今日缺檔／manifest 不存在」一律不計為異常，
@@ -31,11 +31,12 @@ TAIPEI = timezone(timedelta(hours=8))
 NOW_TAIPEI = NOW_UTC.astimezone(TAIPEI)
 
 # 排程起跑時間（台北）：僅供狀態文字顯示用。
-SCHEDULE_TAIPEI = {"track-crypto": "09:00", "track-gov": "09:30"}
+SCHEDULE_TAIPEI = {"track-crypto": "08:00", "track-gov": "09:30"}
 # 預期完成時間（台北）＝ 起跑時間 + 實測耗時 + 30 分鐘寬限。
-# track-crypto：09:00 起跑，實測約 12 分鐘 → 09:45 前完成保守估計已含寬限。
+# track-crypto：08:00 起跑。2026-08-31 起 agent_virtuals 改抓全量（TIME_BUDGET_SECS 600→3000），
+# 預估 35～60 分鐘 → 09:20 前完成，保守估計已含寬限。
 # track-gov  ：09:30 起跑，實測約 72 分鐘 → 11:15 前完成保守估計已含寬限。
-EXPECTED_DONE_TAIPEI = {"track-crypto": "09:45", "track-gov": "11:15"}
+EXPECTED_DONE_TAIPEI = {"track-crypto": "09:20", "track-gov": "11:15"}
 
 def _grace_passed(track):
     """判斷「現在（台北）」是否已過該軌今日的預期完成時間。

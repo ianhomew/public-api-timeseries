@@ -179,7 +179,7 @@ changes/<source>/YYYY-MM-DD.md           當日 unified diff
 | 項目 | 值（2026-08-31 UTC 本輪唯讀查核） |
 |---|---|
 | 收錄來源總數 | **42**（track-crypto 24 ＋ track-gov 18） |
-| 每日排程 | 09:00（track-crypto）／09:30（track-gov）／11:30（push）（**台北時間**，VPS `crontab -l` 查核） |
+| 每日排程 | 08:00（track-crypto）／09:30（track-gov）／11:30（push）（**台北時間**，VPS `crontab -l` 查核） |
 | 自我檢查 | `ALERT.md` 存在時代表偵測到異常 |
 | 每日壓縮後合計體積 | 約 **10.68 MB**（track-crypto 9.33 MB ＋ track-gov 1.35 MB，2026-08-31 UTC 實測） |
 | 新 9 個來源實測數字 | 已補齊，見上方 track-crypto／track-gov 各表（2026-08-31 UTC，來源：manifest、cron.log、`ls` 累積天數） |

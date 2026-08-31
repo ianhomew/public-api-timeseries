@@ -12,7 +12,7 @@
 
 | 項目 | 排程（台北時間） | 執行程式 |
 |---|---|---|
-| `track-crypto`（24 個來源） | 每日 09:00 | `track-crypto/scripts/snap_crypto.py` |
+| `track-crypto`（24 個來源） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
 | `track-gov`（18 個來源） | 每日 09:30（`flock -w 1800` 等抓取鎖，最多等 30 分鐘） | `track-gov/scripts/snap_gov.py` |
 | git push | 每日 11:30（`flock -w 7200`，最多等 2 小時） | `scripts/push.sh` |
 
@@ -34,7 +34,7 @@
 | 端點 | `https://api.virtuals.io/api/virtuals?pagination[page]=N&pagination[pageSize]=500` |
 | parser_version | 2 |
 | MAX_ITEMS／等效上限 | MAX_PAGES=200 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.virtuals.io/robots.txt：Content-Signal 格式，search=yes（預設）, ai-train=no；User-agent: * 未見路徑 Disallow |
 | 實測值（2026-08-31 UTC） | 36,000 筆（官方回報總數 82,317 筆；`truncated=true`，600 秒時間預算截斷於第 72/165 頁，屬預期降級非異常）；887,296 B（約 867 KB）；耗時 608.7s；已累積天數 4 天（2026-08-28～08-31） |
 
@@ -47,7 +47,7 @@
 | 端點 | `https://www.starknet.io/provisions-geo-regulations/` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.starknet.io/robots.txt：HTTP 200，User-agent: * 的 Disallow 清單（查詢參數、/wp-admin、/tag/ 等）未涵蓋 /provisions-geo-regulations/，允許存取 |
 
 ### `audit_registry_certik`
@@ -59,7 +59,7 @@
 | 端點 | `https://skynet.certik.com/` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | MIN_ITEMS=3（驗收下限，非上限） |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://skynet.certik.com/robots.txt：HTTP 200，User-agent: * 為 Allow: /，但 Disallow: /api/、/my/、/mobile/；本 adapter 只抓首頁 / 本體，未觸碰 /api/ |
 
 ### `cex_announcements`
@@ -71,7 +71,7 @@
 | 端點（共 4 個） | `https://www.binance.com/bapi/composite/v1/public/cms/article/list/query`；`https://api.bybit.com/v5/announcements/index`；`https://www.okx.com/api/v5/support/announcements`；`https://api-manager.upbit.com/api/v1/announcements` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書實測結論：www.binance.com 此 API 路徑本輪未被 WAF 攔截（但主機同時存在會被 WAF 擋的頁面，每次改版須重新確認）；api.bybit.com、www.okx.com 本輪正常回應；api-manager.upbit.com 本輪撞到 HTTP 429，限流比 api.upbit.com 更嚴格，未親驗 robots.txt 內容（見已知的坑） |
 
 ### `cex_currency_status`
@@ -83,7 +83,7 @@
 | 端點（共 2 個） | `https://api.gateio.ws/api/v4/spot/currencies`；`https://api.exchange.coinbase.com/currencies` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：Gate api.gateio.ws/robots.txt 未見 Disallow；Coinbase Exchange api.exchange.coinbase.com/robots.txt 回 401 Unauthorized（與 A6 相同的不尋常行為，但 /currencies 資料端點本輪實測不需認證、正常回 200） |
 
 ### `cex_earn_apr`
@@ -95,7 +95,7 @@
 | 端點（共 2 個） | `https://api.bybit.com/v5/earn/product?category=FlexibleSaving`；`https://www.okx.com/api/v5/finance/savings/lending-rate-summary` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：api.bybit.com、www.okx.com 本輪皆正常回應 200，規格書已列出實測筆數（Bybit 229 筆／OKX 169 筆），本 adapter 實作時另行親驗 robots.txt。 |
 
 ### `cex_symbols`
@@ -107,7 +107,7 @@
 | 端點（共 7 個） | `https://api.bybit.com/v5/market/instruments-info?category=spot`；`https://www.okx.com/api/v5/public/instruments?instType=SPOT`；`https://api.bitget.com/api/v2/spot/public/symbols`；`https://api.huobi.pro/v1/common/symbols`；`https://api.gateio.ws/api/v4/spot/currency_pairs`；`https://api.kucoin.com/api/v2/symbols`；`https://api.mexc.com/api/v3/exchangeInfo` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：api.bybit.com/robots.txt HTTP 404（無限制）；www.okx.com/robots.txt HTTP 200，User-agent: * 的 Disallow 清單未涵蓋 /api/v5/public/instruments（允許）；api.bitget.com/robots.txt HTTP 403（略過，沿用既有實作已在抓取的行為，未變更）；api.huobi.pro/robots.txt HTTP 404（無限制）；api.gateio.ws/robots.txt HTTP 404（無限制）；api.kucoin.com/robots.txt HTTP 404（無限制）；api.mexc.com/robots.txt HTTP 404（無限制）。Binance 沿用既有實作排除（既有程式碼註記：robots 全站 Disallow），本輪未重新驗證 Binance，維持既有排除決定 |
 
 ### `cex_symbols_ext`
@@ -119,7 +119,7 @@
 | 端點（共 3 個） | `https://api.kraken.com/0/public/AssetPairs`；`https://api.exchange.coinbase.com/products`；`https://api.upbit.com/v1/market/all` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：Kraken api.kraken.com/robots.txt 無限制；Coinbase Exchange api.exchange.coinbase.com/robots.txt 回 401 Unauthorized（不尋常，但資料端點 /products 本身本輪實測不需認證、正常回 200，每次改版建議重新確認）；Upbit api.upbit.com/robots.txt 未見 Disallow（該站另一子網域 api-manager.upbit.com 對高頻請求會回 429，已於本 adapter 對 Upbit 使用較保守的 sleep） |
 
 ### `cex_withdrawal_limits`
@@ -131,7 +131,7 @@
 | 端點 | `https://api.kucoin.com/api/v3/currencies` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | MIN_ITEMS=1500（驗收下限，非上限） |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.kucoin.com/robots.txt：404（無 robots.txt，視為無限制） |
 
 ### `crypto_project_liveness`
@@ -143,7 +143,7 @@
 | 端點 | `https://api.llama.fi/hacks` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | MIN_ITEMS=300（驗收下限，非上限） |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.llama.fi/robots.txt：HTTP 404（無 robots.txt，視為無限制） |
 
 ### `dao_proposal_snapshot`
@@ -155,7 +155,7 @@
 | 端點 | `https://hub.snapshot.org/graphql` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | MAX_PAGES=5；MIN_ITEMS=1（驗收下限，非上限） |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://hub.snapshot.org/robots.txt：60B 版本號 JSON banner（非傳統 robots.txt 格式，無路徑限制內容，依慣例視同無限制） |
 
 ### `defi_yield_rates`
@@ -167,7 +167,7 @@
 | 端點（共 4 個） | `https://eth-api.lido.fi/v1/protocol/steth/apr/last`；`https://api.rocketpool.net/api/mainnet/payload`；`https://app.ethena.fi/api/yields/protocol-and-staking-yield`；`https://info-sky.blockanalitica.com/api/v1/overall/` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：四個端點本輪皆正常回應 200（Lido 137B／Rocket Pool 1,379B／Ethena 448B／Sky 1,084B），本 adapter 實作時另行親驗 robots.txt。 |
 
 ### `eth_validator_queue`
@@ -179,7 +179,7 @@
 | 端點 | `https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/states/head/validators?status={status}` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：ethereum-beacon-api.publicnode.com 本輪 4 個 status 皆正常回應 200，本 adapter 實作時另行親驗 robots.txt。 |
 
 ### `hf_trending_models`
@@ -191,7 +191,7 @@
 | 端點 | `https://huggingface.co/api/models?sort=trendingScore&limit=1000` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | MIN_ITEMS=500（驗收下限，非上限） |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://huggingface.co/robots.txt：HTTP 200，User-Agent: * / Allow: / （全站無 Disallow） |
 
 ### `mcp_smithery`
@@ -203,7 +203,7 @@
 | 端點 | `https://registry.smithery.ai/servers?page=N&pageSize=100` |
 | parser_version | 2 |
 | MAX_ITEMS／等效上限 | MAX_PAGE=5；MIN_ITEMS=200（驗收下限，非上限） |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://registry.smithery.ai/robots.txt：Content-Signal 格式，User-agent: * 未見 Disallow（一般語意為 Allow: /），僅具名爬蟲黑名單（ClaudeBot/GPTBot/CCBot 等 token）才會被排除；本 adapter 使用的 UA 字串不含這些具名 token |
 | 實測值（2026-08-31 UTC） | 271 筆（官方回報總數約 11,103 筆，覆蓋率約 2.4%；端點硬性只能翻到第 5 頁，跨頁排序漂移，271 筆為去重後可得上限，非人為限量）；83,890 B（約 82 KB）；耗時 6.8s；已累積天數 4 天（2026-08-28～08-31） |
 
@@ -216,7 +216,7 @@
 | 端點 | `https://www.treasury.gov/ofac/downloads/sdn.csv` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗：www.treasury.gov/robots.txt 回 HTTP 200 但為一般 HTML 頁面（78,495B，非傳統 robots.txt 格式，無法解析出 Disallow 規則，依慣例視同無限制）；sanctionslistservice.ofac.treas.gov/robots.txt 回 404（無限制，備選端點未採用）；已另外實測確認 /ofac/downloads/sdn.csv 本身可直接 200 下載，不會被導向首頁 |
 
 ### `openrouter_models`
@@ -228,7 +228,7 @@
 | 端點 | `https://openrouter.ai/api/v1/models` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://openrouter.ai/robots.txt：HTTP 200，User-Agent: * / Allow: / / Disallow: /seo/ （只擋 /seo/，不影響 /api/v1/models） |
 
 ### `openrouter_providers`
@@ -240,7 +240,7 @@
 | 端點 | `https://openrouter.ai/api/v1/providers` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://openrouter.ai/robots.txt：HTTP 200，User-Agent: * / Allow: / / Disallow: /seo/ （同 openrouter_models，同一主機） |
 
 ### `oracle_feed_directory`
@@ -252,7 +252,7 @@
 | 端點（共 2 個） | `https://reference-data-directory.vercel.app/feeds-mainnet.json`；`https://hermes.pyth.network/v2/price_feeds` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：兩個托管網域的 robots.txt 皆為 404（視為無限制），本輪皆正常回應 200（Chainlink 292 筆／Pyth 1,843 筆），本 adapter 實作時另行親驗 robots.txt。 |
 
 ### `payment_protocol_repos`
@@ -264,7 +264,7 @@
 | 端點（共 3 個） | `https://api.github.com/repos/x402-foundation/x402`；`https://api.github.com/repos/google-agentic-commerce/AP2`；`https://api.github.com/repos/lightninglabs/L402` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.github.com/robots.txt：HTTP 404（無限制） |
 
 ### `project_tokenomics_docs`
@@ -276,7 +276,7 @@
 | 端點 | `https://docs.arbitrum.foundation/airdrop-eligibility-distribution` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://docs.arbitrum.foundation/robots.txt：HTTP 404（該站沒有 robots.txt，視為無限制；根路徑本身可正常存取，非封鎖造成的 404） |
 
 ### `vast_gpu`
@@ -288,7 +288,7 @@
 | 端點 | `https://console.vast.ai/api/v0/bundles/` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://console.vast.ai/robots.txt：HTTP 200，User-agent: * / Allow: /（全站無 Disallow） |
 
 ### `x402_bazaar`
@@ -300,7 +300,7 @@
 | 端點 | `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.cdp.coinbase.com/robots.txt：HTTP 404（無 robots.txt，視為無限制；與既有 track-crypto/scripts/snap_crypto.py 沿用至今的抓取行為一致） |
 
 ### `x402_index_thirdparty`
@@ -312,7 +312,7 @@
 | 端點 | `https://www.x402scan.com/sitemap.xml` |
 | parser_version | 1 |
 | MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 09:00，`snap_crypto.py`） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.x402scan.com/robots.txt：Allow: /，Content-Signal: search=yes, ai-train=no, ai-input=yes |
 | 實測值（2026-08-31 UTC） | 1,044 個 URL（`/server/` 前綴 1,000 個，約為同日 `x402_bazaar` 官方掛牌數 14,410 筆的 6.9%）；23,431 B（約 23 KB）；耗時 1.5s；已累積天數 4 天（2026-08-28～08-31） |
 
