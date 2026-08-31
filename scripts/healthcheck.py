@@ -4,12 +4,41 @@
 只陳述事實（缺檔／體積異常／manifest 失敗），不做解讀。
 
 時區鐵律：所有快照檔名一律用 **UTC 日期**，本檢查也一律用 UTC 比對。
+
+排程時間判定（2026-08-31 修正）：
+軌一 track-crypto 09:00 台北起跑（實測約 12 分鐘）、
+軌二 track-gov   09:30 台北起跑（實測約 72 分鐘）、
+push.sh 11:30 台北起跑（本檢查在此流程內執行）。
+在「該軌預期完成時間」之前，「今日缺檔／manifest 不存在」一律不計為異常，
+只列為中性的「尚未執行」狀態；超過預期完成時間仍缺檔才是真異常
+（不論已缺幾天，一旦超過該軌今日的預期完成時間，都會被抓到，見 check_source/check_manifest）。
 """
 import os, json, glob, statistics, datetime
+from datetime import timezone, timedelta
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT  = os.path.join(REPO, "ALERT.md")
-TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+TODAY = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+# 台北 = UTC+8，固定時差（台灣不實施日光節約時間），不可用系統本地時區（本機可能不是台北時區）。
+TAIPEI = timezone(timedelta(hours=8))
+NOW_TAIPEI = datetime.datetime.now(timezone.utc).astimezone(TAIPEI)
+
+# 排程起跑時間（台北）：僅供狀態文字顯示用。
+SCHEDULE_TAIPEI = {"track-crypto": "09:00", "track-gov": "09:30"}
+# 預期完成時間（台北）＝ 起跑時間 + 實測耗時 + 30 分鐘寬限。
+# track-crypto：09:00 起跑，實測約 12 分鐘 → 09:45 前完成保守估計已含寬限。
+# track-gov  ：09:30 起跑，實測約 72 分鐘 → 11:15 前完成保守估計已含寬限。
+EXPECTED_DONE_TAIPEI = {"track-crypto": "09:45", "track-gov": "11:15"}
+
+def _grace_passed(track):
+    """判斷「現在（台北）」是否已過該軌今日的預期完成時間。
+    未知軌道（不在表中）一律視為已過寬限，避免漏檢真異常。"""
+    exp = EXPECTED_DONE_TAIPEI.get(track)
+    if not exp:
+        return True
+    hh, mm = (int(x) for x in exp.split(":"))
+    return (NOW_TAIPEI.hour, NOW_TAIPEI.minute) >= (hh, mm)
 
 # 軌一若沒有 adapters 目錄（例如回滾到舊版驅動程式）時的降級清單。
 # 絕對不可讓「adapters 目錄不存在」變成空清單去檢查 —— 那等於自我檢查什麼都不檢查卻回報正常。
@@ -49,11 +78,15 @@ def snapshots(track, key):
         out.setdefault(os.path.basename(p)[:10], []).append(p)
     return out
 
-def check_source(track, key, issues):
+def check_source(track, key, issues, pending):
     label = f"{track}/{key}"
     d = os.path.join(REPO, track, "data", key)
     snaps = snapshots(track, key)
     if not snaps:
+        if not _grace_passed(track):
+            pending.append((label, f"尚未執行（排程 {SCHEDULE_TAIPEI.get(track, '?')} 起跑，"
+                                    f"預期 {EXPECTED_DONE_TAIPEI.get(track, '?')} 前完成，目前尚未有任何快照）"))
+            return
         if not os.path.isdir(d):
             # adapter 檔案存在（否則不會進到 ACTIVE），但快照目錄從未建立過 → 從沒成功跑過一次
             issues.append((label, "來源已設定但從未產出：adapter 已部署，但今日完全沒有對應快照目錄"))
@@ -62,6 +95,11 @@ def check_source(track, key, issues):
         return
     days = sorted(snaps)
     if TODAY not in snaps:
+        if not _grace_passed(track):
+            pending.append((label, f"今日尚未執行（排程 {SCHEDULE_TAIPEI.get(track, '?')} 起跑，"
+                                    f"預期 {EXPECTED_DONE_TAIPEI.get(track, '?')} 前完成）；最後一份為 {days[-1]}"))
+            return
+        # 已過該軌今日預期完成時間仍缺檔 → 真異常，不論已缺幾天都會在此被抓到。
         issues.append((label, f"今日（UTC {TODAY}）缺檔；最後一份為 {days[-1]}"
                               f"（已 {(datetime.date.fromisoformat(TODAY) - datetime.date.fromisoformat(days[-1])).days} 天無新資料）"))
         return
@@ -74,10 +112,14 @@ def check_source(track, key, issues):
             issues.append((label, f"體積異常：今日 {today_sz:,} B，前 {len(prev)} 日中位數 {med:,.0f} B"
                                   f"（{today_sz/med:.2f}×，容許 {LOW}–{HIGH}×）"))
 
-def check_manifest(track, issues):
+def check_manifest(track, issues, pending):
     p = os.path.join(REPO, track, "data", "_manifest", TODAY + ".json")
     if not os.path.exists(p):
-        issues.append((track, f"今日 manifest 不存在 → 排程可能沒跑（UTC {TODAY}）"))
+        if not _grace_passed(track):
+            pending.append((track, f"今日 manifest 尚未產生（排程 {SCHEDULE_TAIPEI.get(track, '?')} 起跑，"
+                                    f"預期 {EXPECTED_DONE_TAIPEI.get(track, '?')} 前完成）"))
+        else:
+            issues.append((track, f"今日 manifest 不存在 → 排程可能沒跑（UTC {TODAY}）"))
         return
     try:
         m = json.load(open(p, encoding="utf-8"))
@@ -86,6 +128,7 @@ def check_manifest(track, issues):
         return
     for name, v in (m.get("sources") or m.get("channels") or {}).items():
         if not v.get("ok"):
+            # manifest 內已明確記錄失敗，是既成事實而非時間判定問題，不套用寬限規則。
             issues.append((f"{track}/{name}", f"manifest 標記失敗：{v.get('error','(無錯誤訊息)')}"))
 
 def check_timestamps(issues):
@@ -106,28 +149,44 @@ def check_timestamps(issues):
 
 def main():
     issues = []
+    pending = []
     check_timestamps(issues)
     for track in ("track-crypto", "track-gov"):
-        check_manifest(track, issues)
+        check_manifest(track, issues, pending)
     for track, key in ACTIVE:
-        check_source(track, key, issues)
+        check_source(track, key, issues, pending)
+
+    if pending:
+        print(f"--- {len(pending)} 項尚在排程寬限期內（非異常） ---")
+        for a, b in pending:
+            print(f"PENDING {a}: {b}")
 
     if not issues:
         if os.path.exists(OUT):
             os.remove(OUT)
-        print(f"OK {TODAY} 全部正常（{len(ACTIVE)} 個來源）")
+        print(f"OK {TODAY} 全部正常（{len(ACTIVE)} 個來源，{len(pending)} 項尚在寬限期內）")
         return 0
 
     lines = [
         "# 🔴 每日自我檢查發現異常",
         "",
-        f"檢查時間（UTC）：{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}",
+        f"檢查時間（UTC）：{datetime.datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+        f"檢查時間（台北）：{NOW_TAIPEI.isoformat(timespec='seconds')}",
         f"檢查基準日（UTC）：{TODAY}",
         "",
         "| 來源 | 問題 |",
         "|---|---|",
-    ] + [f"| `{a}` | {b} |" for a, b in issues] + [
-        "",
+    ] + [f"| `{a}` | {b} |" for a, b in issues] + [""]
+
+    if pending:
+        lines += [
+            "## 尚在排程寬限期內（非異常，僅供參考）",
+            "",
+            "| 來源 | 狀態 |",
+            "|---|---|",
+        ] + [f"| `{a}` | {b} |" for a, b in pending] + [""]
+
+    lines += [
         "本檔由 `scripts/healthcheck.py` 自動產生。異常排除後會自動刪除。",
         "",
         "排查順序：`crontab -l` → `track-*/logs/cron.log` → 手動執行 snapshotter。",

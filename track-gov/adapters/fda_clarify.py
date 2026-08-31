@@ -1,4 +1,11 @@
-"""食藥署 食藥闢謠專區（news.aspx/newsContent.aspx GSP 類架構）"""
+"""食藥署 食藥闢謠專區（news.aspx/newsContent.aspx GSP 類架構）
+
+2026-08-31 因站方回應變慢（同一 URL 耗時從 2.76 秒飆到 14.77 秒），依 PERF_FIX_SPEC.md 修正 4，
+MAX_ITEMS 由 100 降為 50；本站日增量約數筆，50 筆仍足以偵測改寫（重疊視窗遠大於日增量）。
+同時依修正 2 支援 collect(fetch, clean, deadline=None)：deadline 為驅動程式傳入的 UNIX 時間戳，
+本 adapter 在每次翻頁／每抓一筆內頁前檢查 time.time() < deadline，超過就停止並回傳已取得的資料
+（向下相容：deadline 為 None 時視為無時間限制，行為與舊版完全相同）。
+"""
 import re, time
 
 KEY = "fda_clarify"
@@ -11,15 +18,21 @@ ROBOTS_VERIFIED = ("2026-08-28 親驗 https://www.fda.gov.tw/robots.txt："
                     "本 adapter 使用自訂識別性 UA，非 ClaudeBot/GPTBot，不受此條款拘束）")
 LIST_URL = "https://www.fda.gov.tw/TC/news.aspx?cid=5049&pn={page}"
 DETAIL_URL = "https://www.fda.gov.tw/TC/newsContent.aspx?cid=5049&id={id}"
-MAX_ITEMS = 100
+MAX_ITEMS = 50    # 2026-08-31：因站方回應變慢，由 100 降為 50；日增量約數筆，50 筆仍足以偵測改寫
 PARSER_VERSION = 1
 
 ROW_RE = re.compile(r'newsContent\.aspx\?cid=5049&id=(\d+)')
 
 
-def _list_ids(fetch):
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def _list_ids(fetch, deadline=None):
     ids, seen, page = [], set(), 1
     while len(ids) < MAX_ITEMS:
+        if _deadline_hit(deadline):
+            break
         raw = fetch(LIST_URL.format(page=page))
         found = ROW_RE.findall(raw)
         new = [i for i in dict.fromkeys(found) if i not in seen]
@@ -53,13 +66,15 @@ def _body(raw, clean):
     return clean(frag)
 
 
-def collect(fetch, clean):
-    ids = _list_ids(fetch)
+def collect(fetch, clean, deadline=None):
+    ids = _list_ids(fetch, deadline)
     if not ids:
         raise RuntimeError("fda_clarify 清單 0 筆 —— 視為抓取失敗")
 
     items = []
     for nid in ids:
+        if _deadline_hit(deadline):
+            break
         url = DETAIL_URL.format(id=nid)
         raw = fetch(url)
 

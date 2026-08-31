@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""detect_changes_v2.py — 偵測快照之間的變動，產生可稽核的 diff 紀錄
+"""detect_changes.py — 偵測快照之間的變動，產生可稽核的 diff 紀錄
 
 每日抓取後自動執行。比對最近兩份快照：
   - 內容改寫（同一 dataserno 的 body_sha256 改變）→ 產生 unified diff
   - 新增、下架
 有變動才產生檔案；無變動不留痕跡。
 輸出：changes/<source>/YYYY-MM-DD.md  +  CHANGES.md（累積索引）
-
-v2 變更（2026-08-31，依 PERF_FIX_SPEC.md 修正 3，最重要的一項）：
-若某來源當天被截斷（快照 _meta.truncated=true，例如因每來源 600 秒時間預算被 snap_gov_v4.py
-提前中止），只抓到部分筆數，少掉的那些筆數不能被誤判為「下架」——那是災難級的假警報。
-規則：比對時只要任一邊快照 _meta.truncated 為 true：
-  1. 完全跳過「下架」判定（不產生任何 removed，rolled 也一併跳過，因為它依賴 removed）。
-  2. 「內容改寫」仍照常比對（兩邊都有的 id 才比，不受截斷影響）。
-  3. 輸出中明確註明「因快照截斷，本日不做下架判定」。
 """
 import os, sys, re, gzip, json, glob, difflib
 from datetime import datetime, timezone
@@ -75,39 +67,27 @@ def parser_version(j):
     d = j.get("data", j)
     return (d.get("_meta") or {}).get("parser_version", 1)
 
-def truncated_of(j):
-    """v2 新增：快照是否因每來源時間預算被提前中止（snap_gov_v4.py 寫入 _meta.truncated）。"""
-    d = j.get("data", j)
-    return bool((d.get("_meta") or {}).get("truncated"))
-
 def compare(source, cfg, f_old, f_new):
     j_old, j_new = load(f_old), load(f_new)
-    trunc_old, trunc_new = truncated_of(j_old), truncated_of(j_new)
-    skip_removed = trunc_old or trunc_new   # v2：任一邊截斷就完全跳過下架判定
     err = errors_of(j_old) | errors_of(j_new)   # 抓取失敗者不列入下架/新增判定
     list_old = items_of(j_old)
     a = {_key(i, cfg): i for i in list_old}
     b = {_key(i, cfg): i for i in items_of(j_new)}
     added = sorted(set(b) - set(a) - err)
+    removed = set(a) - set(b) - err
     changed = sorted(k for k in set(a) & set(b) if a[k][cfg["sha"]] != b[k][cfg["sha"]])
 
-    if skip_removed:
-        # 快照被截斷：少掉的 id 可能只是「這次沒抓到」，不是「機關下架」。
-        # 完全不計算 removed / rolled，避免災難級假警報。
-        removed, rolled = [], []
-    else:
-        # 「滾動移出」不是「下架」。
-        # 多數來源每日只抓最新 N 筆，有新稿進來就會把最舊的擠出視窗。
-        # 這種消失發生在清單尾端，且通常伴隨等量的新增，不代表機關撤稿。
-        # 真正的下架是「從清單中段消失」。
-        removed_set = set(a) - set(b) - err
-        pos = {_key(i, cfg): n for n, i in enumerate(list_old)}
-        tail_start = len(list_old) - (len(added) + len(removed_set)) - 2
-        rolled = sorted(k for k in removed_set if pos.get(k, 0) >= tail_start)
-        removed = sorted(removed_set - set(rolled))
-    return a, b, added, removed, changed, rolled, skip_removed
+    # 「滾動移出」不是「下架」。
+    # 多數來源每日只抓最新 100 筆，有新稿進來就會把最舊的擠出視窗。
+    # 這種消失發生在清單尾端，且通常伴隨等量的新增，不代表機關撤稿。
+    # 真正的下架是「從清單中段消失」。
+    pos = {_key(i, cfg): n for n, i in enumerate(list_old)}
+    tail_start = len(list_old) - (len(added) + len(removed)) - 2
+    rolled = sorted(k for k in removed if pos.get(k, 0) >= tail_start)
+    removed = sorted(removed - set(rolled))
+    return a, b, added, removed, changed, rolled
 
-def render(source, cfg, d_old, d_new, a, b, added, removed, changed, skip_removed):
+def render(source, cfg, d_old, d_new, a, b, added, removed, changed):
     L = []
     L.append("# 變動偵測 — %s" % cfg["label"])
     L.append("")
@@ -117,17 +97,9 @@ def render(source, cfg, d_old, d_new, a, b, added, removed, changed, skip_remove
     L.append("| 比對區間 | `%s` → `%s` |" % (d_old, d_new))
     L.append("| **內容改寫** | **%d** |" % len(changed))
     L.append("| 新增 | %d |" % len(added))
-    L.append("| 下架 | %s |" % ("N/A（本日快照截斷，不判定）" if skip_removed else str(len(removed))))
+    L.append("| 下架 | %d |" % len(removed))
     L.append("| 偵測時間 | %s |" % datetime.now(timezone.utc).isoformat())
     L.append("")
-    if skip_removed:
-        L.append("> ⚠️ **因快照截斷，本日不做下架判定。** "
-                  "比對區間內至少一份快照的 `_meta.truncated` 為 `true`"
-                  "（來源在每來源 600 秒時間預算內未能抓完全部項目），"
-                  "少掉的項目可能只是「這次沒抓到」而非機關真的下架，"
-                  "為避免假警報，本次完全不產生「下架」判定。"
-                  "「內容改寫」比對不受影響（僅比對兩邊都有的 id）。")
-        L.append("")
     if changed:
         L.append("## 🔴 內容改寫（原文被修改）")
         L.append("")
@@ -164,7 +136,7 @@ def render(source, cfg, d_old, d_new, a, b, added, removed, changed, skip_remove
         L.append("")
     L.append("---")
     L.append("")
-    L.append("本紀錄由 `scripts/detect_changes_v2.py` 自動產生。")
+    L.append("本紀錄由 `scripts/detect_changes.py` 自動產生。")
     L.append("僅陳述「內容是否被修改」此一事實，**不含任何解讀或評論**。")
     return "\n".join(L) + "\n"
 
@@ -197,24 +169,20 @@ def main():
         if v_old != v_new:
             print("%s: 解析器版本 %s→%s，跳過本次比對（非內容改寫）" % (source, v_old, v_new))
             continue
-        a, b, added, removed, changed, rolled, skip_removed = compare(source, cfg, f_old, f_new)
-        removed_desc = ("截斷，不判定" if skip_removed else str(len(removed)))
-        print("%s: %s→%s 改寫%d 下架%s 新增%d%s%s"
-              % (source, d_old, d_new, len(changed), removed_desc, len(added),
-                 ("（另有 %d 筆滾動移出視窗，不計為下架）" % len(rolled)) if rolled else "",
-                 "（⚠️ 本日快照截斷，下架判定已跳過）" if skip_removed else ""))
+        a, b, added, removed, changed, rolled = compare(source, cfg, f_old, f_new)
+        print("%s: %s→%s 改寫%d 下架%d 新增%d%s"
+              % (source, d_old, d_new, len(changed), len(removed), len(added),
+                 ("（另有 %d 筆滾動移出視窗，不計為下架）" % len(rolled)) if rolled else ""))
         if not (changed or removed):
-            continue      # 只有新增（或截斷時無改寫可報）不算「變動事件」，不留紀錄
+            continue      # 只有新增不算「變動事件」，不留紀錄
         total_changed += len(changed); total_removed += len(removed)
         outdir = os.path.join(CHANGES, source)
         os.makedirs(outdir, exist_ok=True)
         out = os.path.join(outdir, "%s.md" % d_new)
         with open(out, "w", encoding="utf-8") as f:
-            f.write(render(source, cfg, d_old, d_new, a, b, added, removed, changed, skip_removed))
-        entries.append("| %s | `%s` | **%d** | %s | %d | [紀錄](changes/%s/%s.md) |"
-                       % (d_new, source, len(changed),
-                          ("N/A" if skip_removed else str(len(removed))),
-                          len(added), source, d_new))
+            f.write(render(source, cfg, d_old, d_new, a, b, added, removed, changed))
+        entries.append("| %s | `%s` | **%d** | %d | %d | [紀錄](changes/%s/%s.md) |"
+                       % (d_new, source, len(changed), len(removed), len(added), source, d_new))
         print("  → 已寫入 %s" % out)
     if entries:
         update_index(entries)

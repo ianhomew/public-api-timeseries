@@ -1,31 +1,19 @@
 #!/usr/bin/env python3
-"""軌二 snapshotter v4：政府公告每日快照（adapter 架構 + 來源層級重試 + 每來源時間預算）
+"""軌二 snapshotter v3：政府公告每日快照（adapter 架構 + 來源層級重試）
 目的：偵測靜默改寫、下架、撤稿。只存原文，不做任何解讀。
 授權：輸出資料 CC BY 4.0（著作權法第 9 條：公文含新聞稿，不受著作權保護）
 
 時區鐵律：檔名日期一律 UTC；排程時間為台北時間。兩者不可混用。
 每個來源一支 adapter，放在 track-gov/adapters/<key>.py，介面見 adapters/README.md。
 
-v4 變更（2026-08-31，依 PERF_FIX_SPEC.md，修正來源站台間歇性變慢被我方逾時/重試放大的問題）：
-1. fetch() timeout 45→20 秒；重試退避 3/6 秒 → 2/4 秒（重試次數維持 3 次不變）。
-   單筆最壞情況：45*3+9=144 秒 → 20*3+6=66 秒。
-2. 新增「每來源時間預算」SOURCE_BUDGET_SECS=600 秒（硬上限，比照軌一 agent_virtuals 做法）。
-   驅動程式無法中斷 adapter 內部迴圈，所以改用 deadline（UNIX 時間戳）傳給 adapter，
-   adapter 自行在每次翻頁／每抓一筆內頁前檢查 time.time() < deadline，超過就停止並回傳已取得的資料。
-   介面擴充為 collect(fetch, clean, deadline=None)，向下相容：
-   用 inspect.signature 偵測 adapter 的 collect() 是否接受第三個參數，
-   只接受 2 個參數的舊 adapter 完全不受影響、也不會被要求接受 deadline。
-3. 因 2 而被截斷的來源，其快照 _meta 會標記 "truncated": true 與 "items_fetched": N，
-   供 detect_changes_v2.py 判斷是否要跳過「下架」判定（避免把截斷誤判為下架的假警報）。
-
-v3 沿用（來源層級重試，見 FIX_TIMING_RETRY_SPEC.md）：
+v3 變更（2026-08-31，來源層級重試，見 FIX_TIMING_RETRY_SPEC.md）：
 單一來源（單一 adapter 執行）失敗時，等待 120 秒後重試一次（只重試一次）。
 manifest 記錄 attempts（1 或 2）與 first_error（第一次失敗訊息，即使第二次成功也保留）。
 總時間保護：本輪已執行超過 90 分鐘時，跳過剩餘重試，直接記為失敗，避免拖垮 11:30 的 push 排程。
 注意：這是「單一來源」內部的重試（等一次來源本身，例如 moi_press 網路抖動），
-與 fetch() 內既有的「單一 HTTP 請求」重試（3 次、退避 2/4 秒）是兩個不同層級，互不取代。
+與 fetch() 內既有的「單一 HTTP 請求」重試（3 次、退避 3/6 秒）是兩個不同層級，互不取代。
 """
-import json, gzip, os, sys, re, time, html, hashlib, importlib.util, inspect, urllib.request
+import json, gzip, os, sys, re, time, html, hashlib, importlib.util, urllib.request
 from datetime import datetime, timezone
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,21 +25,18 @@ TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 STAMP = datetime.now(timezone.utc).isoformat()
 TAG = re.compile(r"<[^>]+>")
 
-# --- 來源層級重試設定（v3） ---
+# --- 來源層級重試設定（v3 新增） ---
 RETRY_WAIT_SECS = 120       # 單一來源失敗後，重試前等待秒數
 MAX_ATTEMPTS = 2            # 最多嘗試次數（1 次原始 + 1 次重試）
 MAX_RUN_SECS = 90 * 60      # 本輪總時間保護：超過 90 分鐘不再等待重試
 RUN_START = time.time()
-
-# --- 每來源時間預算（v4 新增，見 PERF_FIX_SPEC.md 修正 2） ---
-SOURCE_BUDGET_SECS = 600    # 每次 collect() 嘗試的硬上限（每次重試各自重新計算）
 
 def fetch(url, retries=3):
     last = None
     for i in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.urlopen(req, timeout=45) as r:
                 raw = r.read()
                 enc = "utf-8"
                 m = re.search(rb'charset=["\']?([\w-]+)', raw[:2000], re.I)
@@ -61,7 +46,7 @@ def fetch(url, retries=3):
         except Exception as e:
             last = e
             if i < retries - 1:
-                time.sleep(2 * (i + 1))
+                time.sleep(3 * (i + 1))
     raise last
 
 def clean(h):
@@ -139,68 +124,42 @@ def normalize(items):
         out.append(rec)
     return out
 
-def collect_accepts_deadline(mod):
-    """用 inspect.signature 判斷 adapter 的 collect() 是否接受第三個參數（deadline）。
-    只接受 2 個參數的舊 adapter 回傳 False，驅動程式就只用 2 個參數呼叫，完全不受影響。"""
-    try:
-        params = list(inspect.signature(mod.collect).parameters.values())
-    except (TypeError, ValueError):
-        return False
-    positional = [p for p in params
-                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-    has_var_positional = any(p.kind is p.VAR_POSITIONAL for p in params)
-    return len(positional) >= 3 or has_var_positional
-
-def _call_collect(mod, deadline):
-    """向下相容呼叫：新式 adapter 帶 deadline，舊式（僅 2 參數）adapter 完全不傳。
-    回傳 (raw_items, truncated)。truncated 只對新式 adapter 有意義
-    （用「呼叫返回時是否已超過 deadline」近似判斷是否被截斷；
-    舊式 adapter 無法中斷內部迴圈，一律視為未截斷 False）。"""
-    if collect_accepts_deadline(mod):
-        raw_items = mod.collect(fetch, clean, deadline)
-        truncated = time.time() >= deadline
-        return raw_items, truncated
-    return mod.collect(fetch, clean), False
-
-def _collect_once(mod, deadline):
+def _collect_once(mod):
     """單次嘗試：抓取＋正規化＋合法性檢查。失敗一律拋例外，交給重試層處理。"""
-    raw_items, truncated = _call_collect(mod, deadline)
-    items = normalize(raw_items)
+    items = normalize(mod.collect(fetch, clean))
     if not items:
         raise RuntimeError("collect() 回傳 0 筆 —— 視為抓取失敗，不寫入快照"
                            "（避免下游誤判為全部下架）")
     ids = [i["id"] for i in items]
     if len(set(ids)) != len(ids):
         raise RuntimeError("id 重複 %d/%d —— adapter 的識別碼不穩定" % (len(ids) - len(set(ids)), len(ids)))
-    return items, truncated
+    return items
 
 def collect_with_retry(mod, key):
-    """來源層級重試（v3）＋每來源時間預算（v4）：
-    失敗等 120 秒後重試一次；只重試一次；每次嘗試各自有 600 秒硬上限。
-    回傳 (ok, items_or_None, truncated, attempts, first_error_or_None, last_error_or_None, skipped_by_budget)。
+    """來源層級重試（v3）：失敗等 120 秒後重試一次；只重試一次。
+    回傳 (ok, items_or_None, attempts, first_error_or_None, last_error_or_None, skipped_by_budget)。
     第一次就成功時完全不呼叫 time.sleep，沒有任何額外延遲。"""
     attempts = 0
     first_error = None
     last_error = None
     while True:
         attempts += 1
-        deadline = time.time() + SOURCE_BUDGET_SECS
         try:
-            items, truncated = _collect_once(mod, deadline)
-            return True, items, truncated, attempts, first_error, None, False
+            items = _collect_once(mod)
+            return True, items, attempts, first_error, None, False
         except Exception as e:
             err = "%s: %s" % (type(e).__name__, e)
             last_error = err
             if first_error is None:
                 first_error = err
             if attempts >= MAX_ATTEMPTS:
-                return False, None, False, attempts, first_error, last_error, False
+                return False, None, attempts, first_error, last_error, False
             elapsed = time.time() - RUN_START
             if elapsed + RETRY_WAIT_SECS > MAX_RUN_SECS:
                 # 總時間保護：本輪已跑太久，不再等待重試，直接記為失敗，避免拖垮 11:30 的 push 排程。
                 print("SKIP_RETRY %-20s 已執行 %.0f 分鐘，超過 90 分鐘總時間保護，放棄重試：%s"
                       % (key, elapsed / 60, err), file=sys.stderr, flush=True)
-                return False, None, False, attempts, first_error, last_error, True
+                return False, None, attempts, first_error, last_error, True
             print("RETRY %-20s 第 1 次失敗：%s；等待 %d 秒後重試（第 2 次，也是最後一次）"
                   % (key, err, RETRY_WAIT_SECS), flush=True)
             time.sleep(RETRY_WAIT_SECS)
@@ -216,29 +175,24 @@ def main():
         return 1
     for mod in mods:
         key, t0 = mod.KEY, time.time()
-        ok, items, truncated, attempts, first_error, last_error, skipped = collect_with_retry(mod, key)
+        ok, items, attempts, first_error, last_error, skipped = collect_with_retry(mod, key)
         if ok:
             try:
-                meta = {"channel": key, "desc": mod.DESC,
-                        "source_home": getattr(mod, "SOURCE_HOME", ""),
-                        "robots_verified": getattr(mod, "ROBOTS_VERIFIED", ""),
-                        "parser_version": getattr(mod, "PARSER_VERSION", 1),
-                        "fetched_at": STAMP, "license": "CC BY 4.0",
-                        "note": "raw government notices; no interpretation",
-                        "truncated": truncated, "items_fetched": len(items)}
-                payload = {"_meta": meta, "total": len(items), "errors": {}, "items": items}
+                payload = {"_meta": {"channel": key, "desc": mod.DESC,
+                                     "source_home": getattr(mod, "SOURCE_HOME", ""),
+                                     "robots_verified": getattr(mod, "ROBOTS_VERIFIED", ""),
+                                     "parser_version": getattr(mod, "PARSER_VERSION", 1),
+                                     "fetched_at": STAMP, "license": "CC BY 4.0",
+                                     "note": "raw government notices; no interpretation"},
+                           "total": len(items), "errors": {}, "items": items}
                 path, size = write_gz(key, payload)
                 entry = {"ok": True, "n": len(items), "bytes": size,
-                         "errors": 0, "secs": round(time.time() - t0, 1), "attempts": attempts,
-                         "truncated": truncated}
-                if truncated:
-                    entry["items_fetched"] = len(items)
+                         "errors": 0, "secs": round(time.time() - t0, 1), "attempts": attempts}
                 if attempts > 1 and first_error:
                     entry["first_error"] = first_error
                 manifest["channels"][key] = entry
-                print("OK   %-20s %4d 筆 %9d B %.1fs（attempts=%d%s）"
-                      % (key, len(items), size, time.time() - t0, attempts,
-                         "，TRUNCATED" if truncated else ""))
+                print("OK   %-20s %4d 筆 %9d B %.1fs（attempts=%d）"
+                      % (key, len(items), size, time.time() - t0, attempts))
             except Exception as e:
                 # write_gz 等寫入階段失敗不屬於「來源抓取失敗」，不重試，直接記錄。
                 err = "%s: %s" % (type(e).__name__, e)

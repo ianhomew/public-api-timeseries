@@ -103,3 +103,10 @@
 {"date": "2026-08-30", "exchange": "mexc", "symbol": "TJRUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-08-30", "exchange": "mexc", "symbol": "UNCUSD1", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-08-30", "exchange": "mexc", "symbol": "UNCUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-08-31", "exchange": "gateio", "symbol": "CATE_USDT", "event": "LISTED", "from": null, "to": "tradable"}
+{"date": "2026-08-31", "exchange": "mexc", "symbol": "PROLOGUEUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-08-31", "exchange": "mexc", "symbol": "PROLOGUEUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-08-31", "exchange": "mexc", "symbol": "BXXUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-08-31", "exchange": "mexc", "symbol": "DOVUUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-08-31", "exchange": "mexc", "symbol": "MAGATRUMPUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-08-31", "exchange": "mexc", "symbol": "MORIUSDT", "event": "DELISTED", "from": "1", "to": null}

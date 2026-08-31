@@ -6,6 +6,12 @@
 正文  ：<div class="area-essay page-caption-p"> ... </div>（與內政部 moi_press 同一套 GSP 共通性平台，
         本站已各自實測，不假設一定相同；結束標記改用 class="area-editor system-info"）
 只用標準函式庫。每次 HTTP 請求後 time.sleep(1)，不並行。
+
+2026-08-31 因站方回應變慢（同一 URL 耗時從 2.76 秒飆到 14.77 秒），依 PERF_FIX_SPEC.md 修正 4，
+MAX_ITEMS 由 100 降為 50；本站日增量約個位數~十餘筆，50 筆仍足以偵測改寫（重疊視窗遠大於日增量）。
+同時依修正 2 支援 collect(fetch, clean, deadline=None)：deadline 為驅動程式傳入的 UNIX 時間戳，
+本 adapter 在每次翻頁／每抓一筆內頁前檢查 time.time() < deadline，超過就停止並回傳已取得的資料
+（向下相容：deadline 為 None 時視為無時間限制，行為與舊版完全相同）。
 """
 import re
 import time
@@ -26,7 +32,7 @@ BASE = "https://www.gov.taipei/"
 NODE = "74806083EBDF5A03"   # 即時新聞澄清 單元 ID
 SMS = "72544237BBE4C5F6"    # 選單 ID
 
-MAX_ITEMS = 100
+MAX_ITEMS = 50    # 2026-08-31：因站方回應變慢，由 100 降為 50；日增量約個位數~十餘筆，50 筆仍足以偵測改寫
 MAX_PAGES = 8          # 分頁上限寫死，該類別估計個位數~數十篇/年，8 頁已遠超歷史總量
 
 # 清單頁 <tr>：編號 / 標題連結 / 發布日期(民國) / 發布機關
@@ -74,11 +80,17 @@ def _list_page(fetch, page):
     return h
 
 
-def collect(fetch, clean):
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def collect(fetch, clean, deadline=None):
     entries = []
     seen = set()
     for page in range(1, MAX_PAGES + 1):
         if len(entries) >= MAX_ITEMS:
+            break
+        if _deadline_hit(deadline):
             break
         listing = _list_page(fetch, page)
         found = 0
@@ -107,6 +119,8 @@ def collect(fetch, clean):
 
     out = []
     for e in entries:
+        if _deadline_hit(deadline):
+            break
         try:
             page_html = fetch(e["url"])
         except Exception:

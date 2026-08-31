@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""軌一 snapshotter v3：加密 / AI 算力市場每日快照（adapter 架構 + 來源層級重試）
+"""軌一 snapshotter v2：加密 / AI 算力市場每日快照（adapter 架構）
 只存原始數字，不做任何分析或觀點（投顧法鐵律）
 授權：輸出資料 CC BY 4.0
 
 時區鐵律：檔名日期一律 UTC；排程時間為台北時間。兩者不可混用。
 每個來源一支 adapter，放在 track-crypto/adapters/<key>.py。
-
-v3 變更（2026-08-31，來源層級重試，見 FIX_TIMING_RETRY_SPEC.md）：
-單一來源（單一 adapter 執行）失敗時，等待 120 秒後重試一次（只重試一次）。
-manifest 記錄 attempts（1 或 2）與 first_error（第一次失敗訊息，即使第二次成功也保留）。
-總時間保護：本輪已執行超過 90 分鐘時，跳過剩餘重試，直接記為失敗，避免拖垮 11:30 的 push 排程。
-注意：這是「單一來源」內部的重試，與 fetch() 內既有的「單一 HTTP 請求」重試
-（3 次、退避 3/6 秒）是兩個不同層級，互不取代。
 
 adapter 介面（與 track-crypto batch5 已交付的三支一致）：
     KEY = "..."                # 快照子目錄名 / manifest 鍵
@@ -38,12 +31,6 @@ UA = ("snapshotter-research/1.0 (daily archival; public accountability; 1 req/se
       "github.com/ianhomew/public-api-timeseries)")
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 STAMP = datetime.now(timezone.utc).isoformat()
-
-# --- 來源層級重試設定（v3 新增） ---
-RETRY_WAIT_SECS = 120       # 單一來源失敗後，重試前等待秒數
-MAX_ATTEMPTS = 2            # 最多嘗試次數（1 次原始 + 1 次重試）
-MAX_RUN_SECS = 90 * 60      # 本輪總時間保護：超過 90 分鐘不再等待重試
-RUN_START = time.time()
 
 
 def fetch(url, headers=None, timeout=45, retries=3):
@@ -104,36 +91,6 @@ def write_gz(key, payload):
     return final, os.path.getsize(final)
 
 
-def collect_with_retry(mod, key):
-    """來源層級重試（v3）：失敗等 120 秒後重試一次；只重試一次。
-    回傳 (ok, data_or_None, attempts, first_error_or_None, last_error_or_None, skipped_by_budget)。
-    第一次就成功時完全不呼叫 time.sleep，沒有任何額外延遲。"""
-    attempts = 0
-    first_error = None
-    last_error = None
-    while True:
-        attempts += 1
-        try:
-            data = mod.collect(fetch)
-            return True, data, attempts, first_error, None, False
-        except Exception as e:
-            err = "%s: %s" % (type(e).__name__, e)
-            last_error = err
-            if first_error is None:
-                first_error = err
-            if attempts >= MAX_ATTEMPTS:
-                return False, None, attempts, first_error, last_error, False
-            elapsed = time.time() - RUN_START
-            if elapsed + RETRY_WAIT_SECS > MAX_RUN_SECS:
-                # 總時間保護：本輪已跑太久，不再等待重試，直接記為失敗，避免拖垮 11:30 的 push 排程。
-                print("SKIP_RETRY %-14s 已執行 %.0f 分鐘，超過 90 分鐘總時間保護，放棄重試：%s"
-                      % (key, elapsed / 60, err), file=sys.stderr, flush=True)
-                return False, None, attempts, first_error, last_error, True
-            print("RETRY %-14s 第 1 次失敗：%s；等待 %d 秒後重試（第 2 次，也是最後一次）"
-                  % (key, err, RETRY_WAIT_SECS), flush=True)
-            time.sleep(RETRY_WAIT_SECS)
-
-
 def main():
     os.makedirs(DATA, exist_ok=True)
     manifest = {"date": TODAY, "fetched_at": STAMP, "sources": {}}
@@ -147,37 +104,20 @@ def main():
     for mod in mods:
         key, t0 = mod.KEY, time.time()
         parser_version = getattr(mod, "PARSER_VERSION", 1)
-        ok, data, attempts, first_error, last_error, skipped = collect_with_retry(mod, key)
-        if ok:
-            try:
-                payload = {"_meta": {"source": key, "fetched_at": STAMP, "license": "CC BY 4.0"},
-                           "data": data}
-                path, size = write_gz(key, payload)
-                entry = {"ok": True, "bytes": size, "secs": round(time.time() - t0, 1),
-                         "parser_version": parser_version, "attempts": attempts}
-                if attempts > 1 and first_error:
-                    entry["first_error"] = first_error
-                manifest["sources"][key] = entry
-                print("OK   %-14s %10s B %.1fs（attempts=%d）"
-                      % (key, format(size, ","), time.time() - t0, attempts))
-            except Exception as e:
-                # write_gz 等寫入階段失敗不屬於「來源抓取失敗」，不重試，直接記錄。
-                err = "%s: %s" % (type(e).__name__, e)
-                entry = {"ok": False, "error": err, "secs": round(time.time() - t0, 1),
-                         "parser_version": parser_version, "attempts": attempts}
-                if first_error:
-                    entry["first_error"] = first_error
-                manifest["sources"][key] = entry
-                print("FAIL %-14s %s" % (key, err), file=sys.stderr)
-        else:
-            entry = {"ok": False, "error": last_error, "secs": round(time.time() - t0, 1),
-                     "parser_version": parser_version, "attempts": attempts}
-            if attempts > 1:
-                entry["first_error"] = first_error
-            if skipped:
-                entry["skipped_retry_time_budget"] = True
-            manifest["sources"][key] = entry
-            print("FAIL %-14s %s（attempts=%d）" % (key, last_error, attempts), file=sys.stderr)
+        try:
+            data = mod.collect(fetch)
+            payload = {"_meta": {"source": key, "fetched_at": STAMP, "license": "CC BY 4.0"},
+                       "data": data}
+            path, size = write_gz(key, payload)
+            manifest["sources"][key] = {"ok": True, "bytes": size,
+                                        "secs": round(time.time() - t0, 1),
+                                        "parser_version": parser_version}
+            print("OK   %-14s %10s B %.1fs" % (key, format(size, ","), time.time() - t0))
+        except Exception as e:
+            manifest["sources"][key] = {"ok": False, "error": "%s: %s" % (type(e).__name__, e),
+                                        "secs": round(time.time() - t0, 1),
+                                        "parser_version": parser_version}
+            print("FAIL %-14s %s: %s" % (key, type(e).__name__, e), file=sys.stderr)
     # manifest 合併寫入：單獨重跑一個來源時，不得覆寫當日其他來源的紀錄
     # （比照軌二 2026-08-28 修過的缺陷：原本用 "w" 無條件覆寫，一次單來源重跑就會蓋掉其他來源）。
     md = os.path.join(DATA, "_manifest")

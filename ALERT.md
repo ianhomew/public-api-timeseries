@@ -1,12 +1,14 @@
 # 🔴 每日自我檢查發現異常
 
-檢查時間（UTC）：2026-08-30T04:55:12+00:00
-檢查基準日（UTC）：2026-08-30
+檢查時間（UTC）：2026-08-31T03:30:16+00:00
+檢查時間（台北）：2026-08-31T11:30:16+08:00
+檢查基準日（UTC）：2026-08-31
 
 | 來源 | 問題 |
 |---|---|
-| `track-gov/moi_press` | manifest 標記失敗：URLError: <urlopen error [Errno -3] Temporary failure in name resolution> |
-| `track-gov/moi_press` | 今日（UTC 2026-08-30）缺檔；最後一份為 2026-08-28（已 2 天無新資料） |
+| `track-gov/fda_clarify` | 體積異常：今日 14,937 B，前 3 日中位數 46,777 B（0.32×，容許 0.5–3.0×） |
+| `track-gov/moj_press` | 體積異常：今日 41,200 B，前 4 日中位數 107,668 B（0.38×，容許 0.5–3.0×） |
+| `track-gov/tpe_clarify` | 體積異常：今日 27,850 B，前 3 日中位數 73,303 B（0.38×，容許 0.5–3.0×） |
 
 本檔由 `scripts/healthcheck.py` 自動產生。異常排除後會自動刪除。
 
