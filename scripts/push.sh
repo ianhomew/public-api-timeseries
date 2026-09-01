@@ -54,6 +54,9 @@ CHANGED="${CHANGED:-0}"; REMOVED="${REMOVED:-0}"
 # 2b) CEX 上/下架事件流（生存者偏誤修正：3 家交易所只回存活標的）
 python3 "$R/scripts/cex_events.py" >> logs/cex_events.log 2>&1 || echo "$(date -Is) [WARN] cex_events 失敗" >> logs/cex_events.log
 
+# 2c) 軌一「自清單消失」偵測（第一階段：僅 x402_bazaar，白名單制）
+python3 "$R/track-crypto/scripts/detect_delistings.py" >> logs/detect_delistings.log 2>&1 || echo "$(date -Is) [WARN] detect_delistings 失敗" >> logs/detect_delistings.log
+
 # 3) OpenTimestamps：對資料清單蓋章（證明「這份資料在此時已存在」）
 python3 "$R/scripts/stamp.py" >> logs/stamp.log 2>&1 || echo "$(date -Is) [WARN] stamp 失敗" >> logs/stamp.log
 
@@ -117,7 +120,7 @@ fi
 
 # 資料抓取本身有異常時（healthcheck.py 產生了 ALERT.md），
 # 即使 push 成功也回報失敗，讓使用者收到通知，不必自己去 GitHub 看。
-if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ]; then
+if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ] || [ -f ALERT-DELIST.md ]; then
   echo "$(date -Is) ALERT.md 存在 → 回報 fail"
   hc_ping /fail
 else
