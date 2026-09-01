@@ -31,7 +31,7 @@
 | `moi_press` | 內政部 新聞稿 | 100 | 99 KB | 381s | MAX_ITEMS=100；MAX_PAGES=1 |
 | `moj_press` | 法務部 新聞發布 | 99 | 107 KB | 596s | MAX_ITEMS=50；MAX_PAGES=5 |
 | `mol_press` | 勞動部 新聞稿 | 100 | 133 KB | 289s | MAX_ITEMS=100；MAX_PAGES=3 |
-| `pres_news` | 總統府 本府新聞稿 | 15（官方清單本身僅 15 筆可取，非截斷，DESC 已誠實標註，2026-08-31 UTC） | 41.2 KB（42,216 B） | 39.2s | MAX_ITEMS=100 |
+| `pres_news` | 總統府 本府新聞稿 | 15（v1，2026-08-31 UTC）→ v2 起 100（官方總筆數 29,393，取最新 100） | 41.2 KB（42,216 B，v1） | 39.2s（v1）／186.8s（v2 整合測試） | MAX_ITEMS=100、MAX_PAGES=7 |
 | `tpe_clarify` | 台北市政府 即時新聞澄清 | 39（`truncated=true`，600s 預算截斷，目標 50 未達成，2026-08-31 UTC） | 27.2 KB（27,850 B） | 603.6s | MAX_ITEMS=50；MAX_PAGES=8 |
 
 原 12 個來源合計每日約 **1.19 MB**、約 1,260 次請求、約 62 分鐘（2026-08-27 UTC 舊實測值；

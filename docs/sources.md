@@ -525,11 +525,11 @@
 | 機關與類別 | 總統府 本府新聞稿 |
 | 程式內 DESC | 總統府新聞（本府新聞稿） |
 | SOURCE_HOME（清單頁） | `https://www.president.gov.tw/Page/35` |
-| parser_version | 1 |
-| MAX_ITEMS／等效上限 | MAX_ITEMS=100 |
+| parser_version | 2（2026-08-31 改真分頁；v1 僅取首頁 15 筆） |
+| MAX_ITEMS／等效上限 | MAX_ITEMS=100、MAX_PAGES=7（每頁固定 15 筆） |
 | 抓取頻率 | 每日一次（台北時間 09:30，`snap_gov.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.president.gov.tw/robots.txt：User-agent: * / Allow: / ，全站無任何 Disallow → 允許 |
-| 實測值（2026-08-31 UTC） | 15 筆（官方清單本身僅 15 筆可取，非截斷，DESC 已誠實標註）；42,216 B（約 41.2 KB）；耗時 39.2s；已累積天數 4 天（2026-08-28～08-31） |
+| 實測值（2026-08-31 UTC） | 15 筆（v1 僅取清單首頁）；42,216 B（約 41.2 KB）；耗時 39.2s；已累積天數 4 天（2026-08-28～08-31）。**2026-08-31 反解官方分頁 API（POST /WebAPI/News/List），官方總筆數 29,393；v2 起每日取最新 100 筆，整合測試耗時 186.8s，實測值待 2026-09-01 排程後更新** |
 
 ### `tpe_clarify`
 
