@@ -9,16 +9,31 @@
 輸出：track-crypto/data/cex_events/events.jsonl（累積、只追加）
   {"date","exchange","symbol","event","from","to"}
   event: LISTED / DELISTED / STATUS_CHANGED
+  當「異常規模熔斷」觸發時（見 CB_MIN_ABS/CB_PCT），額外附加：
+  {"note": "anomalous_scale", "removed_pct": <float>}（只在觸發時出現，不影響既有欄位）
+
+完整性守門（2026-09-01 新增，見 docs/cex-events-audit.md）：
+  1. 每日只取最後一份快照——同日重跑不是新事件，比照 detect_changes.py 的 snapshots()。
+  2. 交易所級失敗守門——若某交易所在 data.errors 記錄擷取例外、或該日快照的
+     exchanges 欄位缺席該交易所，這次轉換對該交易所「完全不判定」
+    （LISTED/DELISTED/STATUS_CHANGED 皆跳過），並留下 gate_skips.jsonl 紀錄，不靜默跳過。
+     （cex_symbols 是 7 家交易所各打一次無分頁 API，失敗是全有全無，
+     不像有分頁/時間預算的來源會有「部分擷取」，故此處守門即等同軌二的「截斷守門」。）
+  3. 異常規模熔斷——單一交易所單日 DELISTED 筆數超過經驗門檻時，
+     事件仍照常寫入（不能為了消假警報就整批不報，見 docs/cex-events-audit.md §4），
+     但加註 note:"anomalous_scale"，供下游或人工複核辨識。
 
 本工具只記錄事實，不做任何解讀或建議。
 """
 import os, sys, gzip, json, glob
+from collections import Counter
 from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO, "track-crypto/data/cex_symbols")
 OUT = os.path.join(REPO, "track-crypto/data/cex_events")
 JL = os.path.join(OUT, "events.jsonl")
+GATE_LOG = os.path.join(OUT, "gate_skips.jsonl")
 
 # 各交易所的 symbol 與 status 欄位路徑
 SPEC = {
@@ -31,6 +46,15 @@ SPEC = {
     "mexc":   {"path": ("symbols",),       "sym": "symbol",    "st": "status"},
 }
 
+# 異常規模熔斷門檻（2026-09-01 依實測資料訂定，見 docs/cex-events-audit.md §4.2）：
+#   2026-08-26~09-01 共 6 組跨日轉換 x 7 家交易所 = 42 組樣本，非零移除率介於 0.048%~1.572%；
+#   已核實為真下架的最大單筆案例是 bybit 08-31→09-01（5/546=0.916%）。
+#   門檻取「絕對值 10 檔」與「前一日筆數 1%」兩者取大，可讓已知的真實小規模事件維持不觸發，
+#   同時標記 mexc 08-28（28/2123=1.32%）、08-30（33/2099=1.57%）這兩個目前資料量下的極端值。
+#   樣本僅 7 天，門檻應隨資料持續累積重新校準，不是最終值。
+CB_MIN_ABS = 10
+CB_PCT = 0.01
+
 def dig(obj, path):
     if path is None:
         return obj if isinstance(obj, list) else []
@@ -38,27 +62,44 @@ def dig(obj, path):
         obj = (obj or {}).get(k, [])
     return obj or []
 
-def snapshot(f):
-    """回傳 {exchange: {symbol: status}}"""
+def snapshots():
+    """每個 UTC 日期只取最後一份。
+    同日多份是「當日重跑」的產物，不是改寫事件；跨日比較才有意義。
+    做法照抄 scripts/detect_changes.py 的 snapshots()：同一天多檔時，
+    字典序較大的檔名（時間戳記尾綴）自然排在後面、覆蓋較早的。"""
+    per_day = {}
+    for p in sorted(glob.glob(os.path.join(SRC, "*.json.gz"))):
+        per_day[os.path.basename(p)[:10]] = p
+    return [per_day[k] for k in sorted(per_day)]
+
+def load(f):
     with gzip.open(f, "rt", encoding="utf-8") as fh:
-        j = json.load(fh)
+        return json.load(fh)
+
+def errors_of(j):
+    """回傳這份快照裡，data.errors 記錄擷取例外的交易所名稱集合（比照 detect_changes.py）。"""
+    d = j.get("data", j)
+    return set((d.get("errors") or {}).keys())
+
+def snapshot_from_json(j):
+    """回傳 {exchange: {symbol: status}}，只含成功解析且非空的交易所。"""
     ex = j.get("data", j).get("exchanges", {})
     out = {}
     for name, spec in SPEC.items():
         rows = dig(ex.get(name), spec["path"])
         d = {}
-        for r in rows:
-            if not isinstance(r, dict):
+        for row in rows:
+            if not isinstance(row, dict):
                 continue
-            s = r.get(spec["sym"])
+            s = row.get(spec["sym"])
             if s:
-                d[str(s)] = str(r.get(spec["st"]))
+                d[str(s)] = str(row.get(spec["st"]))
         if d:
             out[name] = d
     return out
 
 def main():
-    files = sorted(glob.glob(os.path.join(SRC, "*.json.gz")))
+    files = snapshots()
     if len(files) < 2:
         print("快照不足 2 份（目前 %d），無法產生事件流" % len(files))
         return 0
@@ -71,33 +112,79 @@ def main():
                 seen.add((e["date"], e["exchange"], e["symbol"], e["event"]))
             except Exception:
                 pass
+
     new = []
+    gate_skips = []
     for prev_f, cur_f in zip(files[:-1], files[1:]):
         d_prev = os.path.basename(prev_f)[:10]
         d_cur = os.path.basename(cur_f)[:10]
-        a, b = snapshot(prev_f), snapshot(cur_f)
-        for exch in sorted(set(a) & set(b)):
+        j_prev, j_cur = load(prev_f), load(cur_f)
+        a, b = snapshot_from_json(j_prev), snapshot_from_json(j_cur)
+        err_prev, err_cur = errors_of(j_prev), errors_of(j_cur)
+
+        for exch in sorted(SPEC):
+            reasons = []
+            if exch in err_prev:
+                reasons.append("%s 回報擷取錯誤" % d_prev)
+            if exch in err_cur:
+                reasons.append("%s 回報擷取錯誤" % d_cur)
+            if exch not in a and exch not in err_prev:
+                reasons.append("%s 快照缺席（非錯誤清單內，資料仍不可信）" % d_prev)
+            if exch not in b and exch not in err_cur:
+                reasons.append("%s 快照缺席（非錯誤清單內，資料仍不可信）" % d_cur)
+            if reasons:
+                msg = ("完整性守門：%s @ %s→%s 本轉換不判定（%s）"
+                       % (exch, d_prev, d_cur, "；".join(reasons)))
+                print("   [SKIP] " + msg)
+                gate_skips.append({"date": d_cur, "exchange": exch, "from_date": d_prev,
+                                    "reason": "；".join(reasons)})
+                continue
+
             pa, pb = a[exch], b[exch]
-            for s in sorted(set(pb) - set(pa)):
+            added = sorted(set(pb) - set(pa))
+            removed = sorted(set(pa) - set(pb))
+            changed = sorted(s for s in set(pa) & set(pb) if pa[s] != pb[s])
+
+            for s in added:
                 new.append({"date": d_cur, "exchange": exch, "symbol": s,
                             "event": "LISTED", "from": None, "to": pb[s]})
-            for s in sorted(set(pa) - set(pb)):
+
+            removed_pct = (len(removed) / len(pa) * 100) if pa and removed else 0.0
+            threshold = max(CB_MIN_ABS, len(pa) * CB_PCT)
+            anomalous = len(removed) > threshold
+            if anomalous:
+                print("   [CB] %s @ %s→%s：DELISTED %d 檔（%.2f%% of %d），"
+                      "超過熔斷門檻 max(%d, %.1f)——事件仍寫入，加註 anomalous_scale"
+                      % (exch, d_prev, d_cur, len(removed), removed_pct, len(pa),
+                         CB_MIN_ABS, len(pa) * CB_PCT))
+            for s in removed:
+                ev = {"date": d_cur, "exchange": exch, "symbol": s,
+                      "event": "DELISTED", "from": pa[s], "to": None}
+                if anomalous:
+                    ev["note"] = "anomalous_scale"
+                    ev["removed_pct"] = round(removed_pct, 4)
+                new.append(ev)
+
+            for s in changed:
                 new.append({"date": d_cur, "exchange": exch, "symbol": s,
-                            "event": "DELISTED", "from": pa[s], "to": None})
-            for s in sorted(set(pa) & set(pb)):
-                if pa[s] != pb[s]:
-                    new.append({"date": d_cur, "exchange": exch, "symbol": s,
-                                "event": "STATUS_CHANGED", "from": pa[s], "to": pb[s]})
+                            "event": "STATUS_CHANGED", "from": pa[s], "to": pb[s]})
+
     fresh = [e for e in new if (e["date"], e["exchange"], e["symbol"], e["event"]) not in seen]
     if fresh:
         with open(JL, "a", encoding="utf-8") as f:
             for e in fresh:
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
-    from collections import Counter
+    if gate_skips:
+        with open(GATE_LOG, "a", encoding="utf-8") as f:
+            for g in gate_skips:
+                f.write(json.dumps(g, ensure_ascii=False) + "\n")
+
     c = Counter((e["exchange"], e["event"]) for e in fresh)
     print("新增事件 %d 筆（累積檔 %s）" % (len(fresh), JL))
     for (exch, ev), n in sorted(c.items()):
         print("   %-8s %-15s %d" % (exch, ev, n))
+    if gate_skips:
+        print("完整性守門觸發 %d 次（紀錄於 %s）" % (len(gate_skips), GATE_LOG))
     print("EVENTS new=%d" % len(fresh))
     return 0
 
