@@ -1,0 +1,212 @@
+{
+ "date": "2026-09-01",
+ "channels": {
+  "cbc_press": {
+   "ok": true,
+   "n": 99,
+   "bytes": 47752,
+   "errors": 0,
+   "secs": 194.9,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "ey_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 175716,
+   "errors": 0,
+   "secs": 268.6,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fda_clarify": {
+   "ok": true,
+   "n": 50,
+   "bytes": 21087,
+   "errors": 0,
+   "secs": 146.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fsc_clarification": {
+   "ok": true,
+   "n": 50,
+   "bytes": 38428,
+   "errors": 0,
+   "secs": 100.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fsc_lawnotice": {
+   "ok": true,
+   "n": 100,
+   "bytes": 25287,
+   "errors": 0,
+   "secs": 184.9,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fsc_penalty": {
+   "ok": true,
+   "n": 100,
+   "bytes": 140029,
+   "errors": 0,
+   "secs": 185.5,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "ftc_decision": {
+   "ok": true,
+   "n": 100,
+   "bytes": 17369,
+   "errors": 0,
+   "secs": 367.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moda_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 98091,
+   "errors": 0,
+   "secs": 108.7,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moe_clarify": {
+   "ok": true,
+   "n": 80,
+   "bytes": 72999,
+   "errors": 0,
+   "secs": 277.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moe_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 121481,
+   "errors": 0,
+   "secs": 388.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moea_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 120500,
+   "errors": 0,
+   "secs": 211.4,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "mof_press": {
+   "ok": true,
+   "n": 99,
+   "bytes": 84275,
+   "errors": 0,
+   "secs": 205.7,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "mohw_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 119748,
+   "errors": 0,
+   "secs": 211.4,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moi_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 99817,
+   "errors": 0,
+   "secs": 339.3,
+   "attempts": 2,
+   "truncated": false,
+   "parse_failed": 0,
+   "first_error": "ConnectionError: HTTPSConnectionPool(host='www.moi.gov.tw', port=443): Max retries exceeded with url: /News.aspx?n=4&sms=9009&page=1&PageSize=100 (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x7a32f65845c0>: Failed to resolve 'www.moi.gov.tw' ([Errno -3] Temporary failure in name resolution)\"))"
+  },
+  "moj_press": {
+   "ok": true,
+   "n": 50,
+   "bytes": 56670,
+   "errors": 0,
+   "secs": 114.0,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "mol_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 132331,
+   "errors": 0,
+   "secs": 243.4,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "pres_news": {
+   "ok": true,
+   "n": 15,
+   "bytes": 34326,
+   "errors": 0,
+   "secs": 35.5,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "tpe_clarify": {
+   "ok": true,
+   "n": 50,
+   "bytes": 35472,
+   "errors": 0,
+   "secs": 127.1,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  }
+ },
+ "fetched_at": "2026-09-01T01:30:02.351969+00:00",
+ "runs": [
+  {
+   "at": "2026-09-01T01:30:02.351969+00:00",
+   "channels": [
+    "cbc_press",
+    "ey_press",
+    "fda_clarify",
+    "fsc_clarification",
+    "fsc_lawnotice",
+    "fsc_penalty",
+    "ftc_decision",
+    "moda_press",
+    "moe_clarify",
+    "moe_press",
+    "moea_press",
+    "mof_press",
+    "mohw_press",
+    "moi_press",
+    "moj_press",
+    "mol_press",
+    "pres_news",
+    "tpe_clarify"
+   ]
+  }
+ ]
+}
