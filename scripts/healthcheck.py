@@ -13,7 +13,7 @@ push.sh 11:30 台北起跑（本檢查在此流程內執行）。
 只列為中性的「尚未執行」狀態；超過預期完成時間仍缺檔才是真異常
 （不論已缺幾天，一旦超過該軌今日的預期完成時間，都會被抓到，見 check_source/check_manifest）。
 """
-import os, json, glob, statistics, datetime, subprocess, sys
+import os, json, glob, gzip, statistics, datetime, subprocess, sys
 from datetime import timezone, timedelta
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -90,6 +90,102 @@ def snapshots(track, key):
         out.setdefault(os.path.basename(p)[:10], []).append(p)
     return out
 
+# --- 體積檢查：parser_version 改版時跳過判定（SPEC-healthcheck-parserver.md，2026-09-02 新增）---
+# 問題：體積檢查用「今日體積 ÷ 前 7 日中位數」，容許 LOW–HIGH（0.5–3.0×，見上方常數，本次
+# 改動完全不動這兩個數字）。當來源的 parser_version 在比較視窗內改變過（例如解析器從只抓
+# 前 15 筆改成分頁抓滿 100 筆），體積會一次性跳到門檻外，且會連續觸發，直到 7 日視窗被新
+# 基準填滿為止——這不是真正的資料異常，是比較基準本身混雜了新舊解析器的產物。
+# 解法：比照本專案既有且已在 detect_changes.py 驗證過的原則——parser_version 不同時
+# 跳過比對（見 detect_changes.py 的 parser_version() 與 main() 內「解析器改版會讓整批
+# body_sha256 改變，那不是機關改寫公告」註解）。套用到體積檢查：today 與比較視窗（prev，
+# 最多 7 天）內任一天的 parser_version 不一致時，「今日體積 ÷ 前 7 日中位數」這個比較本身
+# 不成立，跳過本次判定，不寫入 issues、不產生 ALERT.md 項目；LOW/HIGH 門檻本身完全不變，
+# 版本一致時的判定邏輯也完全不變。視窗內全部天數都變成新版本後（版本改版累積滿 7 天新
+# 快照，或來源本身歷史不足 7 天但已全數是新版本），本函式自然回到「版本一致」分支，
+# 判定能力自動恢復，不需要人工介入、不查任何白名單、不留永久豁免。
+#
+# 軌一（track-crypto）／軌二（track-gov）快照格式不同，讀取 parser_version 的位置也不同：
+#   軌二：直接寫在快照本體 _meta.parser_version
+#         （見 track-gov/scripts/snap_gov.py：meta = {..., "parser_version": ...}）。
+#   軌一：_meta 只有 source/fetched_at/license 3 個鍵，不含 parser_version
+#         （見 track-crypto/scripts/snap_crypto.py 檔頭明文說明：「_meta 只有這 3 個鍵
+#         （軌二的 channels/desc/source_home/robots_verified/parser_version 等擴充欄位
+#         一律不進快照本體，只進 manifest」），parser_version 只寫在當日 manifest 的
+#         sources[key].parser_version。
+# 因此一律「先試快照本體，讀不到再試當日 manifest」，兩者都讀不到時預設 1，
+# 比照 detect_changes.py 既有慣例（parser_version() 函式同樣預設 1）。
+#
+# 容錯：這裡新增了「讀取並解析快照內容」這個動作（既有體積判定只用 os.path.getsize 讀檔案
+# 大小，從不解析內容）。healthcheck.py 沒有任何外層 try/except，main() 裡一個未捕捉的例外
+# 會讓當次完全不產生 ALERT.md（比多判定一次更糟）。為了不讓「內容讀取／解析失敗」變成新的
+# 當機風險，下面兩個讀取函式一律吞下例外、退回 None（最終預設為 1），比照 check_disk() 的
+# 既有風格：檢查本身故障時寧可略過該項判定，也不能拖垮整支腳本。唯一副作用是「今日與某歷史
+# 日都讀取失敗、且兩者版本其實不同」這種雙重失敗時會誤判為版本一致而照跑比值判定——這種
+# 失敗模式的結果是「可能誤警」而非「可能漏警」，方向上與本專案「沉默即異常」的既有精神一致
+# （寧可多疑，不可少疑），也不會比修改前更容易漏掉真異常。
+
+def _rep_snapshot_path(paths):
+    """同一天可能因重跑產生多份快照（NEVER_OVERWRITE 另存時間戳版本）。
+    體積判定既有邏輯一律取當天體積最大的一份代表當天（today_sz / prev 皆是），
+    parser_version 判定沿用同一份代表檔，避免『體積用 A 檔、版本用 B 檔』兩者不一致。"""
+    return max(paths, key=os.path.getsize)
+
+def _snapshot_meta_parser_version(path):
+    """讀快照本體 _meta.parser_version（軌二 track-gov 適用；軌一 track-crypto 的
+    _meta 沒有這個鍵，一定回傳 None，由呼叫端 fallback 去讀 manifest）。
+    任何讀取／解析失敗一律回傳 None、不拋例外（理由見本節檔頭「容錯」說明）。"""
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            j = json.load(f)
+        meta = j.get("data", j).get("_meta")
+        if isinstance(meta, dict) and "parser_version" in meta:
+            return meta["parser_version"]
+    except Exception:
+        pass
+    return None
+
+_manifest_cache = {}   # (track, date) -> 已解析的 manifest dict／None；同一天同一軌只讀一次檔
+
+def _manifest_parser_version(track, key, date):
+    """讀當日 manifest 的 parser_version（軌一 track-crypto 適用，見本節檔頭說明；
+    軌二 track-gov 的 manifest 沒有這個欄位，一定回傳 None，但用不到——軌二一定先從
+    _snapshot_meta_parser_version 就讀到了）。同一天同一軌的 manifest 只解析一次並快取，
+    避免同一天有多個來源時（track-crypto 同一天可能有十幾個來源）重複讀同一份檔。"""
+    ck = (track, date)
+    if ck not in _manifest_cache:
+        p = os.path.join(REPO, track, "data", "_manifest", date + ".json")
+        try:
+            _manifest_cache[ck] = json.load(open(p, encoding="utf-8"))
+        except Exception:
+            _manifest_cache[ck] = None
+    m = _manifest_cache[ck]
+    if not m:
+        return None
+    src = (m.get("channels") or m.get("sources") or {})
+    v = (src.get(key) or {}).get("parser_version")
+    return v
+
+def snapshot_parser_version(track, key, date, paths):
+    """單一來源單一天的 parser_version：
+    軌二（track-gov）：parser_version 就在快照本體 _meta，優先嘗試（見本節檔頭格式說明）。
+    軌一（track-crypto）：快照本體 _meta 明確保證不含 parser_version（snap_crypto.py 檔頭
+    以 🔴 標記「快照本體格式不可改動」，list 3 個鍵不含 parser_version），嘗試讀快照本體
+    必然落空——為避免每天對每個軌一來源都做一次「保證失敗」的完整 gzip 解壓＋JSON 解析
+    （部分來源單日快照可達數 MB，例如 x402_bazaar；效能實測見
+    docs/healthcheck-parserver-report.md），軌一直接跳過快照本體、改讀當日 manifest
+    （已由 _manifest_parser_version 快取，同一天多個來源共用同一次檔案讀取）。
+    這只是「先猜哪裡找得到答案」的效能捷徑，兩個分支最終讀到的值與都嘗試一遍完全相同
+    （軌一原本嘗試快照本體也一定回傳 None），不改變任何判定結果，也不是來源白名單——
+    分流依據是軌（track）這個結構性格式差異，不是個別來源。
+    兩者都讀不到時預設 1（比照 detect_changes.py 既有慣例）。"""
+    rep = _rep_snapshot_path(paths)
+    if track == "track-gov":
+        v = _snapshot_meta_parser_version(rep)
+        if v is not None:
+            return v
+    v = _manifest_parser_version(track, key, date)
+    return v if v is not None else 1
+
 def check_source(track, key, issues, pending):
     label = f"{track}/{key}"
     d = os.path.join(REPO, track, "data", key)
@@ -116,9 +212,22 @@ def check_source(track, key, issues, pending):
                               f"（已 {(datetime.date.fromisoformat(TODAY) - datetime.date.fromisoformat(days[-1])).days} 天無新資料）"))
         return
     today_sz = max(os.path.getsize(p) for p in snaps[TODAY])
-    prev = [max(os.path.getsize(p) for p in snaps[d]) for d in days if d < TODAY][-7:]
+    prev_days = [dd for dd in days if dd < TODAY][-7:]
+    prev = [max(os.path.getsize(p) for p in snaps[dd]) for dd in prev_days]
     if prev:
         # 新來源第一天沒有歷史快照可比（prev 為空），不告警；只有累積到至少一天歷史後才比對體積。
+        v_today = snapshot_parser_version(track, key, TODAY, snaps[TODAY])
+        v_prev = [snapshot_parser_version(track, key, dd, snaps[dd]) for dd in prev_days]
+        if any(v != v_today for v in v_prev):
+            # parser_version 在比較視窗內改變過：比照 detect_changes.py 既有原則跳過本次
+            # 體積判定（見本節檔頭說明）。LOW/HIGH 門檻完全不變，只是這次不拿它來比。
+            rebuilt = sum(1 for v in v_prev if v == v_today)
+            old_versions = sorted(set(v for v in v_prev if v != v_today))
+            old_desc = old_versions[0] if len(old_versions) == 1 else "/".join(str(v) for v in old_versions)
+            print(f"NOTICE {label}: parser_version {old_desc}→{v_today}，體積基準重建中，暫不判定"
+                  f"（第 {rebuilt}/{len(prev)} 天；視窗內全數為新版本後自動恢復判定，"
+                  f"不需人工介入、不留白名單）")
+            return
         med = statistics.median(prev)
         if med > 0 and (today_sz < med * LOW or today_sz > med * HIGH):
             issues.append((label, f"體積異常：今日 {today_sz:,} B，前 {len(prev)} 日中位數 {med:,.0f} B"

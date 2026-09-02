@@ -249,6 +249,16 @@ def gov_snapshot(items, parser_version=1, truncated=False, total=None, errors=No
             "errors": errors or {}, "items": items}
 
 
+
+def _pv_items(n, tag, words=30):
+    """產生 n 筆合成 track-gov 項目，body_text 長度可控、內容依 n 決定，供
+    healthcheck.parser_version_skip 系列檢查控制快照體積用（見該節說明）。
+    同一 (n, tag) 組合永遠產生一模一樣的內容 → gzip 後體積穩定可重現，不會有測試間歇性失敗。"""
+    filler = " ".join("filler%d" % i for i in range(words))
+    return [gov_item("PV-%s-%03d" % (tag, i), "PV Title %s %d" % (tag, i),
+                      "%s body-%s-%d %s" % (filler, tag, i, filler))
+            for i in range(n)]
+
 DC_CFG = {"key": "id", "title": "title", "text": "body_text", "sha": "body_sha256",
           "url": "url", "label": "Selftest Synthetic Source"}
 
@@ -545,6 +555,13 @@ def mut_hc_grace(text):
         '避免漏檢真異常。"""\n    return True  # [selftest mutant] grace period forced always-passed\n'
         '    exp = EXPECTED_DONE_TAIPEI.get(track)',
         "hc_grace")
+
+
+def mut_hc_parser_version(text):
+    return apply_mutation(
+        text, "if any(v != v_today for v in v_prev):",
+        "if False:  # [selftest mutant] parser-version window guard disabled",
+        "hc_parser_version")
 
 
 def mut_dr_all_listed(text):
@@ -1270,7 +1287,7 @@ def chk_ce_anomaly(is_mutant):
 
 
 # ==========================================================================
-# scripts/healthcheck.py — 2 條不變量
+# scripts/healthcheck.py — 5 條不變量
 # ==========================================================================
 
 @check("healthcheck.truncation_streak_n2", mutate_target="healthcheck", mutate=mut_hc_streak)
@@ -1326,6 +1343,136 @@ def chk_hc_grace(is_mutant):
     return Result(guard_active,
                   "寬限前 issues=%d/pending=%d；寬限後 issues=%d/pending=%d (期望 0/1 -> 1/0)"
                   % (len(issues_b), len(pending_b), len(issues_a), len(pending_a)))
+
+
+@check("healthcheck.parser_version_skip", mutate_target="healthcheck", mutate=mut_hc_parser_version)
+def chk_hc_parser_version(is_mutant):
+    """核心不變量（SPEC-healthcheck-parserver.md）：體積比對「今日體積 ÷ 前 7 日中位數」
+    （LOW/HIGH＝0.5–3.0×，本次改動完全不動這兩個數字）在 parser_version 於比較視窗內
+    改變過時應跳過判定（比照 detect_changes.py 既有原則：parser_version 不同時跳過比對）。
+    兩個對照組同時驗證，證明這不是「放寬門檻」：
+    (a) 版本全程一致（v1）、今日體積驟降（20 筆→1 筆）→ 應該仍然告警。
+    (b) 前 7 日 v1、今日改版為 v2 且體積暴增（20 筆→200 筆）→ 應該跳過（不告警）。
+    mutate 關掉「版本不一致就跳過」這個判斷後，(b) 應該從『不告警』翻盤成『告警』，
+    (a) 不受影響（本來就沒有經過版本判斷這條路徑，兩邊版本相同）。"""
+    sandbox = new_sandbox("hc_pv_mut" if is_mutant else "hc_pv")
+    text = read_source("healthcheck")
+    if is_mutant:
+        text = mut_hc_parser_version(text)
+    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
+
+    base_days = ["2030-08-%02d" % d for d in range(1, 8)]   # 7 天基準歷史
+    today = "2030-08-08"
+
+    key_a = "synth_pv_a"   # (a) 版本一致，體積驟降 → 應仍告警
+    for d in base_days:
+        write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key_a, d)),
+                      gov_snapshot(_pv_items(20, "a"), parser_version=1))
+    write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key_a, today)),
+                  gov_snapshot(_pv_items(1, "a"), parser_version=1))
+
+    key_b = "synth_pv_b"   # (b) 版本改變＋體積暴增 → 應跳過
+    for d in base_days:
+        write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key_b, d)),
+                      gov_snapshot(_pv_items(20, "b"), parser_version=1))
+    write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key_b, today)),
+                  gov_snapshot(_pv_items(200, "b"), parser_version=2))
+
+    with temp_env(HEALTHCHECK_TODAY=today, HEALTHCHECK_NOW=today + "T12:00:00+00:00"):
+        mod = load_module(script_path)
+        issues_a, pending_a = [], []
+        mod.check_source("track-gov", key_a, issues_a, pending_a)
+        issues_b, pending_b = [], []
+        mod.check_source("track-gov", key_b, issues_b, pending_b)
+
+    guard_active = (len(issues_a) == 1) and (len(issues_b) == 0)
+    return Result(guard_active,
+                  "(a)版本一致體積驟降：issues=%d(期望1，仍告警) / "
+                  "(b)版本改變+體積暴增：issues=%d(期望0，應跳過)" % (len(issues_a), len(issues_b)))
+
+
+@check("healthcheck.parser_version_skip.window_refill")
+def chk_hc_parser_version_refill(is_mutant):
+    """驗證「不是永久豁免」（SPEC-healthcheck-parserver.md 硬性要求：不得新增白名單或
+    手動豁免，機制必須完全由資料驅動、自動失效）：parser_version 改變後，一旦比較視窗
+    （最近 7 天）內全部重新變成新版本，判定能力必須自動恢復，不需要人工介入。
+    時間軸（合成資料，2030-09）：
+      day1（改版日，2030-09-01）：v1，20 筆——僅作為「將被擠出視窗」的舊快照，
+        本身不參與斷言，純粹用來讓 09-02～09-08 是連續 7 天而非唯一歷史。
+      day2~day8（2030-09-02～08，共 7 天）：全部 v2，60 筆，體積回到新基準（穩定值）。
+      day9＝today（2030-09-09）：v2，1 筆，體積相對新基準再度驟降。
+        此時比較視窗＝day2~day8（最近 7 天，day1 已被擠出視窗），與 today 版本一致（皆
+        v2）→ 不應該再跳過，應該恢復告警。
+    本檢查沒有獨立 #mutant：驗證的是與 healthcheck.parser_version_skip 完全同一段 guard
+    （if any(v != v_today for v in v_prev)）在「視窗版本一致」這個分支的行為——mutate
+    版本（if False:）在版本一致的情境下與正常版行為完全相同（兩者都會照跑比值判定），
+    掛上 #mutant 不會有任何行為差異可觀察，只會產生誤判的 FAIL；核心 guard 本身的破壞
+    驗證已由 healthcheck.parser_version_skip 涵蓋（比照既有慣例：
+    cex_events.daily_last_snapshot_only.real_replay 同樣不重複註冊 #mutant）。"""
+    sandbox = new_sandbox("hc_pv_refill")
+    script_path = install_text(sandbox, "scripts/healthcheck.py", read_source("healthcheck"))
+    key = "synth_pv_refill"
+
+    day1 = "2030-09-01"
+    refill_days = ["2030-09-%02d" % d for d in range(2, 9)]   # day2..day8，共 7 天
+    today = "2030-09-09"
+
+    write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key, day1)),
+                  gov_snapshot(_pv_items(20, "r0"), parser_version=1))
+    for i, d in enumerate(refill_days):
+        write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key, d)),
+                      gov_snapshot(_pv_items(60, "r%d" % i), parser_version=2))
+    write_gz_json(os.path.join(sandbox, "track-gov/data/%s/%s.json.gz" % (key, today)),
+                  gov_snapshot(_pv_items(1, "rtoday"), parser_version=2))
+
+    with temp_env(HEALTHCHECK_TODAY=today, HEALTHCHECK_NOW=today + "T12:00:00+00:00"):
+        mod = load_module(script_path)
+        issues, pending = [], []
+        mod.check_source("track-gov", key, issues, pending)
+
+    guard_active = (len(issues) == 1)
+    return Result(guard_active,
+                  "視窗（最近7天）全數重新變成 v2 後，今日體積相對新基準再度異常："
+                  "issues=%d（期望1，證明恢復判定、非永久豁免）" % len(issues))
+
+
+@check("healthcheck.parser_version_skip.real_replay",
+       mutate_target="healthcheck", mutate=mut_hc_parser_version)
+def chk_hc_parser_version_real(is_mutant):
+    """real-replay（本次派工的關鍵驗收，SPEC-healthcheck-parserver.md）：
+    track-gov 三個真實來源 2026-08-28～2026-09-02 的真實歷史快照——VPS 正式資料裡
+    確實發生過的一次解析器改版：pres_news parser_version 1→2（官方分頁反解成功，
+    15 筆→100 筆，體積 4.32×），同期 fda_clarify（0.45×）／tpe_clarify（0.48×）
+    純粹體積下降、parser_version 未變。斷言：pres_news 不再被列為體積異常，而
+    fda_clarify／tpe_clarify 仍然被判定為異常——證明這不是放寬 0.5–3.0 門檻，而是
+    精準只對「解析器改版」這個情境跳過判定。"""
+    sandbox = new_sandbox("hc_pv_real_mut" if is_mutant else "hc_pv_real")
+    text = read_source("healthcheck")
+    if is_mutant:
+        text = mut_hc_parser_version(text)
+    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
+
+    dates = ["2026-08-28", "2026-08-29", "2026-08-30", "2026-08-31", "2026-09-01", "2026-09-02"]
+    for key in ("pres_news", "fda_clarify", "tpe_clarify"):
+        for d in dates:
+            rel = "track-gov/data/%s/%s.json.gz" % (key, d)
+            install_binary_copy(os.path.join(SOURCE_REPO, rel), sandbox, rel)
+
+    with temp_env(HEALTHCHECK_TODAY="2026-09-02", HEALTHCHECK_NOW="2026-09-02T12:00:00+00:00"):
+        mod = load_module(script_path)
+        found = {}
+        for key in ("pres_news", "fda_clarify", "tpe_clarify"):
+            issues, pending = [], []
+            mod.check_source("track-gov", key, issues, pending)
+            found[key] = issues
+
+    guard_active = (len(found["pres_news"]) == 0
+                    and len(found["fda_clarify"]) == 1
+                    and len(found["tpe_clarify"]) == 1)
+    return Result(guard_active,
+                  "real-replay 2026-09-02：pres_news issues=%d(期望0) "
+                  "fda_clarify issues=%d(期望1) tpe_clarify issues=%d(期望1)"
+                  % (len(found["pres_news"]), len(found["fda_clarify"]), len(found["tpe_clarify"])))
 
 
 # ==========================================================================
