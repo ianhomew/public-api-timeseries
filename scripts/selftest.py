@@ -4,7 +4,10 @@
 
 依 specs/SPEC-selftest.md 撰寫，並依 specs/SPEC-selftest-fix.md 修復
 mut_dd_reappeared 錨點不唯一問題、新增第二階段（GROUP_SOURCES 多子集合）
-新行為的 5 條檢查（見 track-crypto/scripts/detect_delistings.py 一節開頭說明）。
+新行為的 5 條檢查，再依 specs/SPEC-selftest-gap.md 補齊 selftest-fix 收尾時
+自陳的 2 個覆蓋缺口：build_group_events() 的 REAPPEARED 判定（第二階段多子集合
+路徑，先前只有 process_pair() 單一清單路徑有專屬檢查）、payment_protocol_repos
+的 require_empty 機制（見 track-crypto/scripts/detect_delistings.py 一節開頭說明）。
 涵蓋 5 支關鍵程式的核心保護機制：
   detect_changes.py（track-gov 內容改寫/下架偵測）
   track-crypto/scripts/detect_delistings.py（x402_bazaar 下架偵測）
@@ -474,6 +477,39 @@ def mut_dd_ppr_breaker(text):
         "dd_ppr_breaker")
 
 
+def mut_dd_group_reappeared(text):
+    # 目標：build_group_events()（第二階段多子集合版本）的 REAPPEARED 判定，與
+    # mut_dd_reappeared（process_pair() 專屬）是不同程式碼路徑——build_group_events()
+    # 用 short_desc_generic(...)，process_pair() 用 short_desc(...)，兩者錨點字面
+    # 不會互相匹配（撞名根因見 docs/selftest-fix-report.md §1.2，覆蓋缺口緣起見該報告
+    # §3.5；本函式與 mut_dd_reappeared 都改「if k in last_delisted:」這句判斷式，
+    # 但取的是各自函式專屬的前導字串，確保只精確命中其中一處）。
+    return apply_mutation(
+        text,
+        '"from": None, "to": short_desc_generic(r["keyed_new"].get(k), desc_field)})\n'
+        '        if k in last_delisted:',
+        '"from": None, "to": short_desc_generic(r["keyed_new"].get(k), desc_field)})\n'
+        '        if False and k in last_delisted:  # [selftest mutant] group REAPPEARED disabled',
+        "dd_group_reappeared")
+
+
+def mut_dd_ppr_require_empty(text):
+    # 目標：completeness_group() 的 require_empty 檢查迴圈——第二階段新增的第二道
+    # 完整性防線（payment_protocol_repos adapter MIN_SUCCESS=2，count==len(repos)
+    # 單獨不足以保證完整，見 docs/detect-phase2-report.md §2.8／§5.5）。
+    return apply_mutation(
+        text,
+        'for rf in gcfg.get("require_empty", ()):\n'
+        '            rv = data_root.get(rf)\n'
+        '            if rv:\n'
+        '                return False, n_raw, "%s 非空（%r），視為部分抓取失敗" % (rf, rv)',
+        'for rf in gcfg.get("require_empty", ()):\n'
+        '            rv = data_root.get(rf)\n'
+        '            if False:  # [selftest mutant] require_empty check disabled\n'
+        '                return False, n_raw, "%s 非空（%r），視為部分抓取失敗" % (rf, rv)',
+        "dd_ppr_require_empty")
+
+
 def mut_ce_daily_dedup(text):
     return apply_mutation(
         text, 'return [per_day[k] for k in sorted(per_day)]',
@@ -709,7 +745,7 @@ def chk_dc_volatile(is_mutant):
 
 
 # ==========================================================================
-# track-crypto/scripts/detect_delistings.py — 9 條不變量（第一階段 4 條 + 第二階段新行為 5 條，SPEC-selftest-fix.md）
+# track-crypto/scripts/detect_delistings.py — 11 條不變量（第一階段 4 條 + 第二階段新行為 5 條 + 覆蓋缺口補齊 2 條，SPEC-selftest-gap.md）
 # ==========================================================================
 
 def _install_dd(sandbox, text):
@@ -992,6 +1028,90 @@ def chk_dd_ppr_breaker(is_mutant):
     return Result(guard_active,
                   "breaker_pct=%.1f abs_floor=%d；消失1/3judged=%s(期望NORMAL) 消失2/3judged=%s(期望BREAKER)"
                   % (gcfg["breaker_pct"], gcfg["abs_floor"], judged_minor, judged_major))
+
+
+@check("detect_delistings.group_reappeared_detection", mutate_target="detect_delistings",
+       mutate=mut_dd_group_reappeared)
+def chk_dd_group_reappeared(is_mutant):
+    """覆蓋缺口補齊（SPEC-selftest-gap.md，selftest-fix 收尾§9 自陳事項1／
+    docs/selftest-fix-report.md §3.5）：build_group_events()（第二階段多子集合版本）
+    的 REAPPEARED 判定，先前只有 process_pair()（單一清單路徑，對應
+    detect_delistings.reappeared_detection）有專屬檢查——第二階段主要的多子集合
+    資料路徑（cex_currency_status／cex_symbols_ext／openrouter_models 等 8 個來源）
+    反而沒被測到。比照 chk_dd_reappeared 的 day1->day2->day3 手法，改用
+    compare_group()／judge()／build_group_events() 三個 group 路徑函式直接測
+    （不經 process_group_source_pair() 的檔案讀寫，比照 chk_dd_status_changed 的
+    函式層級測試風格），驗證「消失後又出現」在 group 路徑一樣會補寫 REAPPEARED 事件，
+    且 from 欄位正確記錄上一次消失的日期。"""
+    sandbox = new_sandbox("dd_greappear_mut" if is_mutant else "dd_greappear")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_reappeared(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("items",), "shape": "list", "key_field": "key", "desc_field": "name",
+            "completeness": "total_match", "total_fields": ("count",),
+            "status_fields": (), "breaker_pct": 50.0, "abs_floor": 5}
+    day1 = [gs_item("key", "K%d" % i, "name", "n%d" % i) for i in range(10)]  # K0..K9
+    day2 = [gs_item("key", "K%d" % i, "name", "n%d" % i) for i in range(9)]   # K9 消失
+    day3 = [gs_item("key", "K%d" % i, "name", "n%d" % i) for i in range(10)]  # K9 又出現
+    data1 = {"items": day1, "count": len(day1)}
+    data2 = {"items": day2, "count": len(day2)}
+    data3 = {"items": day3, "count": len(day3)}
+    last_delisted = {}
+    r12 = mod.compare_group("selftest_greappear_src", "grp", gcfg, data1, data2)
+    judged12 = mod.judge(r12, gcfg)
+    mod.build_group_events("selftest_greappear_src", "grp", gcfg, r12, judged12,
+                            "2030-06-02", last_delisted)
+    r23 = mod.compare_group("selftest_greappear_src", "grp", gcfg, data2, data3)
+    judged23 = mod.judge(r23, gcfg)
+    events23, _ = mod.build_group_events("selftest_greappear_src", "grp", gcfg, r23, judged23,
+                                          "2030-06-03", last_delisted)
+    reappeared = [e for e in events23 if e["event"] == "REAPPEARED" and e["key"] == "K9"]
+    guard_active = (judged12 == "NORMAL" and judged23 == "NORMAL" and len(reappeared) == 1
+                    and reappeared[0]["from"] == "2030-06-02")
+    return Result(guard_active,
+                  "day1->day2: K9 DELISTED；day2->day3: K9 重新出現；REAPPEARED 事件數=%d %r "
+                  "(期望剛好 1 筆，from=2030-06-02；測 build_group_events() 而非 process_pair())"
+                  % (len(reappeared), reappeared))
+
+
+@check("detect_delistings.payment_protocol_repos_require_empty", mutate_target="detect_delistings",
+       mutate=mut_dd_ppr_require_empty)
+def chk_dd_ppr_require_empty(is_mutant):
+    """覆蓋缺口補齊（SPEC-selftest-gap.md，selftest-fix 收尾§9 自陳事項3／
+    docs/detect-phase2-report.md §2.8／§5.5「情境6」）：completeness_group() 的
+    require_empty 機制——payment_protocol_repos adapter 有 MIN_SUCCESS=2（3 選 2
+    即成功），count==len(repos) 單獨不足以保證完整（可能只是 2/3 成功但仍自我一致），
+    GROUP_SOURCES 對這個來源額外設定 require_empty=("errors",)，要求 errors 欄位
+    必須為空字典才算完整性通過。本檢查直接讀真實
+    GROUP_SOURCES["payment_protocol_repos"] 設定（比照 chk_dd_ppr_breaker 的既有
+    慣例），直接呼叫 completeness_group() 做函式層級測試（比照
+    docs/detect-phase2-report.md §5.5「情境6」的一次性驗證手法，本次轉為永久回歸
+    檢查）：errors 非空時必須 ok=False（即使 count 與 len(repos) 相符），errors 為空
+    時必須 ok=True（正負對照組都要成立，確保不是過嚴、誤傷正常情況）。"""
+    sandbox = new_sandbox("dd_ppr_reqempty_mut" if is_mutant else "dd_ppr_reqempty")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_ppr_require_empty(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["payment_protocol_repos"]["groups"]["_repos"]
+
+    def repo(rid, name):
+        return gs_item("id", rid, "full_name", name, archived=False)
+
+    repos2 = [repo(1, "x402-foundation/x402"), repo(2, "google-agentic-commerce/AP2")]  # 3選2成功情境
+    data_with_errors = {"repos": repos2, "count": len(repos2),
+                         "errors": {"lightninglabs/L402": "HTTP 503"}}
+    data_without_errors = {"repos": repos2, "count": len(repos2), "errors": {}}
+    ok_bad, n_bad, reason_bad = mod.completeness_group(data_with_errors, gcfg)
+    ok_good, n_good, reason_good = mod.completeness_group(data_without_errors, gcfg)
+    guard_active = (ok_bad is False and ok_good is True)
+    return Result(guard_active,
+                  "count(%d)==len(repos)(%d) 兩者相符；errors非空時ok=%s reason=%r(期望False) "
+                  "errors為空時ok=%s(期望True)"
+                  % (n_bad, len(repos2), ok_bad, reason_bad, ok_good))
 
 
 # ==========================================================================
