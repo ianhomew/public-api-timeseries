@@ -1,0 +1,7 @@
+{"date": "2026-09-01", "source": "cex_symbols_ext", "group": "upbit", "key": "BTC-TT", "event": "DELISTED", "from": "ThunderCore", "to": null}
+{"date": "2026-09-01", "source": "cex_symbols_ext", "group": "upbit", "key": "KRW-TT", "event": "DELISTED", "from": "ThunderCore", "to": null}
+{"date": "2026-09-01", "source": "cex_symbols_ext", "group": "kraken", "key": "XU3O8EUR", "event": "LISTED", "from": null, "to": "XU3O8/EUR"}
+{"date": "2026-09-02", "source": "cex_symbols_ext", "group": "coinbase", "key": "CP-USD", "event": "LISTED", "from": null, "to": "CP/USD"}
+{"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "TEAEUR", "event": "LISTED", "from": null, "to": "TEA/EUR"}
+{"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "USTABLESUSD", "event": "LISTED", "from": null, "to": "USTABLES/USD"}
+{"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "XU3O8EUR", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}

@@ -167,6 +167,60 @@ specs/SPEC-reappeared.md）：
 本輪限制（硬性）：本檔案本身不寫入任何檔案系統路徑以外的東西；正式部署位置為
 track-crypto/scripts/detect_delistings.py，執行時的實際輸出路徑一律用 __file__ 動態推算
 （不寫死機器路徑），因此在 /tmp 的鏡像目錄下執行時天然不會碰到正式目錄。
+
+============================================================================
+第二階段（本輪，2026-09-02，接續上面第一階段～第三輪修正完成後）：
+把甲組其餘 8 個來源（cex_currency_status／cex_earn_apr／cex_symbols_ext／
+cex_withdrawal_limits／ofac_sanctions_crypto／openrouter_models／
+openrouter_providers／payment_protocol_repos）納入白名單，依 SPEC-detect-phase2.md。
+cex_symbols 已由既有 scripts/cex_events.py 處理，依 SPEC 指示不重複納入。
+
+本輪只在檔案下半部新增 GROUP_SOURCES 設定表與 10 個新函式（path_get／
+extract_group_items／completeness_group／short_desc_generic／compare_group／
+status_changes_for_group／build_group_events／render_group_source_report／
+write_alert_block_group／process_group_source_pair），並在 main() 新增一個
+獨立的第二迴圈。上面第一階段的 SOURCES／completeness()／dedup()／
+compare_pair()／judge()／render_report()／process_pair()／write_alert_block()
+八個函式與設定表**一個字元都沒有修改**，dedup()／judge() 是既有通用工具，
+本階段直接原樣重用（只是被新函式以不同引數呼叫，呼叫點是全新程式碼，
+不影響 x402_bazaar 原本的呼叫路徑）。write_alert_block() 因檔頭文字寫死
+「x402_bazaar」字樣不適合直接重用，另外新增 write_alert_block_group()
+（檔頭文字改為不寫死來源名稱，因 ALERT-DELIST.md 現在是多來源共用檔案），
+兩函式互不呼叫、各自獨立判斷檔案是否已存在。
+
+事件型別新增 STATUS_CHANGED（第一階段只有 LISTED/DELISTED/REAPPEARED，
+因為 x402_bazaar 沒有原生狀態欄位）：對於原生帶狀態旗標的子集合（例如
+cex_currency_status.gate 的 delisted／trade_disabled／withdraw_disabled、
+coinbase 的 status、openrouter_models 的 expiration_date），除了既有的
+集合差（LISTED/DELISTED）外，額外偵測「主鍵仍在清單中、但欄位值變了」
+的情況。本輪實測發現這件事很關鍵：cex_currency_status.gate 有 41.7%、
+cex_symbols_ext.coinbase 有 37.6%、cex_currency_status.coinbase 有 16.9%
+的項目旗標已是「已下架」狀態，但主鍵從未離開清單——只做集合差會嚴重
+低估這些來源的下架語意，這是設計文件 §2.3「原生旗標優先於集合差」建議
+的具體實測驗證。
+
+完整性守門新增 range_check 方式（第一階段只有 total_match，因為
+x402_bazaar 有 data.total 自報欄位）：本輪 8 個來源中有 4 個
+（cex_currency_status／cex_earn_apr／cex_symbols_ext／cex_withdrawal_limits）
+沒有任何自報總數欄位，改用「08-28~09-02 六天實測 min/max 各加 10% 安全
+邊界」訂出固定合理區間，原始筆數落在區間外視為不完整。此為本輪工程判斷
+（推論），非官方欄位保證，區間應隨資料持續累積重新校準。
+
+熔斷門檻逐來源／逐子集合依實測資料訂定（不是全部沿用 x402_bazaar 的 5%），
+公式與既有 scripts/cex_events.py 的 max(CB_MIN_ABS, len(pa)*CB_PCT) 同構。
+本輪 8 個來源中 7 個子集合實測「5 組相鄰日 removed_pct 全為 0%」，門檻落在
+1.0% 底線（遠比 x402_bazaar 的 5% 嚴格）；openrouter_models 實測有一組
+1.8824% 的真實移除事件（經雙自報欄位確認非截斷），門檻另訂 3.0%；
+payment_protocol_repos（n=3）改用「過半即熔斷」規則（breaker_pct=60%、
+abs_floor=1），因為 n=3 時共通公式的 abs_floor=5 會讓熔斷永遠無法觸發。
+
+完整推導過程、逐來源實測數字、四項驗收（零假消失／故障注入／冪等性 3 次／
+不影響第一階段）的完整輸出，見本機
+docs/detect-phase2-report.md（不隨程式碼進 repo，只在派工方本機保存）。
+
+本輪同樣硬性限制：只在 VPS /tmp/detect-phase2/ 驗證，正式目錄一個字元都
+沒有改，未 git commit、未安裝套件。
+============================================================================
 """
 import os
 import sys
@@ -209,6 +263,610 @@ SOURCES = {
         "breaker_pct": 5.0,
     },
 }
+
+
+# ============================================================================
+# 第二階段新增（2026-09-02，接續第一階段 x402_bazaar，見 SPEC-detect-phase2.md）：
+# 甲組其餘 8 個來源 —— cex_currency_status／cex_earn_apr／cex_symbols_ext／
+# cex_withdrawal_limits／ofac_sanctions_crypto／openrouter_models／
+# openrouter_providers／payment_protocol_repos。
+# （cex_symbols 已由既有 scripts/cex_events.py 處理，依 SPEC 指示不重複納入本白名單，
+#  本輪未修改、未併入、未令 cex_events.py 退役，超出本次派工範圍。）
+#
+# 設計原則（完整理由、逐來源實測數字、四項驗收見本機
+# docs/detect-phase2-report.md，本檔案只放程式碼與必要的簡短依據）：
+#   1. 【對第一階段零風險】完全不修改上面第一階段的 SOURCES／completeness()／
+#      dedup()／compare_pair()／judge()／render_report()／process_pair()／
+#      write_alert_block() 八個函式與設定表一個字元。dedup()、judge() 是既有的
+#      通用工具函式（不含 x402_bazaar 專屬邏輯），本階段直接原樣重用；
+#      write_alert_block() 因檔頭文字寫死「x402_bazaar」字樣，不適合直接重用在
+#      其他來源的告警（會產生誤導性檔頭），故另外新增 write_alert_block_group()，
+#      與 write_alert_block() 各自獨立、互不呼叫，x402_bazaar 的呼叫路徑完全不變。
+#      main() 對兩組來源分成兩個獨立迴圈依序處理，第一階段迴圈原封不動放在最前面。
+#   2. 【預設 deny】GROUP_SOURCES 是獨立白名單，比照 SOURCES：未列入的來源一律不判定。
+#   3. 【資料形狀一般化】第一階段假設「單一來源＝單一清單」；本階段來源多半是
+#      「一個來源、多個子集合」（例如 cex_currency_status 有 gate／coinbase 兩個
+#      子集合，各自獨立的清單路徑、主鍵、完整性、熔斷門檻）。子集合對應
+#      events.jsonl 既有的 "group" 欄位（與 cex_events.py 的用法一致），
+#      "source" 欄位固定是 GROUP_SOURCES 的 key（例如 "cex_currency_status"），
+#      "group" 欄位是子集合名稱（例如 "gate"）；只有一個子集合的來源，
+#      子集合名稱以底線開頭（例如 "_items"），語意是「這個來源沒有再分組，
+#      _items 只是佔位」，不對外呈現在人類可讀報告的子集合標題（見
+#      render_group_source_report()）。
+#   4. 【完整性檢查兩種方式，都在 completeness_group() 實作】
+#      - total_match：來源自報 count／total_count 等欄位，逐一比對
+#        欄位值 == 該子集合原始筆數（去重前），全部存在且相符才算通過；
+#        可選 require_empty（例如 payment_protocol_repos 的 errors 欄位）
+#        額外要求指定欄位為空，否則視為部分抓取失敗（見該來源 GROUP_SOURCES 設定
+#        的註解說明，此為讀 adapter 原始碼 MIN_SUCCESS=2 後新增的防線）。
+#      - range_check：沒有自報總數欄位時的替代方案（SPEC 明文允許），
+#        用 08-28～09-02 六天實測 min/max 各加 10% 安全邊界訂出固定區間，
+#        原始筆數落在區間外視為不完整。標示為本輪工程判斷（推論），非官方保證，
+#        區間應隨資料持續累積重新校準（沿用 cex_events.py 熔斷門檻註解的同一立場）。
+#   5. 【熔斷公式與 cex_events.py 同構】
+#      breaker = removed_count > max(abs_floor, breaker_pct/100 × 前日去重後筆數)，
+#      逐來源／逐子集合的 breaker_pct、abs_floor 依實測資料訂定（非全部沿用
+#      x402_bazaar 的 5%），推導方法與具體數字見 docs/detect-phase2-report.md §2。
+#   6. 【旗標優先，新增 STATUS_CHANGED 事件型別】對於原生帶狀態旗標的子集合
+#      （例如 gate 的 delisted／trade_disabled／withdraw_disabled，coinbase 的
+#      status，openrouter_models 的 expiration_date），只做集合差會嚴重低估
+#      下架語意（本輪實測：cex_currency_status.gate 41.7%、
+#      cex_symbols_ext.coinbase 37.6%、cex_currency_status.coinbase 16.9%
+#      的項目旗標已是「已下架」但主鍵從未離開清單），故一併記錄旗標變化。
+#      STATUS_CHANGED 的 "from"/"to" 各自是 {欄位名: 值} 的字典（只列有變化的
+#      欄位），不是每個欄位各開一筆事件——events.jsonl 既有 7 欄結構沒有獨立的
+#      「欄位名稱」欄，用字典可同時保留欄位名與新舊值，且不新增/更改欄位結構。
+#      只在 judged=="NORMAL" 時計算與寫入，閘門條件與 LISTED／DELISTED／
+#      REAPPEARED 完全一致。
+#   7. 【零觀點鐵律】人類可讀輸出沿用第一階段措辭：「自清單消失」「新增」
+#      「重新出現」「狀態變化」，不用「下架」；只陳述事實，不做原因推測。
+# ============================================================================
+
+GROUP_SOURCES = {
+    "cex_currency_status": {
+        "label": "交易所幣種層級狀態旗標（Gate／Coinbase Exchange）",
+        "groups": {
+            "gate": {
+                "path": ("gate",), "shape": "list", "key_field": "currency",
+                "desc_field": "name",
+                "completeness": "range_check", "range": (4938, 6057),
+                "status_fields": ("delisted", "trade_disabled", "withdraw_disabled"),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+            "coinbase": {
+                "path": ("coinbase",), "shape": "list", "key_field": "id",
+                "desc_field": "name",
+                "completeness": "range_check", "range": (453, 556),
+                "status_fields": ("status",),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "cex_earn_apr": {
+        "label": "CEX 理財年化率（Bybit 活期理財／OKX 借貸利率總覽）",
+        "groups": {
+            "bybit": {
+                "path": ("bybit",), "shape": "list", "key_field": "productId",
+                "desc_field": "coin",
+                "completeness": "range_check", "range": (206, 263),
+                "status_fields": ("status",),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+            "okx": {
+                "path": ("okx",), "shape": "list", "key_field": "ccy",
+                "desc_field": None,
+                "completeness": "range_check", "range": (151, 185),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "cex_symbols_ext": {
+        "label": "擴充 3 家交易所交易對清單（Kraken／Coinbase Exchange／Upbit）",
+        "groups": {
+            "coinbase": {
+                "path": ("coinbase",), "shape": "list", "key_field": "id",
+                "desc_field": "display_name",
+                "completeness": "range_check", "range": (752, 921),
+                "status_fields": ("status",),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+            "upbit": {
+                "path": ("upbit",), "shape": "list", "key_field": "market",
+                "desc_field": "english_name",
+                "completeness": "range_check", "range": (762, 934),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+            "kraken": {
+                # data.kraken 是 {交易對代碼: 交易對物件} 的 dict-of-dict（非 list-of-dict）；
+                # dict 鍵本身即主鍵，唯一性由 JSON object 結構保證，key_field 留 None
+                # （extract_group_items() 依 shape=="dict" 走另一條路徑，不查 key_field）。
+                # 設計文件盤點表未列 kraken 的主鍵欄位與筆數，本輪自行判定並記錄於報告 §2.3。
+                "path": ("kraken",), "shape": "dict", "key_field": None,
+                "desc_field": "wsname",
+                "completeness": "range_check", "range": (1293, 1585),
+                "status_fields": ("status",),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "cex_withdrawal_limits": {
+        "label": "KuCoin 幣種提幣費與最低提幣額",
+        "groups": {
+            "_top": {
+                # data 頂層即 list，沒有巢狀 key，path=() 代表「不下鑽，直接用 data 本身」。
+                "path": (), "shape": "list", "key_field": "currency",
+                "desc_field": "fullName",
+                "completeness": "range_check", "range": (2019, 2470),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "ofac_sanctions_crypto": {
+        "label": "OFAC SDN 制裁名單（美國財政部），含加密貨幣地址欄位",
+        "groups": {
+            "_items": {
+                "path": ("items",), "shape": "list", "key_field": "uid",
+                "desc_field": "sdn_name",
+                "completeness": "total_match", "total_fields": ("count",),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "openrouter_models": {
+        "label": "OpenRouter 全模型清單與定價",
+        "groups": {
+            "_models": {
+                "path": ("models",), "shape": "list", "key_field": "id",
+                "desc_field": "name",
+                # count 與 total_count 兩個自報欄位皆須相符才算完整，比單一欄位更嚴格
+                # （本輪對本來源的加強，見報告 §2.6）。
+                "completeness": "total_match", "total_fields": ("count", "total_count"),
+                "status_fields": ("expiration_date",),
+                # 熔斷門檻專屬 3.0%（非 1.0% 底線）：09-01→09-02 實測 removed_pct=1.8824%，
+                # 兩個自報欄位皆確認非截斷，套公式 max(1.0, 1.8824*1.35=2.5412) 進位得 3.0。
+                "breaker_pct": 3.0, "abs_floor": 5,
+            },
+        },
+    },
+    "openrouter_providers": {
+        "label": "OpenRouter 供應商清單",
+        "groups": {
+            "_providers": {
+                "path": ("providers",), "shape": "list", "key_field": "slug",
+                "desc_field": "name",
+                "completeness": "total_match", "total_fields": ("count",),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "payment_protocol_repos": {
+        "label": "支付協議規格版本 GitHub Repo 中繼資料（x402／AP2／L402）",
+        "groups": {
+            "_repos": {
+                "path": ("repos",), "shape": "list", "key_field": "id",
+                "desc_field": "full_name",
+                # require_empty=("errors",)：adapter 原始碼 MIN_SUCCESS=2（3 選 2 即成功），
+                # count==len(repos) 單獨不足以保證完整（可能只是 2/3 成功但仍自我一致），
+                # 額外要求 errors 為空字典才算完整性通過，見報告 §2.8。
+                "completeness": "total_match", "total_fields": ("count",),
+                "require_empty": ("errors",),
+                "status_fields": ("archived",),
+                # 熔斷門檻專屬「過半即熔斷」規則：n=3 時共通公式的 abs_floor=5 會讓熔斷
+                # 永遠不可能觸發（最多只有 3 筆可移除），改用 breaker_pct=60%、abs_floor=1，
+                # 移除 1 筆（1/3）判定為真實事件、移除 2 筆以上（≥2/3，過半）判定為熔斷。
+                "breaker_pct": 60.0, "abs_floor": 1,
+            },
+        },
+    },
+}
+
+
+def path_get(root, path):
+    """從 root 依 path（key 的 tuple）逐層下鑽，任何一層不是 dict 或 key 不存在就回傳 None。
+    path=() 代表不下鑽，直接回傳 root 本身（用於 cex_withdrawal_limits 這種「data 頂層即清單」的來源）。
+    """
+    node = root
+    for k in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(k)
+    return node
+
+
+def extract_group_items(data_root, gcfg):
+    """回傳 (keyed, dup, missing, n_raw)。
+    shape=="list"：沿用既有 dedup()（不修改該函式，只是換一組引數呼叫）。
+    shape=="dict"：dict 鍵本身即主鍵，JSON object 結構保證不重複，dup/missing 固定 0。
+    路徑不存在或型別不符時回傳 (None, None, None, None)，由呼叫端視為完整性失敗。
+    """
+    node = path_get(data_root, gcfg["path"]) if gcfg["path"] else data_root
+    if gcfg["shape"] == "list":
+        if not isinstance(node, list):
+            return None, None, None, None
+        keyed, dup, missing = dedup(node, gcfg["key_field"])
+        return keyed, dup, missing, len(node)
+    elif gcfg["shape"] == "dict":
+        if not isinstance(node, dict):
+            return None, None, None, None
+        return dict(node), 0, 0, len(node)
+    return None, None, None, None
+
+
+def completeness_group(data_root, gcfg):
+    """回傳 (ok, n_raw, reason)。
+    total_match：gcfg["total_fields"] 逐一比對 data_root 上的自報欄位是否等於子集合原始筆數
+                 （去重前），全部存在且相符才 ok；require_empty 額外要求指定欄位為空/假值。
+    range_check：子集合原始筆數是否落在 gcfg["range"] = (lo, hi) 區間內。
+    total_fields／require_empty 一律讀 data_root 這一層（來源的 data 節點本身），
+    不是子集合節點內——本階段 8 個來源的自報總數欄位（count／total_count／errors）
+    實測皆位於 data 頂層，不在子集合節點內部（見報告 §2 逐來源小節的實測依據）。
+    """
+    node = path_get(data_root, gcfg["path"]) if gcfg["path"] else data_root
+    if gcfg["shape"] == "list":
+        if not isinstance(node, list):
+            return False, None, "節點缺失或非清單"
+        n_raw = len(node)
+    elif gcfg["shape"] == "dict":
+        if not isinstance(node, dict):
+            return False, None, "節點缺失或非物件"
+        n_raw = len(node)
+    else:
+        return False, None, "未知 shape=%r" % (gcfg.get("shape"),)
+
+    method = gcfg["completeness"]
+    if method == "total_match":
+        if not isinstance(data_root, dict):
+            return False, n_raw, "data 節點非物件，無法讀自報欄位"
+        for tf in gcfg["total_fields"]:
+            tv = data_root.get(tf)
+            if tv is None:
+                return False, n_raw, "缺 %s 欄位" % tf
+            if tv != n_raw:
+                return False, n_raw, "%s(%r) != len(%d)" % (tf, tv, n_raw)
+        for rf in gcfg.get("require_empty", ()):
+            rv = data_root.get(rf)
+            if rv:
+                return False, n_raw, "%s 非空（%r），視為部分抓取失敗" % (rf, rv)
+        return True, n_raw, "total_match"
+    elif method == "range_check":
+        lo, hi = gcfg["range"]
+        if n_raw < lo or n_raw > hi:
+            return False, n_raw, "n=%d 超出實測合理區間 [%d, %d]" % (n_raw, lo, hi)
+        return True, n_raw, "range_check[%d,%d]" % (lo, hi)
+    return False, n_raw, "未知完整性檢查方式 %r" % (method,)
+
+
+def short_desc_generic(item, desc_field, n=120):
+    """比照既有 short_desc()（不修改該函式），改成可指定欄位名稱的通用版本，
+    供本階段多個來源、各自不同的「友善描述欄位」共用（例如 gate 用 name、
+    ofac 用 sdn_name、payment_protocol_repos 用 full_name）。"""
+    if not isinstance(item, dict) or not desc_field:
+        return ""
+    s = item.get(desc_field) or ""
+    s = " ".join(str(s).split())
+    return (s[:n] + "\u2026") if len(s) > n else s
+
+
+def compare_group(source, gname, gcfg, data_old, data_new):
+    """單一子集合、單一相鄰日配對的完整比對結果。比照 compare_pair() 但泛化到支援
+    range_check／total_match 兩種完整性檢查與 list／dict 兩種資料形狀。"""
+    ok_old, n_old_raw, reason_old = completeness_group(data_old, gcfg)
+    ok_new, n_new_raw, reason_new = completeness_group(data_new, gcfg)
+    gate_ok = ok_old and ok_new
+
+    keyed_old, dup_old, miss_old, _ = extract_group_items(data_old, gcfg)
+    keyed_new, dup_new, miss_new, _ = extract_group_items(data_new, gcfg)
+    keyed_old = keyed_old or {}
+    keyed_new = keyed_new or {}
+
+    added_keys = sorted(set(keyed_new) - set(keyed_old), key=repr)
+    removed_keys = sorted(set(keyed_old) - set(keyed_new), key=repr)
+    removed_rate = (len(removed_keys) / len(keyed_old) * 100.0) if keyed_old else 0.0
+    threshold_count = max(gcfg["abs_floor"], gcfg["breaker_pct"] / 100.0 * len(keyed_old))
+    breaker = gate_ok and (len(removed_keys) > threshold_count)
+
+    return {
+        "source": source, "group": gname,
+        "gate_ok": gate_ok, "ok_old": ok_old, "ok_new": ok_new,
+        "reason_old": reason_old, "reason_new": reason_new,
+        "n_old_raw": n_old_raw, "n_new_raw": n_new_raw,
+        "dup_old": dup_old or 0, "dup_new": dup_new or 0,
+        "miss_old": miss_old or 0, "miss_new": miss_new or 0,
+        "keyed_old": keyed_old, "keyed_new": keyed_new,
+        "added_keys": added_keys, "removed_keys": removed_keys,
+        "removed_rate": removed_rate, "threshold_count": threshold_count, "breaker": breaker,
+    }
+
+
+def status_changes_for_group(gcfg, keyed_old, keyed_new):
+    """回傳 {key: (delta_from_dict, delta_to_dict)}，只含實際有變化的欄位。
+    只比對兩側都存在（key 未消失）的項目——key 本身的存在/消失由 DELISTED/LISTED
+    處理，這裡只處理「還在清單裡、但欄位值變了」的情況（旗標優先，見檔案上方
+    第二階段設計原則第 6 點）。"""
+    fields = gcfg.get("status_fields") or ()
+    if not fields:
+        return {}
+    changes = {}
+    for k in sorted(set(keyed_old) & set(keyed_new), key=repr):
+        old_item, new_item = keyed_old[k], keyed_new[k]
+        if not isinstance(old_item, dict) or not isinstance(new_item, dict):
+            continue
+        delta_from, delta_to = {}, {}
+        for f in fields:
+            ov, nv = old_item.get(f), new_item.get(f)
+            if ov != nv:
+                delta_from[f] = ov
+                delta_to[f] = nv
+        if delta_from:
+            changes[k] = (delta_from, delta_to)
+    return changes
+
+
+def build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted):
+    """比照 process_pair() 內的事件建構邏輯，泛化到支援 STATUS_CHANGED。
+    只在 judged=="NORMAL" 時計算與寫入，與既有 LISTED／DELISTED／REAPPEARED 的
+    閘門條件完全一致。回傳 (new_events, reappeared_from)。"""
+    new_events = []
+    reappeared_from = {}
+    if judged != "NORMAL":
+        return new_events, reappeared_from
+    desc_field = gcfg.get("desc_field")
+    for k in r["removed_keys"]:
+        new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
+                            "event": "DELISTED",
+                            "from": short_desc_generic(r["keyed_old"].get(k), desc_field), "to": None})
+    for k in r["added_keys"]:
+        new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
+                            "event": "LISTED",
+                            "from": None, "to": short_desc_generic(r["keyed_new"].get(k), desc_field)})
+        if k in last_delisted:
+            reappeared_from[k] = last_delisted[k]
+            new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
+                                "event": "REAPPEARED", "from": last_delisted[k],
+                                "to": short_desc_generic(r["keyed_new"].get(k), desc_field)})
+    for k in r["removed_keys"]:
+        last_delisted[k] = d_new
+
+    status_changes = status_changes_for_group(gcfg, r["keyed_old"], r["keyed_new"])
+    for k in sorted(status_changes, key=repr):
+        delta_from, delta_to = status_changes[k]
+        new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
+                            "event": "STATUS_CHANGED", "from": delta_from, "to": delta_to})
+
+    return new_events, reappeared_from
+
+
+def render_group_source_report(source, scfg, d_old, d_new, group_results):
+    """多子集合來源的人類可讀日報（changes/<source>/YYYY-MM-DD.md）。
+    措辭政策與第一階段 render_report() 完全一致（見該函式 docstring），
+    本函式只是把單一子集合的表格擴充成逐子集合各一段。"""
+    L = []
+    L.append("# 變動偵測 %s %s" % (EMDASH, scfg["label"]))
+    L.append("")
+    L.append("| 項目 | 值 |")
+    L.append("|---|---|")
+    L.append("| 來源 | `track-crypto/%s`（%d 個子集合） |" % (source, len(scfg["groups"])))
+    L.append("| 比對區間 | `%s` %s `%s` |" % (d_old, "→", d_new))
+    L.append("| 改寫 | %s |" % EMDASH)
+    L.append("| 偵測時間 | %s |" % datetime.now(timezone.utc).isoformat())
+    L.append("")
+    L.append("> \u2139\ufe0f **措辭說明**：「自清單消失」「新增」「重新出現」「狀態變化」都只是描述"
+              "『這個項目在這兩份快照裡的狀態』的事實，**不代表任何原因推測**。"
+              "機器可讀事件型別為 `DELISTED`／`LISTED`／`REAPPEARED`／`STATUS_CHANGED`"
+              "（型別定義見 `track-crypto/scripts/detect_delistings.py` 檔頭）。"
+              "本來源含 %d 個子集合，各子集合的完整性守門與熔斷各自獨立判定，"
+              "互不影響（例如某子集合熔斷不會連帶讓其他子集合也不判定）。" % len(scfg["groups"]))
+    L.append("")
+    for gname, gr in group_results.items():
+        r, judged, gcfg = gr["r"], gr["judged"], gr["gcfg"]
+        reappeared_from = gr["reappeared_from"]
+        n_reappeared = len(reappeared_from)
+        status_changes = gr["status_changes"]
+        L.append("## 子集合 `%s`" % gname)
+        L.append("")
+        L.append("| 項目 | 值 |")
+        L.append("|---|---|")
+        tag = "" if judged == "NORMAL" else ("（%s，未寫入事件流）" % ("不判定" if judged == "GATE_FAIL" else "熔斷"))
+        L.append("| **自清單消失**（實際差集筆數，%s） | **%d**%s |" %
+                  ("已寫入事件流為 `DELISTED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
+                   len(r["removed_keys"]), tag))
+        L.append("| 新增（實際差集筆數，%s） | %d%s |" %
+                  ("已寫入事件流為 `LISTED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
+                   len(r["added_keys"]), tag))
+        L.append("| \u2514\u2500 其中重新出現 | %d%s |" % (n_reappeared, tag))
+        if gcfg.get("status_fields"):
+            L.append("| 狀態變化（%s） | %d%s |" %
+                      ("已寫入 STATUS_CHANGED" if judged == "NORMAL" else "僅供人工參考", len(status_changes), tag))
+        L.append("| 去重 dup_keys（前日／當日） | %d / %d |" % (r["dup_old"], r["dup_new"]))
+        if r["miss_old"] or r["miss_new"]:
+            L.append("| 主鍵缺失 missing_key（前日／當日） | %d / %d |" % (r["miss_old"], r["miss_new"]))
+        L.append("| 完整性守門：前日 | %s（%s，n=%r） |" % ("通過" if r["ok_old"] else "**未通過**", r["reason_old"], r["n_old_raw"]))
+        L.append("| 完整性守門：當日 | %s（%s，n=%r） |" % ("通過" if r["ok_new"] else "**未通過**", r["reason_new"], r["n_new_raw"]))
+        L.append("| 熔斷門檻 | %.1f%%，abs_floor=%d（換算前日筆數為 %.2f 筆；removed 筆數 %d，%s） |" %
+                  (gcfg["breaker_pct"], gcfg["abs_floor"], r["threshold_count"], len(r["removed_keys"]),
+                   "已觸發" if judged == "BREAKER" else "未觸發"))
+        L.append("")
+        if judged == "GATE_FAIL":
+            L.append("> \u26a0\ufe0f **因完整性守門未通過，本日子集合 `%s` 不做「自清單消失／新增」判定，"
+                      "`events.jsonl` 未寫入任何事件。** 上表筆數僅為程式算出的原始差集，"
+                      "**未經完整性驗證，不代表正式判定**。" % gname)
+            L.append("")
+        if judged == "BREAKER":
+            L.append("> \U0001f534 **熔斷觸發：子集合 `%s` 的 removed 筆數 %d 超過門檻"
+                      "（max(%d, %.1f%%×前日筆數)＝%.2f），本日「自清單消失」判定已暫停，"
+                      "改寫入 `ALERT-DELIST.md`，等待人工確認。** 完整性守門本身通過"
+                      "（前後兩側 n 皆在合理範圍內），移除比例超出實測日常區間，"
+                      "可能是抓取異常，也可能是真的有大量項目同時自清單消失，"
+                      "本程式不自動判斷成因，僅陳述數字。"
+                      % (gname, len(r["removed_keys"]), gcfg["abs_floor"], gcfg["breaker_pct"], r["threshold_count"]))
+            L.append("")
+        if r["removed_keys"]:
+            L.append("### \u26a0\ufe0f 自清單消失（%d）%s" % (len(r["removed_keys"]), "" if judged == "NORMAL" else "（未經完整性驗證）"))
+            L.append("")
+            for k in r["removed_keys"]:
+                desc = short_desc_generic(r["keyed_old"].get(k), gcfg.get("desc_field"))
+                L.append("- `%s`%s" % (k, (" \u2014 " + desc) if desc else ""))
+            L.append("")
+        if r["added_keys"]:
+            extra = "（含 %d 筆重新出現，詳見下一節）" % n_reappeared if n_reappeared else ""
+            L.append("### 新增（%d）%s%s" % (len(r["added_keys"]), extra, "" if judged == "NORMAL" else "（未經完整性驗證）"))
+            L.append("")
+            for k in r["added_keys"]:
+                desc = short_desc_generic(r["keyed_new"].get(k), gcfg.get("desc_field"))
+                L.append("- `%s`%s" % (k, (" \u2014 " + desc) if desc else ""))
+            L.append("")
+        if reappeared_from:
+            L.append("### \U0001f501 重新出現（%d，事件型別 `REAPPEARED`）" % n_reappeared)
+            L.append("")
+            for k in sorted(reappeared_from, key=repr):
+                desc = short_desc_generic(r["keyed_new"].get(k), gcfg.get("desc_field"))
+                L.append("- `%s`（先前於 `%s` 記為自清單消失）%s" % (k, reappeared_from[k], (" \u2014 " + desc) if desc else ""))
+            L.append("")
+        if status_changes:
+            L.append("### \U0001f501 狀態變化（%d，事件型別 `STATUS_CHANGED`）" % len(status_changes))
+            L.append("")
+            L.append("以下項目主鍵仍在清單中（未消失），但下列欄位的值改變了。"
+                      "只陳述欄位新舊值，不推測原因。")
+            L.append("")
+            for k in sorted(status_changes, key=repr):
+                delta_from, delta_to = status_changes[k]
+                desc = short_desc_generic(r["keyed_new"].get(k), gcfg.get("desc_field"))
+                changes_txt = "；".join("%s: %r \u2192 %r" % (f, delta_from[f], delta_to[f]) for f in delta_from)
+                L.append("- `%s`%s \u2014 %s" % (k, (" (" + desc + ")") if desc else "", changes_txt))
+            L.append("")
+    L.append("---")
+    L.append("")
+    L.append("本紀錄由 `track-crypto/scripts/detect_delistings.py` 自動產生（第二階段）。")
+    L.append("僅陳述「哪個項目在哪天消失／出現／重新出現／狀態變化」此一事實，**不含任何解讀或評論**。")
+    return "\n".join(L) + "\n"
+
+
+def write_alert_block_group(source, gname, d_new, lines):
+    """比照 write_alert_block()（未修改該函式），供第二階段多子集合來源使用，
+    差異只在 marker 格式（多帶 group）與檔頭文字（不寫死來源名稱，因為
+    ALERT-DELIST.md 是多來源共用檔案）。與 write_alert_block() 各自獨立、
+    互不呼叫，也各自獨立判斷檔案是否已存在——若檔案已由另一函式建立，
+    這裡不會重寫檔頭，只會照既有慣例把新區塊接在檔尾（見下方判斷式）。"""
+    marker = "<!-- detect_delistings:GROUP:%s:%s:%s -->" % (source, gname, d_new)
+    existing = ""
+    if os.path.exists(ALERT_DELIST):
+        with open(ALERT_DELIST, encoding="utf-8") as f:
+            existing = f.read()
+    if marker in existing:
+        return False
+    block = "\n".join(
+        ["", "## \U0001f534 track-crypto/%s（子集合 %s）自清單消失熔斷警報\uff08%s\uff09" % (source, gname, d_new),
+         "", marker, ""] + lines + [""])
+    if existing.strip():
+        content = existing.rstrip("\n") + "\n" + block
+    else:
+        header = """# \U0001f534 track-crypto 自清單消失規模異常警報（熔斷）
+
+本檔案由 `track-crypto/scripts/detect_delistings.py` 獨佔寫入，不與任何其他程式共用
+（另見 `ALERT.md` 是 `scripts/healthcheck.py` 的獨立輸出，兩者互不相干）。
+
+本檔案記錄「removed 筆數超過熔斷門檻」這個事實（見下方各則區塊的數字），**不代表這些
+項目已永久下架**：本程式對「自清單消失」與「永久下架」不畫等號。熔斷只代表移除比例
+（或筆數）超出該來源／子集合的實測日常區間，需要人工確認成因，本程式不自動判斷是
+抓取異常還是真的有大量項目同時自清單消失。
+
+本檔案涵蓋白名單內所有來源（第一階段 `x402_bazaar`、第二階段甲組其餘 8 個來源），
+依「來源＋子集合＋日期」個別記錄每一則熔斷事件，只會新增，不會自動刪除既有區塊。
+人工確認後若需歸檔，請自行搬移或加註（例如在行尾加 `<!-- ack:YYYY-MM-DD -->`），
+本程式不會自動清除任何已寫入的區塊。
+"""
+        content = header + block
+    with open(ALERT_DELIST, "w", encoding="utf-8") as f:
+        f.write(content)
+    return True
+
+
+def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by_group):
+    """比照 process_pair()，處理一個多子集合來源的一組相鄰快照，逐子集合各自判定、
+    合併寫入同一份 events.jsonl（該來源專屬）與同一份 changes/<source>/YYYY-MM-DD.md。"""
+    d_old, d_new = os.path.basename(f_old)[:10], os.path.basename(f_new)[:10]
+    j_old, j_new = load(f_old), load(f_new)
+    data_old, data_new = j_old.get("data", {}) or {}, j_new.get("data", {}) or {}
+
+    group_results = {}
+    all_new_events = []
+    for gname, gcfg in scfg["groups"].items():
+        r = compare_group(source, gname, gcfg, data_old, data_new)
+        judged = judge(r, gcfg)
+        last_delisted = last_delisted_by_group.setdefault(gname, {})
+        new_events, reappeared_from = build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted)
+        status_changes = status_changes_for_group(gcfg, r["keyed_old"], r["keyed_new"]) if judged == "NORMAL" else {}
+        group_results[gname] = {"r": r, "judged": judged, "gcfg": gcfg,
+                                 "reappeared_from": reappeared_from, "status_changes": status_changes}
+        all_new_events.extend(new_events)
+
+    jsonl_path = os.path.join(TRACK_CRYPTO, "data", source, "events.jsonl")
+    fresh = write_events(jsonl_path, all_new_events, seen)
+    seen.update((e["date"], e["source"], e["group"], e["key"], e["event"]) for e in fresh)
+
+    need_report = False
+    for gr in group_results.values():
+        if gr["judged"] != "NORMAL":
+            need_report = True
+        elif gr["r"]["removed_keys"] or gr["r"]["added_keys"] or gr["reappeared_from"] or gr["status_changes"]:
+            need_report = True
+
+    entries_for_index = []
+    alert_written = False
+    if need_report:
+        outdir = os.path.join(CHANGES, source)
+        os.makedirs(outdir, exist_ok=True)
+        out = os.path.join(outdir, "%s.md" % d_new)
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(render_group_source_report(source, scfg, d_old, d_new, group_results))
+
+        total_removed = sum(len(gr["r"]["removed_keys"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
+        total_added = sum(len(gr["r"]["added_keys"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
+        total_reappeared = sum(len(gr["reappeared_from"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
+        total_status = sum(len(gr["status_changes"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
+        non_normal = [g for g, gr in group_results.items() if gr["judged"] != "NORMAL"]
+        removed_cell = str(total_removed)
+        added_cell = str(total_added)
+        if total_reappeared:
+            added_cell += "（含 %d 筆重新出現）" % total_reappeared
+        if total_status:
+            removed_cell += "；狀態變化 %d" % total_status
+        if non_normal:
+            tag = "；".join("%s:%s" % (g, group_results[g]["judged"]) for g in non_normal)
+            removed_cell += "（%s）" % tag
+        entries_for_index.append(
+            "| %s | `track-crypto/%s` | %s | %s | %s | [紀錄](changes/%s/%s.md) |"
+            % (d_new, source, EMDASH, removed_cell, added_cell, source, d_new))
+
+        for gname, gr in group_results.items():
+            if gr["judged"] == "BREAKER":
+                r, gcfg = gr["r"], gr["gcfg"]
+                lines = [
+                    "檢查時間（UTC）：%s" % datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "",
+                    "| 項目 | 值 |",
+                    "|---|---|",
+                    "| 來源 | `track-crypto/%s`／子集合 `%s` |" % (source, gname),
+                    "| 比對區間 | `%s` \u2192 `%s` |" % (d_old, d_new),
+                    "| removed 筆數 | %d（門檻 max(%d, %.1f%%\u00d7前日筆數)\uff1d%.2f） |"
+                    % (len(r["removed_keys"]), gcfg["abs_floor"], gcfg["breaker_pct"], r["threshold_count"]),
+                    "| 前日筆數（去重後） | %d |" % len(r["keyed_old"]),
+                    "",
+                    ("本日 `%s`／子集合 `%s` 的「自清單消失」判定已**暫停**，未寫入 "
+                     "`data/%s/events.jsonl`。移除比例超出實測日常區間，可能是抓取異常，"
+                     "也可能是真的有大量項目同時自清單消失，詳見 `changes/%s/%s.md`。"
+                     "人工確認後可手動處理（本程式不會自動重放此區間）。"
+                     % (source, gname, source, source, d_new)),
+                ]
+                if write_alert_block_group(source, gname, d_new, lines):
+                    alert_written = True
+
+    return group_results, fresh, entries_for_index, alert_written
 
 
 def snapshots(source):
@@ -607,6 +1265,15 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted):
 
 
 def main():
+    # --------------------------------------------------------------------
+    # 第一階段（x402_bazaar，SOURCES）：本迴圈與下方三行 summary print 逐字元
+    # 保持 commit 7cce2dc 原樣，未新增、未刪除、未重排任何一行，只是把原本
+    # 「唯一迴圈」改成「第一個迴圈」，緊接第二階段迴圈之前。all_index_entries
+    # 改成先收集、最後統一呼叫一次 update_index()（原本就是這個模式，只是現在
+    # 兩個迴圈共用同一份 all_index_entries 累積清單，update_index() 本身完全
+    # 不變——它是「讀舊行+合併+去重+反序」，天然支援多來源各自追加，見該函式
+    # docstring）。
+    # --------------------------------------------------------------------
     total_listed = total_delisted = total_reappeared = 0
     normal_days = gate_fail_days = breaker_days = 0
     all_index_entries = []
@@ -638,13 +1305,61 @@ def main():
                   % (source, r["d_old"], r["d_new"], judged, n_listed, n_delisted, n_reappeared,
                      "  [ALERT-DELIST.md 已寫入]" if alert_written else ""))
             all_index_entries.extend(entries)
-    if not any_source:
-        print("FATAL 白名單 SOURCES 為空", file=sys.stderr)
+
+    # --------------------------------------------------------------------
+    # 第二階段（甲組其餘 8 個來源，GROUP_SOURCES）：獨立迴圈、獨立計數器，
+    # 完全不寫入／不讀取上面的 total_listed 等第一階段計數器，只共用
+    # all_index_entries（累積清單，最後統一呼叫一次 update_index()）。
+    # --------------------------------------------------------------------
+    g_total_listed = g_total_delisted = g_total_reappeared = g_total_status = 0
+    g_normal = g_gate_fail = g_breaker = 0
+    any_group_source = False
+    for source, scfg in GROUP_SOURCES.items():
+        any_group_source = True
+        snaps = snapshots(source)
+        if len(snaps) < 2:
+            print("%s: 快照不足 2 份，略過" % source)
+            continue
+        jsonl_path = os.path.join(TRACK_CRYPTO, "data", source, "events.jsonl")
+        seen = load_seen(jsonl_path)
+        last_delisted_by_group = {}  # {group: {key: date}}，REAPPEARED 判定用狀態
+        for f_old, f_new in zip(snaps[:-1], snaps[1:]):
+            group_results, fresh, entries, alert_written = process_group_source_pair(
+                source, scfg, f_old, f_new, seen, last_delisted_by_group)
+            d_old = os.path.basename(f_old)[:10]
+            d_new = os.path.basename(f_new)[:10]
+            n_listed = sum(1 for e in fresh if e["event"] == "LISTED")
+            n_delisted = sum(1 for e in fresh if e["event"] == "DELISTED")
+            n_reappeared = sum(1 for e in fresh if e["event"] == "REAPPEARED")
+            n_status = sum(1 for e in fresh if e["event"] == "STATUS_CHANGED")
+            g_total_listed += n_listed
+            g_total_delisted += n_delisted
+            g_total_reappeared += n_reappeared
+            g_total_status += n_status
+            judged_summary = ",".join("%s=%s" % (g, gr["judged"]) for g, gr in group_results.items())
+            for gr in group_results.values():
+                if gr["judged"] == "GATE_FAIL":
+                    g_gate_fail += 1
+                elif gr["judged"] == "BREAKER":
+                    g_breaker += 1
+                else:
+                    g_normal += 1
+            print("%s: %s->%s [%s] 新事件 listed=%d delisted=%d reappeared=%d status_changed=%d%s"
+                  % (source, d_old, d_new, judged_summary, n_listed, n_delisted, n_reappeared, n_status,
+                     "  [ALERT-DELIST.md 已寫入]" if alert_written else ""))
+            all_index_entries.extend(entries)
+
+    if not any_source and not any_group_source:
+        print("FATAL 白名單 SOURCES 與 GROUP_SOURCES 皆為空", file=sys.stderr)
         return 1
     if all_index_entries:
         update_index(all_index_entries)
     print("SUMMARY listed=%d delisted=%d reappeared=%d normal_days=%d gate_fail_days=%d breaker_days=%d"
           % (total_listed, total_delisted, total_reappeared, normal_days, gate_fail_days, breaker_days))
+    print("SUMMARY(GROUP_SOURCES) listed=%d delisted=%d reappeared=%d status_changed=%d "
+          "normal=%d gate_fail=%d breaker=%d"
+          % (g_total_listed, g_total_delisted, g_total_reappeared, g_total_status,
+             g_normal, g_gate_fail, g_breaker))
     return 0
 
 

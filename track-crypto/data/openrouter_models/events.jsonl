@@ -1,0 +1,58 @@
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "allenai/olmo-3-32b-think", "event": "DELISTED", "from": "AllenAI: Olmo 3 32B Think", "to": null}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "arcee-ai/virtuoso-large", "event": "DELISTED", "from": "Arcee AI: Virtuoso Large", "to": null}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "deepseek/deepseek-v4-flash-0731:batch", "event": "LISTED", "from": null, "to": "DeepSeek: DeepSeek V4 Flash 0731 (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "deepseek/deepseek-v4-pro-0813:batch", "event": "LISTED", "from": null, "to": "DeepSeek: DeepSeek V4 Pro 0813 (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "google/gemma-4-31b-it:batch", "event": "LISTED", "from": null, "to": "Google: Gemma 4 31B (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "meta/muse-glimmer-30b:batch", "event": "LISTED", "from": null, "to": "Meta: Muse Glimmer 30B (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "moonshotai/kimi-k3:batch", "event": "LISTED", "from": null, "to": "MoonshotAI: Kimi K3 (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-oss-120b:batch", "event": "LISTED", "from": null, "to": "OpenAI: gpt-oss-120b (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-oss-20b:batch", "event": "LISTED", "from": null, "to": "OpenAI: gpt-oss-20b (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.5-9b:batch", "event": "LISTED", "from": null, "to": "Qwen: Qwen3.5-9B (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-2.4t-a95b:batch", "event": "LISTED", "from": null, "to": "Qwen: Qwen3.8 2.4T A95B (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "thinkingmachines/inkling-small:batch", "event": "LISTED", "from": null, "to": "Thinking Machines: Inkling Small (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3-flash:batch", "event": "LISTED", "from": null, "to": "Z.ai: GLM 5.3 Flash (batch)"}
+{"date": "2026-08-29", "source": "openrouter_models", "group": "_models", "key": "~z-ai/glm-latest", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}
+{"date": "2026-08-31", "source": "openrouter_models", "group": "_models", "key": "moonshotai/kimi-k2.5", "event": "STATUS_CHANGED", "from": {"expiration_date": "2026-08-31"}, "to": {"expiration_date": null}}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "kwaipilot/kat-coder-air-v2.5", "event": "DELISTED", "from": "Kwaipilot: KAT-Coder-Air V2.5", "to": null}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "ibm-granite/granite-4.2-8b", "event": "LISTED", "from": null, "to": "IBM: Granite 4.2 8B"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-3.5-turbo:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-3.5 Turbo (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4-turbo:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-4 Turbo (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4.1-mini:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-4.1 Mini (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4.1-nano:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-4.1 Nano (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4.1:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-4.1 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4o-mini:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-4o-mini (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4o:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-4o (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5-mini:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5 Mini (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5-nano:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5 Nano (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5 Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.1:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.1 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.2-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.2 Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.2:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.2 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.4-mini:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.4 Mini (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.4-nano:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.4 Nano (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.4-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.4 Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.4:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.4 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.5-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.5 Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.5:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.5 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.6-luna-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.6 Luna Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.6-luna:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.6 Luna (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.6-sol-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.6 Sol Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.6-sol:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.6 Sol (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.6-terra-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.6 Terra Pro (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5.6-terra:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5.6 Terra (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-5:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-5 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/o3-mini:batch", "event": "LISTED", "from": null, "to": "OpenAI: o3 Mini (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/o3:batch", "event": "LISTED", "from": null, "to": "OpenAI: o3 (batch)"}
+{"date": "2026-09-01", "source": "openrouter_models", "group": "_models", "key": "openai/o4-mini:batch", "event": "LISTED", "from": null, "to": "OpenAI: o4 Mini (batch)"}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "anthropic/claude-opus-4.7-fast", "event": "DELISTED", "from": "Anthropic: Claude Opus 4.7 (Fast)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "anthropic/claude-opus-4.8-fast", "event": "DELISTED", "from": "Anthropic: Claude Opus 4.8 (Fast)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "anthropic/claude-opus-5-fast", "event": "DELISTED", "from": "Claude Opus 5 (Fast)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "mistralai/codestral-2508:batch", "event": "DELISTED", "from": "Mistral: Codestral 2508 (batch)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "mistralai/ministral-8b-2512:batch", "event": "DELISTED", "from": "Mistral: Ministral 3 8B 2512 (batch)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-large-2512:batch", "event": "DELISTED", "from": "Mistral: Mistral Large 3 2512 (batch)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-medium-3.1:batch", "event": "DELISTED", "from": "Mistral: Mistral Medium 3.1 (batch)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-small-2603:batch", "event": "DELISTED", "from": "Mistral: Mistral Small 4 (batch)", "to": null}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "anthropic/claude-fable-5.1", "event": "LISTED", "from": null, "to": "Anthropic: Claude Fable 5.1"}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "inception/mercury-2.5-preview", "event": "LISTED", "from": null, "to": "Inception: Mercury 2.5 Preview"}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "nex-agi/nex-n2-mini", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2026-09-08"}}
+{"date": "2026-09-02", "source": "openrouter_models", "group": "_models", "key": "nex-agi/nex-n2-pro", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2026-09-08"}}
