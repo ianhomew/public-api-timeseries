@@ -168,9 +168,16 @@
    "secs": 1.3,
    "parser_version": 1,
    "attempts": 1
+  },
+  "payment_pricing_pages": {
+   "ok": true,
+   "bytes": 812,
+   "secs": 0.1,
+   "parser_version": 1,
+   "attempts": 1
   }
  },
- "fetched_at": "2026-09-02T00:00:01.586494+00:00",
+ "fetched_at": "2026-09-02T10:30:14.015563+00:00",
  "runs": [
   {
    "at": "2026-09-02T00:00:01.586494+00:00",
@@ -199,6 +206,12 @@
     "vast_gpu",
     "x402_bazaar",
     "x402_index_thirdparty"
+   ]
+  },
+  {
+   "at": "2026-09-02T10:30:14.015563+00:00",
+   "sources": [
+    "payment_pricing_pages"
    ]
   }
  ]
