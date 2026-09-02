@@ -12,18 +12,21 @@
 
 | 項目 | 排程（台北時間） | 執行程式 |
 |---|---|---|
-| `track-crypto`（24 個來源） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
+| `track-crypto`（23 個來源，另有 1 個已停抓 `x402_index_thirdparty`，歷史資料保留） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
 | `track-gov`（18 個來源） | 每日 09:30（`flock -w 1800` 等抓取鎖，最多等 30 分鐘） | `track-gov/scripts/snap_gov.py` |
 | git push | 每日 11:30（`flock -w 7200`，最多等 2 小時） | `scripts/push.sh` |
 
 每個來源**每日僅抓取一輪**，同一 track 內部無來源別排程差異；`fetch()` 請求間隔固定 1 秒。
 
-## track-crypto（24 個來源）
+## track-crypto（23 個來源）
 
 抓取程式：`track-crypto/scripts/snap_crypto.py`（自動載入 `track-crypto/adapters/*.py`）
 
-> 已停抓來源 `mcp_registry`（2026-08-27 起停止，已抓資料保留）**不計入本次 24 個**，
+> 已停抓來源 `mcp_registry`（2026-08-27 起停止，已抓資料保留）**不計入本次 23 個**，
 > 因其 adapter 檔已不在 `track-crypto/adapters/` 目錄下（沿用既有文件記載，本輪未重新驗證）。
+>
+> 已停抓來源 `x402_index_thirdparty`（2026-09-02 起停止，已抓資料保留）**同樣不計入本次 23 個**，
+> 詳細停抓日期／理由／歷史資料保留說明見本節末〈已停抓〉小節。
 
 ### `agent_virtuals`
 
@@ -303,7 +306,13 @@
 | 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://api.cdp.coinbase.com/robots.txt：HTTP 404（無 robots.txt，視為無限制；與既有 track-crypto/scripts/snap_crypto.py 沿用至今的抓取行為一致） |
 
-### `x402_index_thirdparty`
+### 已停抓
+
+| 來源 | 停抓日期 | 理由 | 歷史資料處置 |
+|---|---|---|---|
+| `x402_index_thirdparty` | 2026-09-02 | 與軌一權威來源 `x402_bazaar` 高度重疊（同一 x402 生態系）：2026-09-02 UTC 直接讀取兩者當日快照原始碼實測，`x402_index_thirdparty` 當日 `total=1044`、`/server/` 前綴 `server_count=1000`，同日 `x402_bazaar` `total=14929`，`x402_index_thirdparty` 的 `/server/` 前綴筆數僅約為 `x402_bazaar` 掛牌數的 6.7%（即 `x402_bazaar` 約為其 14.9 倍）。且 `total=1044`／`server_count=1000` 這兩個數字在 2026-08-31 與 2026-09-02（相隔 3 天）逐位元組相同，`server_count` 恰好卡在 1,000 這個整數，指向第三方索引站 sitemap 本身有收錄／分頁上限，非本專案抓取邏輯漏抓。完整價值盤點見 [docs/source-value-audit.md](source-value-audit.md)。 | 2026-08-28～2026-09-02 共 6 天快照（`2026-08-28.json.gz` ~ `2026-09-02.json.gz`）完整保留於 `track-crypto/data/x402_index_thirdparty/`，不刪除、不覆寫；adapter 原始碼**移動**（非刪除）至 `track-crypto/retired_adapters/x402_index_thirdparty.py`，檔案內容未修改（`sha256` 搬移前後一致），只是不再被 `snap_crypto.py`／`healthcheck.py`／`daily_report.py` 的 `track-crypto/adapters/*.py` 自動探索機制掃到，故**不計入本次 23 個** |
+
+`x402_index_thirdparty` 停抓前的端點與驗證細節（歷史記錄，供查證）：
 
 | 項目 | 值 |
 |---|---|
@@ -311,10 +320,12 @@
 | 程式內 DESC | x402scan 第三方索引 sitemap URL 清單（僅涵蓋約官方 x402 Bazaar 掛牌數的 6.8%，屬輔助視角非核心資料源） |
 | 端點 | `https://www.x402scan.com/sitemap.xml` |
 | parser_version | 1 |
-| MAX_ITEMS／等效上限 | 未記載 |
-| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
+| MAX_ITEMS／等效上限 | 未記載（adapter 內建驗收下限：總數 ≥500、`/server/` 前綴 ≥300） |
+| 抓取頻率（停抓前） | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 親驗 https://www.x402scan.com/robots.txt：Allow: /，Content-Signal: search=yes, ai-train=no, ai-input=yes |
-| 實測值（2026-08-31 UTC） | 1,044 個 URL（`/server/` 前綴 1,000 個，約為同日 `x402_bazaar` 官方掛牌數 14,410 筆的 6.9%）；23,431 B（約 23 KB）；耗時 1.5s；已累積天數 4 天（2026-08-28～08-31） |
+| 最後一次實測值（2026-09-02 UTC，停抓當天） | 1,044 個 URL（`/server/` 前綴 1,000 個，約為同日 `x402_bazaar` 官方掛牌數 14,929 筆的 6.7%）；23,423 B（約 22.9 KB） |
+
+（另見上方 `mcp_registry` 的停抓說明，是本專案第二個「停抓、歷史資料保留」案例。）
 
 ## track-gov（18 個來源）
 

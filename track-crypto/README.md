@@ -4,13 +4,16 @@
 
 這是原始資料存檔，**不含任何分析、觀點或投資建議**。
 
-每天對 24 個公開端點各取一次快照，一天一檔 `YYYY-MM-DD.json.gz`（日期為 **UTC**），**永不覆蓋**。
+每天對 23 個公開端點各取一次快照，一天一檔 `YYYY-MM-DD.json.gz`（日期為 **UTC**），**永不覆蓋**。
+另有 1 個來源（`x402_index_thirdparty`）已於 2026-09-02 停抓，歷史資料保留但不再每日新增，見下方〈已停抓〉。
 
-## 收錄來源（24 個）
+## 收錄來源（23 個）
 
 2026-08-31（UTC）實測值（來源：`track-crypto/data/_manifest/2026-08-31.json`、`track-crypto/logs/cron.log`）。
-24 個來源每日壓縮後合計約 **9.33 MB**（9,780,952 B），總耗時約 **736 秒**（約 12.3 分鐘；
+23 個來源每日壓縮後合計約 **9.31 MB**（9,757,521 B），總耗時約 **734.5 秒**（約 12.2 分鐘；
 其中 `agent_virtuals` 一項就佔 608.7 秒，因觸發 600 秒時間預算而截斷，見下方說明）。
+（此為 2026-08-31 UTC 24 個來源實測合計 9,780,952 B／736 秒，扣除已於 2026-09-02 停抓的
+`x402_index_thirdparty`（23,431 B／1.5 秒）後的重新加總，非新一輪實測；來源同下方逐來源列表。）
 
 ### 交易所（6）
 | 來源 | 內容 | 體積 | 耗時 |
@@ -30,13 +33,14 @@
 | `oracle_feed_directory` | Chainlink／Pyth 價格餵送目錄（供逐日比對集合差集） | 162.8 KB（166,669 B） | 1.3s |
 | `dao_proposal_snapshot` | Snapshot DAO 提案中繼資料（偵測提案被刪除，不存投票紀錄） | 386.3 KB（395,538 B） | 9.6s |
 
-### 支付與 agent 生態（4）
+### 支付與 agent 生態（3）
 | 來源 | 內容 | 體積 | 耗時 |
 |---|---|---|---|
 | `x402_bazaar` | x402 全量掛牌（CDP discovery API），今日 14,410 筆 | 5.70 MB（5,979,699 B） | 43.3s |
-| `x402_index_thirdparty` | x402scan 第三方索引 sitemap URL 清單，**新來源** | 22.9 KB（23,431 B） | 1.5s |
 | `payment_protocol_repos` | x402／AP2／L402 規格版本 repo 中繼資料 | 557 B | 0.7s |
 | `crypto_project_liveness` | DefiLlama 駭客事件清單 | 32.6 KB（33,346 B） | 0.1s |
+
+（`x402_index_thirdparty` 原列於本分類，已於 2026-09-02 停抓，移至下方〈已停抓〉。）
 
 ### MCP／agent 生態目錄（2，新，Batch 3）
 | 來源 | 內容 | 體積 | 耗時 |
@@ -71,11 +75,13 @@
   校準為 `MIN_ITEMS=200`（271 × 0.8 ≈ 216.8，取整數 200）。
 - **`x402_index_thirdparty`**：僅涵蓋約 1,044 個 URL（`/server/` 前綴 1,000 個），約為
   `x402_bazaar` 官方掛牌數（今日 14,410 筆）的 6.9%，屬輔助視角、非核心交叉驗證資料源。
+  **此弱點正是後續 2026-09-02 停抓的理由，已移至下方〈已停抓〉，本項限制描述僅供歷史查證。**
 
 ### 已停抓
 | 來源 | 說明 |
 |---|---|
-| `mcp_registry` | 2026-08-27 起停抓（單日快照即含多版本、官方支援 `updated_since`、佔每日 93% 時間）。已抓資料保留，其 adapter 檔已不在 `track-crypto/adapters/` 目錄下，**不計入本次 24 個之內** |
+| `mcp_registry` | 2026-08-27 起停抓（單日快照即含多版本、官方支援 `updated_since`、佔每日 93% 時間）。已抓資料保留，其 adapter 檔已不在 `track-crypto/adapters/` 目錄下，**不計入本次 23 個之內** |
+| `x402_index_thirdparty` | 2026-09-02 起停抓（與軌一權威來源 `x402_bazaar` 高度重疊：2026-09-02 UTC 實測 `total=1044`／`server_count=1000`，同日 `x402_bazaar` `total=14929`，覆蓋率約 6.7%；`server_count` 連續多日卡在整數 1,000，判斷為第三方索引站 sitemap 本身的收錄上限，非抓取邏輯漏抓）。**2026-08-28～2026-09-02 共 6 天歷史快照完整保留**，不刪除、不覆寫；adapter 原始碼**搬移**（非刪除）至 `track-crypto/retired_adapters/x402_index_thirdparty.py`（內容未修改，只是不在 `track-crypto/adapters/` 目錄下故不再被自動探索），**不計入本次 23 個之內** |
 | `mcp_pulsemcp` | 2026-09 起停用（DESC／模組 docstring 已誠實標註，本輪未再驗證細節） |
 
 ### 未收錄（實測後排除）
@@ -120,7 +126,7 @@ def collect(fetch) -> dict/list:
 > 的介面（見 [track-gov/README.md](../track-gov/README.md)），兩軌介面不同，不可混用。
 > 軌一目前唯一的逾時／截斷機制是 `agent_virtuals` adapter 自行在函式內實作的
 > `TIME_BUDGET_SECS=600` 秒總時間預算（`truncated` 欄位寫入回傳的 `data` 內層，
-> 不在 `_meta` 裡；其餘 23 個 adapter 沒有這個機制）。
+> 不在 `_meta` 裡；其餘 22 個 adapter 沒有這個機制；`x402_index_thirdparty` 已停抓不計入）。
 
 快照本體格式固定為 `{"_meta": {"source","fetched_at","license"}, "data": <collect() 回傳值>}`，
 `_meta` 只有這 3 個鍵（軌二的 `channels`／`desc`／`source_home`／`robots_verified`／`parser_version`
@@ -138,7 +144,9 @@ def collect(fetch) -> dict/list:
 data/<source>/YYYY-MM-DD.json.gz    {"_meta":{...},"data":{...}}
 data/_manifest/YYYY-MM-DD.json      當日各來源成敗、大小、耗時、parser_version
 data/cex_events/events.jsonl        上／下架事件流
-adapters/<key>.py                   各來源抓取規則（一個來源一支）
+adapters/<key>.py                   各來源抓取規則（一個來源一支，會被自動探索／排程）
+retired_adapters/<key>.py           已停抓來源的 adapter 原始碼（保留備查，不會被自動探索）
+manual_adapters/<key>.py            人工不定期手動執行的 adapter（不在每日 cron 排程內）
 scripts/snap_crypto.py              主程式，自動載入 adapters/
 logs/cron.log                       執行日誌（不入 GitHub）
 ```

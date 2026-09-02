@@ -15,9 +15,9 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 
 每個來源納入前都要通過三步驗證。判準與逐一查證結果見 [docs/why.md](docs/why.md)。
 
-## 目前收錄（共 42 個來源）
+## 目前收錄（共 41 個來源，另有 1 個已停抓、歷史資料保留）
 
-### `track-crypto/` — 加密貨幣與 AI 算力市場（24 個來源）
+### `track-crypto/` — 加密貨幣與 AI 算力市場（23 個來源，另有 1 個已停抓）
 
 既有文件（2026-08-28 UTC 實測）記載的 21 個來源仍有效，另有 **3 個新來源**
 （`agent_virtuals`／`mcp_smithery`／`x402_index_thirdparty`）本輪盤點中發現已存在於 VPS，
@@ -31,6 +31,10 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 
 來源：VPS `track-crypto/data/_manifest/2026-08-31.json`、`track-crypto/logs/cron.log`、
 `ls track-crypto/data/<source>/ | wc -l`（本輪唯讀查核，未修改任何 VPS 檔案）。
+
+> **更新（2026-09-02）**：`x402_index_thirdparty` 已停抓，上表數字是停抓前最後一次完整實測
+> 的歷史記錄，並非目前仍在每日更新的數字。停抓日期、理由、歷史資料保留細節見下方
+> 來源狀態表下方的〈已停抓〉說明。
 
 | 來源 | 內容 | 狀態 |
 |---|---|---|
@@ -57,14 +61,25 @@ Internet Archive 的擷取頻率不足以還原時間序列，公開資料集平
 | `project_tokenomics_docs` | 專案官方 tokenomics 文件頁 | 每日抓取 |
 | `vast_gpu` | Vast.ai GPU 租賃市場報價 | 每日抓取 |
 | `x402_bazaar` | x402 Bazaar 全量掛牌 | 每日抓取 |
-| `x402_index_thirdparty` | x402scan 第三方索引 sitemap URL 清單 | **新來源，文件未記載** |
 
 > `mcp_registry` 已於 2026-08-27 起停止抓取（已抓資料保留），其 adapter 檔已不在
-> `track-crypto/adapters/` 目錄下，故不計入本次 24 個之內（沿用既有文件記載，本輪未重新驗證）。
+> `track-crypto/adapters/` 目錄下，故不計入本次 23 個之內（沿用既有文件記載，本輪未重新驗證）。
+>
+> `x402_index_thirdparty` 已於 **2026-09-02** 起停止抓取（已抓資料保留，2026-08-28～09-02
+> 共 6 天快照不刪除、不覆寫），故同樣**不計入本次 23 個之內**。理由：與軌一權威來源
+> `x402_bazaar` 高度重疊（同一 x402 生態系；2026-09-02 UTC 實測 `total=1044`／
+> `server_count=1000`，同日 `x402_bazaar` `total=14929`，覆蓋率約 6.7%，且 `server_count`
+> 連續多日卡在整數 1,000，判斷為第三方索引站 sitemap 本身的收錄上限）。adapter 原始碼已
+> **搬移**（非刪除、內容未改）至 `track-crypto/retired_adapters/x402_index_thirdparty.py`，
+> 不再被 `track-crypto/adapters/*.py` 自動探索機制掃到。完整依據見
+> [docs/source-value-audit.md](docs/source-value-audit.md)，端點細節見
+> [docs/sources.md](docs/sources.md)。
 
 舊 21 個來源 2026-08-31 UTC 實測合計每日壓縮後約 **8.38 MB**（8,786,335 B）；
 加計新 3 個來源後，24 個來源合計約 **9.33 MB**（9,780,952 B，2026-08-31 UTC 實測，
 來源：`track-crypto/data/_manifest/2026-08-31.json` 逐來源 `bytes` 加總）。
+扣除已於 2026-09-02 停抓的 `x402_index_thirdparty`（23,431 B）後，**現行 23 個來源合計約
+9.31 MB（9,757,521 B）**（同一份 2026-08-31 manifest 重新加總，非新一輪實測）。
 
 ### `track-gov/` — 台灣政府公告（可問責性存檔）（18 個來源）
 
@@ -178,10 +193,10 @@ changes/<source>/YYYY-MM-DD.md           當日 unified diff
 
 | 項目 | 值（2026-08-31 UTC 本輪唯讀查核） |
 |---|---|
-| 收錄來源總數 | **42**（track-crypto 24 ＋ track-gov 18） |
+| 收錄來源總數 | **41**（track-crypto 23 ＋ track-gov 18；另有 1 個已停抓 `x402_index_thirdparty`，歷史資料保留、不計入 41） |
 | 每日排程 | 08:00（track-crypto）／09:30（track-gov）／11:30（push）（**台北時間**，VPS `crontab -l` 查核） |
 | 自我檢查 | `ALERT.md` 存在時代表偵測到異常 |
-| 每日壓縮後合計體積 | 約 **10.68 MB**（track-crypto 9.33 MB ＋ track-gov 1.35 MB，2026-08-31 UTC 實測） |
+| 每日壓縮後合計體積 | 約 **10.66 MB**（track-crypto 9.31 MB ＋ track-gov 1.35 MB；以 2026-08-31 UTC 實測的 24＋18 來源合計 10.68 MB，扣除已停抓來源 23,431 B 重新加總，非新一輪實測） |
 | 新 9 個來源實測數字 | 已補齊，見上方 track-crypto／track-gov 各表（2026-08-31 UTC，來源：manifest、cron.log、`ls` 累積天數） |
 | 首次改寫偵測 | 2026-08-29，`mof_press` 1 起（見上方「首次偵測到的改寫紀錄」） |
 
