@@ -4,6 +4,7 @@ import re, time
 
 KEY = "mof_press"
 DESC = "財政部本部新聞（新聞稿）"
+PARSER_VERSION = 1  # 2026-09-02 新增宣告（維持原預設值＝1，非改版；缺此常數時 getattr 預設即為 1，語意不變）
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://www.mof.gov.tw/robots.txt：全文僅兩行 "
     "'User-agent: *' / 'Disallow: /download/'；本 adapter 只取 "

@@ -12,6 +12,7 @@ import html as _html
 
 KEY = "moe_clarify"
 DESC = "教育部即時新聞澄清（對外界報導的官方澄清稿）"
+PARSER_VERSION = 1  # 2026-09-02 新增宣告（維持原預設值＝1，非改版；缺此常數時 getattr 預設即為 1，語意不變）
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://www.edu.tw/robots.txt，全文僅 5 行："
     "User-agent: * / Disallow: /WebResource.axd / Disallow: /src / "

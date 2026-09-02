@@ -6,6 +6,7 @@ import urllib.parse
 
 KEY = "mohw_press"
 DESC = "衛生福利部焦點新聞（新聞稿）"
+PARSER_VERSION = 1  # 2026-09-02 新增宣告（維持原預設值＝1，非改版；缺此常數時 getattr 預設即為 1，語意不變）
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://www.mohw.gov.tw/robots.txt："
     "全檔僅一行 'User-agent: *'，沒有任何 Disallow 行 → 目標路徑 /lp-16-*.html 與 /cp-16-*.html 未被 Disallow"

@@ -6,6 +6,7 @@ import urllib.parse
 
 KEY = "cbc_press"
 DESC = "中央銀行新聞稿"
+PARSER_VERSION = 1  # 2026-09-02 新增宣告（維持原預設值＝1，非改版；缺此常數時 getattr 預設即為 1，語意不變）
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://www.cbc.gov.tw/robots.txt：伺服器不提供 robots.txt，"
     "而是以 302 導向中文首頁 https://www.cbc.gov.tw/tw/mp-1.html 回傳 HTML，"

@@ -13,6 +13,7 @@ import urllib.parse
 
 KEY = "moj_press"
 DESC = "法務部新聞發布"
+PARSER_VERSION = 1  # 2026-09-02 新增宣告（維持原預設值＝1，非改版；缺此常數時 getattr 預設即為 1，語意不變）
 ROBOTS_VERIFIED = (
     "2026-08-27 親驗 https://www.moj.gov.tw/robots.txt（伺服器 301 導向 https://www.moj.gov.tw/robots）："
     "全檔只有兩行空白與一行 'Sitemap: https://www.moj.gov.tw/sitemap?id=2204'，"

@@ -13,7 +13,7 @@ push.sh 11:30 台北起跑（本檢查在此流程內執行）。
 只列為中性的「尚未執行」狀態；超過預期完成時間仍缺檔才是真異常
 （不論已缺幾天，一旦超過該軌今日的預期完成時間，都會被抓到，見 check_source/check_manifest）。
 """
-import os, json, glob, statistics, datetime
+import os, json, glob, statistics, datetime, subprocess, sys
 from datetime import timezone, timedelta
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -235,10 +235,105 @@ def check_timestamps(issues):
                        "若隔日仍缺代表 calendar 持續無回應）"
                        % (len(missing), "、".join(missing))))
 
+# --- 磁碟檢查（SPEC-parser-version-disk.md，2026-09-02 新增）---
+# 門檻依 df 自己回報的 Capacity（Used/(Used+Avail)*100）為準，兩級：
+#   DISK_WARN_PCT=70 提醒、DISK_CRIT_PCT=85 緊急。
+# 理由（詳見 docs/parser-version-disk-report.md）：本專案是無人值守的封存系統，發現異常到
+# 有人處理之間可能有數日延遲，門檻刻意比常見的 80/90 更早示警，換取更長的反應時間；
+# 2026-09-02 實測目前用量僅 2%，兩個門檻都遠高於現況，不會誤報。
+# 這是「不論原因」的通用安全網（含非本專案來源：系統日誌、apt cache、其他租戶等），
+# 與下面「專案目錄自身成長速率」的估算是兩個獨立、互補的訊號。
+DISK_WARN_PCT = 70
+DISK_CRIT_PCT = 85
+# 專案目錄每日增長速率的量測視窗上限（天）。14 天可以蓋過單一離群日（例如某天因手動重跑
+# 多寫了幾份快照），又不會太舊；專案上線天數 < 14 天時，就用目前已有的全部完整天數。
+GROWTH_WINDOW_DAYS = 14
+
+def _disk_usage(path):
+    """呼叫系統 df -kP，直接沿用 df 自己的 Capacity 計算方式（Used/(Used+Avail)，四捨五入），
+    避免自行用 statvfs 重新算一次，卻因保留空間／捨入方式不同跟 df -h 顯示的數字對不起來。
+    回傳 (使用率 pct: float, 可用位元組 avail_bytes: int)；df 執行失敗時回傳 (None, None)
+    並印警告，讓磁碟檢查本身故障時不會中止整支 healthcheck.py。"""
+    try:
+        r = subprocess.run(["df", "-kP", path], capture_output=True, text=True,
+                            timeout=10, check=True)
+        fields = r.stdout.strip().splitlines()[-1].split()
+        avail_bytes = int(fields[3]) * 1024
+        pct = float(fields[4].rstrip("%"))
+        return pct, avail_bytes
+    except Exception as e:
+        print("WARN check_disk：df 執行失敗，本次略過磁碟檢查：%s: %s"
+              % (type(e).__name__, e), file=sys.stderr, flush=True)
+        return None, None
+
+def _project_daily_growth():
+    """實測（非估計）專案目錄近 GROWTH_WINDOW_DAYS 天，每天實際新增了多少 bytes。
+    掃描 track-*/data 下所有 *.json.gz 與 *.json（含 _manifest/、*.stats.json），依檔名開頭
+    內嵌的 UTC 日期（NEVER_OVERWRITE：寫入後不再變動，比對 mtime 更能代表「那天寫入的量」）
+    分組加總。只採計「今天以前」已完整跑完的日期；今天可能還在進行中，會低估，不列入。
+    回傳統計 dict；可用天數 < 2 天（例如專案剛上線）時回傳 None，不勉強估算。"""
+    per_day = {}
+    for track in ("track-gov", "track-crypto"):
+        d = os.path.join(REPO, track, "data")
+        if not os.path.isdir(d):
+            continue
+        paths = (glob.glob(os.path.join(d, "**", "*.json.gz"), recursive=True) +
+                  glob.glob(os.path.join(d, "**", "*.json"), recursive=True))
+        for p in paths:
+            fn = os.path.basename(p)
+            if len(fn) < 10 or fn[4] != "-" or fn[7] != "-":
+                continue
+            day = fn[:10]
+            if day >= TODAY:
+                continue
+            try:
+                per_day[day] = per_day.get(day, 0) + os.path.getsize(p)
+            except OSError:
+                continue
+    days = sorted(per_day)[-GROWTH_WINDOW_DAYS:]
+    if len(days) < 2:
+        return None
+    sizes = [per_day[d] for d in days]
+    return {"n_days": len(days), "first": days[0], "last": days[-1],
+            "mean_bytes": statistics.mean(sizes), "median_bytes": statistics.median(sizes),
+            "min_bytes": min(sizes), "max_bytes": max(sizes)}
+
+def check_disk(issues):
+    """根分割區使用率兩級門檻（見 DISK_WARN_PCT/DISK_CRIT_PCT）+ 專案目錄實測每日增長率與
+    預估可用天數。不論是否超標都會印一行 DISK 摘要（隨 cron.log 留存，確保增長率／可用天數
+    持續有真實量測數字可查）；超標時才寫進 issues（供 main() 產生 ALERT.md）。
+    比照本檔既有行為：異常排除（使用率回到門檻以下）後，本函式自然不再 append，
+    issues 恢復不含這筆，ALERT.md 依既有機制自動消失，不需額外收尾。"""
+    pct, avail = _disk_usage(REPO)
+    growth = _project_daily_growth()
+    growth_desc = ""
+    if growth:
+        growth_desc = ("；專案目錄近 %d 天（%s ~ %s）實測平均每日增長 %.2f MB"
+                        "（中位數 %.2f MB，範圍 %.2f–%.2f MB）"
+                        % (growth["n_days"], growth["first"], growth["last"],
+                           growth["mean_bytes"] / 1e6, growth["median_bytes"] / 1e6,
+                           growth["min_bytes"] / 1e6, growth["max_bytes"] / 1e6))
+        if avail is not None and growth["mean_bytes"] > 0:
+            days_left = avail / growth["mean_bytes"]
+            growth_desc += ("；若僅以此速率消耗目前剩餘空間，估計約可再撐 %.0f 天"
+                             "（假設無其他來源持續增長，僅供參考，不含系統其他增長來源如"
+                             "日誌／套件快取）" % days_left)
+    if pct is None:
+        return
+    print("DISK 根分割區使用率 %.1f%%（門檻：提醒 %d%% ／ 緊急 %d%%）%s"
+          % (pct, DISK_WARN_PCT, DISK_CRIT_PCT, growth_desc))
+    if pct >= DISK_CRIT_PCT:
+        issues.append(("disk", "根分割區使用率 %.1f%%，已達緊急門檻（%d%%）%s"
+                                % (pct, DISK_CRIT_PCT, growth_desc)))
+    elif pct >= DISK_WARN_PCT:
+        issues.append(("disk", "根分割區使用率 %.1f%%，已達提醒門檻（%d%%）%s"
+                                % (pct, DISK_WARN_PCT, growth_desc)))
+
 def main():
     issues = []
     pending = []
     check_timestamps(issues)
+    check_disk(issues)
     for track in ("track-crypto", "track-gov"):
         check_manifest(track, issues, pending)
         check_truncation_streak(track, issues)

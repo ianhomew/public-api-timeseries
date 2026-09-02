@@ -138,6 +138,15 @@ def load_adapters():
         spec = importlib.util.spec_from_file_location(name, os.path.join(ADPT, fn))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        if not hasattr(mod, "PARSER_VERSION"):
+            # 啟動檢查（SPEC-parser-version-disk.md，2026-09-02 新增）：
+            # adapter 缺 PARSER_VERSION 時，detect_changes.py 的 parser_version() 讀不到快照
+            # _meta.parser_version 就隱性預設為 1；未來若改了解析邏輯卻忘記新增／遞增這個常數，
+            # 版本比對保護機制形同虛設，可能把解析器改版誤判為「內容改寫」並自動 commit。
+            # 這裡只印警告、不中止載入：忘記宣告的新 adapter 仍會正常運作，只是看不見警告。
+            print("WARN %-20s 缺少 PARSER_VERSION 常數（detect_changes.py 讀不到時預設視為 1）："
+                  "新增／修改解析邏輯時務必宣告並於改版時遞增，否則版本比對保護機制不會生效"
+                  % getattr(mod, "KEY", name), file=sys.stderr, flush=True)
         out.append(mod)
     return out
 
