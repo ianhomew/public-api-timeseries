@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 """scripts/selftest.py — 離線回歸自測（見 docs/selftest.md）
 
-依 specs/SPEC-selftest.md 撰寫。涵蓋 5 支關鍵程式的核心保護機制：
+依 specs/SPEC-selftest.md 撰寫，並依 specs/SPEC-selftest-fix.md 修復
+mut_dd_reappeared 錨點不唯一問題、新增第二階段（GROUP_SOURCES 多子集合）
+新行為的 5 條檢查（見 track-crypto/scripts/detect_delistings.py 一節開頭說明）。
+涵蓋 5 支關鍵程式的核心保護機制：
   detect_changes.py（track-gov 內容改寫/下架偵測）
   track-crypto/scripts/detect_delistings.py（x402_bazaar 下架偵測）
   cex_events.py（7 家交易所上下架事件流）
@@ -262,6 +265,25 @@ def x402_snapshot(items, total=None):
             "data": {"x402Version": 1, "total": total if total is not None else len(items), "items": items}}
 
 
+def gs_item(key_field, key, desc_field=None, desc=None, **fields):
+    """比照 GROUP_SOURCES 子集合清單裡一筆項目的形狀：{key_field: key, ...}，
+    可選 desc_field（比照 short_desc_generic() 用的欄位）與任意額外欄位（例如狀態旗標，
+    供 status_fields／STATUS_CHANGED 檢查用）。"""
+    it = {key_field: key}
+    if desc_field:
+        it[desc_field] = desc
+    it.update(fields)
+    return it
+
+
+def gs_snapshot(data):
+    """比照 GROUP_SOURCES 來源快照頂層 schema：{_meta, data:{...}}（與 x402_snapshot() 同構，
+    但 data 內容由呼叫端自行決定——GROUP_SOURCES 8 個來源的巢狀結構差異很大，不像
+    x402_bazaar 只有單一固定形狀，見 track-crypto/scripts/detect_delistings.py 的
+    GROUP_SOURCES 設定表）。"""
+    return {"_meta": {"parser_version": 1, "fetched_at": "2030-01-01T00:00:00+00:00"}, "data": data}
+
+
 CEX_SPEC_PATH = {"bybit": ("result", "list"), "okx": ("data",), "bitget": ("data",),
                   "htx": ("data",), "gateio": None, "kucoin": ("data",), "mexc": ("symbols",)}
 CEX_SYM_FIELD = {"bybit": "symbol", "okx": "instId", "bitget": "symbol", "htx": "symbol",
@@ -369,9 +391,22 @@ def mut_dd_breaker(text):
 
 
 def mut_dd_reappeared(text):
+    # 錨點修復（2026-09-02，SPEC-selftest-fix.md）：第二階段把 REAPPEARED 判定從單一清單
+    # （process_pair()）擴充成也支援多子集合（build_group_events()），導致原本的錨點
+    # 'if k in last_delisted:' 逐字元相同地出現在兩支函式裡，apply_mutation() 因此丟出
+    # "mutation anchor not unique (2 matches)"。chk_dd_reappeared 這條檢查的合成資料是
+    # x402_bazaar 單一清單形狀、只呼叫 process_pair()，不會走到 build_group_events()，
+    # 所以錨點必須精確只匹配 process_pair() 那一處，才會「真的讓這條檢查測到的那個保護
+    # 失效」（build_group_events() 那一份此檢查根本不會執行到，若連它一起關掉只是無意義
+    # 的額外改動，不會讓檢查多驗到什麼，見 docs/selftest-fix-report.md 根因與選項比較）。
+    # 修法：把錨點往前延伸到 'short_desc(r["keyed_new"].get(k))'——process_pair() 專屬
+    # 呼叫（build_group_events() 用的是 short_desc_generic(...)，兩者不會互相匹配），
+    # 使其在目前程式碼中唯一。
     return apply_mutation(
-        text, 'if k in last_delisted:',
-        'if False and k in last_delisted:  # [selftest mutant] REAPPEARED disabled',
+        text,
+        '"from": None, "to": short_desc(r["keyed_new"].get(k))})\n            if k in last_delisted:',
+        '"from": None, "to": short_desc(r["keyed_new"].get(k))})\n'
+        '            if False and k in last_delisted:  # [selftest mutant] REAPPEARED disabled',
         "dd_reappeared")
 
 
@@ -382,6 +417,61 @@ def mut_dd_idempotency(text):
         '             if (e["date"], e["source"], e["group"], e["key"], e["event"]) not in seen]',
         'fresh = [e for e in new_events]  # [selftest mutant] idempotency (seen) filter disabled',
         "dd_idempotency")
+
+
+def mut_dd_status_changed(text):
+    # 目標：status_changes_for_group() 逐欄位比對 status_fields 是否翻轉的核心判斷式。
+    return apply_mutation(
+        text, 'if ov != nv:',
+        'if False:  # [selftest mutant] STATUS_CHANGED field-diff detection disabled',
+        "dd_status_changed")
+
+
+def mut_dd_group_integrity_gate(text):
+    # 目標：completeness_group() 的 range_check 分支（沒有 total/count 自報欄位時的
+    # 完整性守門，第二階段新增，第一階段 dd_integrity_gate 測的是 total_match 分支，
+    # 兩者是不同程式碼路徑）。
+    return apply_mutation(
+        text, 'if n_raw < lo or n_raw > hi:',
+        'if False:  # [selftest mutant] group range_check gate disabled',
+        "dd_group_integrity_gate")
+
+
+def mut_dd_group_breaker(text):
+    # 目標：compare_group() 的熔斷判定式（第二階段新增的 threshold_count 泛化公式，
+    # 第一階段 dd_breaker 測的是 compare_pair() 的 removed_rate 版本，兩者程式碼互相獨立）。
+    return apply_mutation(
+        text, 'breaker = gate_ok and (len(removed_keys) > threshold_count)',
+        'breaker = False  # [selftest mutant] group breaker disabled',
+        "dd_group_breaker")
+
+
+def mut_dd_group_isolation(text):
+    # 目標：process_group_source_pair() 逐子集合迴圈本身。刻意注入一種寫實的「污染」
+    # 錯誤——若前面已經處理過的子集合有任何一個不是 NORMAL，就強制把目前這個子集合也
+    # 判成 GATE_FAIL（模擬「共用了不該共用的狀態」這類重構失誤），藉此證明目前的迴圈
+    # 寫法（每個子集合的 judged 只由它自己的 compare_group() 結果決定）確實是必要的。
+    return apply_mutation(
+        text,
+        '        judged = judge(r, gcfg)\n'
+        '        last_delisted = last_delisted_by_group.setdefault(gname, {})',
+        '        judged = judge(r, gcfg)\n'
+        '        if any(gr["judged"] != "NORMAL" for gr in group_results.values()):  '
+        '# [selftest mutant] cross-group contamination reintroduced\n'
+        '            judged = "GATE_FAIL"\n'
+        '        last_delisted = last_delisted_by_group.setdefault(gname, {})',
+        "dd_group_isolation")
+
+
+def mut_dd_ppr_breaker(text):
+    # 目標：GROUP_SOURCES["payment_protocol_repos"] 的專屬熔斷參數本身（不是一段程式邏輯，
+    # 是設定值）。還原成其餘子集合沿用的共通門檻（1.0% / abs_floor=5），模擬「未來重構時
+    # 誤把這個來源的特例設定值也一併『統一』掉」的情境。
+    return apply_mutation(
+        text, '"breaker_pct": 60.0, "abs_floor": 1,',
+        '"breaker_pct": 1.0, "abs_floor": 5,'
+        '  # [selftest mutant] payment_protocol_repos 過半即熔斷特例已還原成共通門檻',
+        "dd_ppr_breaker")
 
 
 def mut_ce_daily_dedup(text):
@@ -619,7 +709,7 @@ def chk_dc_volatile(is_mutant):
 
 
 # ==========================================================================
-# track-crypto/scripts/detect_delistings.py — 4 條不變量
+# track-crypto/scripts/detect_delistings.py — 9 條不變量（第一階段 4 條 + 第二階段新行為 5 條，SPEC-selftest-fix.md）
 # ==========================================================================
 
 def _install_dd(sandbox, text):
@@ -725,6 +815,183 @@ def chk_dd_idempotent(is_mutant):
     return Result(guard_active,
                   "第一次執行新事件=%d，同區間重跑新事件=%d (期望第一次=2、重跑=0：冪等)"
                   % (len(fresh1), len(fresh2)))
+
+
+@check("detect_delistings.status_changed_detection", mutate_target="detect_delistings",
+       mutate=mut_dd_status_changed)
+def chk_dd_status_changed(is_mutant):
+    """第二階段新增（docs/detect-phase2-report.md §3.3）：主鍵仍在清單中、但
+    status_fields 追蹤的欄位值改變時，必須額外產生一筆 STATUS_CHANGED 事件——
+    這是全新事件型別，第一階段（x402_bazaar 沒有狀態旗標）完全沒有對應的檢查。"""
+    sandbox = new_sandbox("dd_status_mut" if is_mutant else "dd_status")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_status_changed(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("items",), "shape": "list", "key_field": "key", "desc_field": "name",
+            "completeness": "total_match", "total_fields": ("count",),
+            "status_fields": ("flag",), "breaker_pct": 50.0, "abs_floor": 5}
+    day1 = [gs_item("key", "K%d" % i, "name", "n%d" % i, flag=False) for i in range(10)]
+    day2 = [gs_item("key", "K%d" % i, "name", "n%d" % i, flag=(i == 3)) for i in range(10)]  # 只有 K3 旗標翻轉
+    data1 = {"items": day1, "count": len(day1)}
+    data2 = {"items": day2, "count": len(day2)}
+    r = mod.compare_group("selftest_status_src", "grp", gcfg, data1, data2)
+    judged = mod.judge(r, gcfg)
+    events, _ = mod.build_group_events("selftest_status_src", "grp", gcfg, r, judged, "2030-05-02", {})
+    sc_events = [e for e in events if e["event"] == "STATUS_CHANGED"]
+    guard_active = (judged == "NORMAL" and len(sc_events) == 1 and sc_events[0]["key"] == "K3"
+                    and sc_events[0]["from"] == {"flag": False} and sc_events[0]["to"] == {"flag": True})
+    return Result(guard_active,
+                  "judged=%s STATUS_CHANGED事件=%d %r "
+                  "(期望剛好1筆，key=K3，from={'flag':False}→to={'flag':True})"
+                  % (judged, len(sc_events), sc_events))
+
+
+@check("detect_delistings.group_integrity_gate", mutate_target="detect_delistings",
+       mutate=mut_dd_group_integrity_gate)
+def chk_dd_group_integrity_gate(is_mutant):
+    """第二階段新增（docs/detect-phase2-report.md §3.4）：沒有 total/count 自報欄位的
+    子集合改用 range_check（依實測 min/max 各加 10% 邊界訂出合理區間），原始筆數落在
+    區間外要視為不完整、跳過判定。這是 completeness_group() 的 range_check 分支，是
+    全新程式碼——第一階段 detect_delistings.integrity_gate_skips 測的是 total_match
+    分支（completeness()，x402_bazaar 專用），兩者是不同函式、不同程式碼路徑，
+    彼此不能互相涵蓋。"""
+    sandbox = new_sandbox("dd_grange_mut" if is_mutant else "dd_grange")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_integrity_gate(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("items",), "shape": "list", "key_field": "id", "desc_field": "name",
+            "completeness": "range_check", "range": (90, 110),
+            "status_fields": (), "breaker_pct": 50.0, "abs_floor": 5}
+    day1 = [gs_item("id", "R%d" % i, "name", "r%d" % i) for i in range(100)]  # 100，落在[90,110]內
+    day2 = [gs_item("id", "R%d" % i, "name", "r%d" % i) for i in range(50)]   # 50，跌破下界90（模擬分頁只抓一半）
+    r = mod.compare_group("selftest_range_src", "grp", gcfg, {"items": day1}, {"items": day2})
+    judged = mod.judge(r, gcfg)
+    guard_active = (judged == "GATE_FAIL")
+    return Result(guard_active,
+                  "n_old=100 n_new=50（合理區間[90,110]）；judged=%s (期望 GATE_FAIL，50 跌破下界)" % judged)
+
+
+@check("detect_delistings.group_breaker_threshold", mutate_target="detect_delistings",
+       mutate=mut_dd_group_breaker)
+def chk_dd_group_breaker(is_mutant):
+    """第二階段新增（docs/detect-phase2-report.md §3.5）：compare_group() 的熔斷公式
+    breaker = removed_count > max(abs_floor, breaker_pct/100 × 前日筆數)，是全新的
+    threshold_count 計算路徑——第一階段 detect_delistings.breaker_threshold 測的是
+    compare_pair() 的 removed_rate 版本（百分比直接比較，沒有 threshold_count 這個
+    中間值），兩者程式碼互相獨立，見 docs/selftest-fix-report.md 錨點稽核章節。"""
+    sandbox = new_sandbox("dd_gbreak_mut" if is_mutant else "dd_gbreak")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_breaker(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("items",), "shape": "list", "key_field": "id", "desc_field": "name",
+            "completeness": "total_match", "total_fields": ("count",),
+            "status_fields": (), "breaker_pct": 5.0, "abs_floor": 5}
+    day1 = [gs_item("id", "K%d" % i, "name", "k%d" % i) for i in range(100)]
+    day2 = [gs_item("id", "K%d" % i, "name", "k%d" % i) for i in range(70)]  # 30% 移除，遠超 5% 門檻
+    r = mod.compare_group("selftest_gbreak_src", "grp", gcfg,
+                           {"items": day1, "count": len(day1)}, {"items": day2, "count": len(day2)})
+    judged = mod.judge(r, gcfg)
+    guard_active = (judged == "BREAKER")
+    return Result(guard_active,
+                  "removed=%d/100（門檻 max(5, 5%%×100)=%.1f）；judged=%s (期望 BREAKER)"
+                  % (len(r["removed_keys"]), r["threshold_count"], judged))
+
+
+@check("detect_delistings.group_isolation", mutate_target="detect_delistings",
+       mutate=mut_dd_group_isolation)
+def chk_dd_group_isolation(is_mutant):
+    """第二階段新增（docs/detect-phase2-report.md §5.2「情境2」）：process_group_source_pair()
+    逐子集合各自判定 gate_ok／breaker，某子集合完整性失敗或熔斷，不能連帶讓同一來源的
+    其他子集合也不判定（「不能互相污染」，SPEC-selftest-fix.md 任務 3）。用 3 個子集合
+    （bad_gate、bad_breaker 刻意排在 good 之前，確保「污染」型 mutant 若被重新引入會
+    影響到最後處理的 good）驗證：即使前兩個子集合都判定失敗，good 仍必須是 NORMAL
+    並正常寫入事件。"""
+    sandbox = new_sandbox("dd_iso_mut" if is_mutant else "dd_iso")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_isolation(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg_good = {"path": ("good",), "shape": "list", "key_field": "id", "desc_field": "name",
+                 "completeness": "total_match", "total_fields": ("good_count",),
+                 "status_fields": (), "breaker_pct": 50.0, "abs_floor": 5}
+    gcfg_bad_gate = {"path": ("bad_gate",), "shape": "list", "key_field": "id", "desc_field": "name",
+                      "completeness": "total_match", "total_fields": ("bad_gate_count",),
+                      "status_fields": (), "breaker_pct": 50.0, "abs_floor": 5}
+    gcfg_bad_breaker = {"path": ("bad_breaker",), "shape": "list", "key_field": "id", "desc_field": "name",
+                         "completeness": "total_match", "total_fields": ("bad_breaker_count",),
+                         "status_fields": (), "breaker_pct": 5.0, "abs_floor": 5}
+    scfg = {"label": "selftest 隔離測試", "groups": {  # 順序見上方 docstring：bad 系列必須先於 good
+        "bad_gate": gcfg_bad_gate, "bad_breaker": gcfg_bad_breaker, "good": gcfg_good}}
+    good_d1 = [gs_item("id", "G%d" % i, "name", "g%d" % i) for i in range(20)]
+    good_d2 = [gs_item("id", "G%d" % i, "name", "g%d" % i) for i in range(19)]  # 5% 移除，低於 50% 門檻
+    bg_d1 = [gs_item("id", "BG%d" % i, "name", "bg%d" % i) for i in range(10)]
+    bg_d2 = [gs_item("id", "BG%d" % i, "name", "bg%d" % i) for i in range(9)]
+    bb_d1 = [gs_item("id", "BB%d" % i, "name", "bb%d" % i) for i in range(100)]
+    bb_d2 = [gs_item("id", "BB%d" % i, "name", "bb%d" % i) for i in range(60)]  # 40% 移除，超過 5% 門檻
+    data1 = {"good": good_d1, "good_count": len(good_d1),
+             "bad_gate": bg_d1, "bad_gate_count": len(bg_d1),
+             "bad_breaker": bb_d1, "bad_breaker_count": len(bb_d1)}
+    data2 = {"good": good_d2, "good_count": len(good_d2),
+             "bad_gate": bg_d2, "bad_gate_count": len(bg_d1),  # count 刻意不同步 -> GATE_FAIL
+             "bad_breaker": bb_d2, "bad_breaker_count": len(bb_d2)}
+    f1 = write_gz_json(os.path.join(sandbox, "track-crypto/data/selftest_iso/2030-07-01.json.gz"), gs_snapshot(data1))
+    f2 = write_gz_json(os.path.join(sandbox, "track-crypto/data/selftest_iso/2030-07-02.json.gz"), gs_snapshot(data2))
+    seen, last_delisted_by_group = set(), {}
+    group_results, fresh, entries, alert_written = mod.process_group_source_pair(
+        "selftest_iso", scfg, f1, f2, seen, last_delisted_by_group)
+    judged_map = {g: gr["judged"] for g, gr in group_results.items()}
+    good_events = [e for e in fresh if e["group"] == "good"]
+    guard_active = (judged_map.get("bad_gate") == "GATE_FAIL" and judged_map.get("bad_breaker") == "BREAKER"
+                    and judged_map.get("good") == "NORMAL" and len(good_events) == 1)
+    return Result(guard_active,
+                  "judged=%r good事件數=%d (期望 bad_gate=GATE_FAIL、bad_breaker=BREAKER、"
+                  "good=NORMAL 且仍有 1 筆事件，證明前兩個子集合失敗不會污染 good)"
+                  % (judged_map, len(good_events)))
+
+
+@check("detect_delistings.payment_protocol_repos_majority_breaker", mutate_target="detect_delistings",
+       mutate=mut_dd_ppr_breaker)
+def chk_dd_ppr_breaker(is_mutant):
+    """第二階段新增（docs/detect-phase2-report.md §2.8、§5.4）：payment_protocol_repos
+    只有 3 筆（人工維護清單），套用共通熔斷公式 max(abs_floor=5, 1.0%×3≈0.03)=5 會讓
+    熔斷永遠不可能觸發（最多只有 3 筆可移除）。GROUP_SOURCES 對這個來源另訂
+    breaker_pct=60.0／abs_floor=1 的「過半即熔斷」專屬值（SPEC-selftest-fix.md 任務 3）。
+    本檢查直接讀真實 GROUP_SOURCES["payment_protocol_repos"] 設定（不是自建合成
+    config），驗證負控制組（消失1/3應為NORMAL）與正控制組（消失2/3應為BREAKER）都正確；
+    mutant 版本把這兩個數字還原成共通門檻預設值後，正控制組會錯誤地判成 NORMAL，
+    證明這組專屬設定值確實必要，不是可有可無的保守設計。"""
+    sandbox = new_sandbox("dd_ppr_mut" if is_mutant else "dd_ppr")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_ppr_breaker(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["payment_protocol_repos"]["groups"]["_repos"]
+
+    def repo(rid, name):
+        return gs_item("id", rid, "full_name", name, archived=False)
+
+    day1 = [repo(1, "x402-foundation/x402"), repo(2, "google-agentic-commerce/AP2"), repo(3, "lightninglabs/L402")]
+    day2_minor = [repo(1, "x402-foundation/x402"), repo(2, "google-agentic-commerce/AP2")]  # 消失1筆(1/3)
+    day2_major = [repo(1, "x402-foundation/x402")]  # 消失2筆(2/3，過半)
+    data1 = {"repos": day1, "count": len(day1), "errors": {}}
+    data2_minor = {"repos": day2_minor, "count": len(day2_minor), "errors": {}}
+    data2_major = {"repos": day2_major, "count": len(day2_major), "errors": {}}
+    r_minor = mod.compare_group("payment_protocol_repos", "_repos", gcfg, data1, data2_minor)
+    judged_minor = mod.judge(r_minor, gcfg)
+    r_major = mod.compare_group("payment_protocol_repos", "_repos", gcfg, data1, data2_major)
+    judged_major = mod.judge(r_major, gcfg)
+    guard_active = (judged_minor == "NORMAL" and judged_major == "BREAKER")
+    return Result(guard_active,
+                  "breaker_pct=%.1f abs_floor=%d；消失1/3judged=%s(期望NORMAL) 消失2/3judged=%s(期望BREAKER)"
+                  % (gcfg["breaker_pct"], gcfg["abs_floor"], judged_minor, judged_major))
 
 
 # ==========================================================================
