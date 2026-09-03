@@ -10,10 +10,17 @@
   },
   "airdrop_claim_pages": {
    "ok": true,
-   "bytes": 926,
-   "secs": 0.7,
+   "bytes": 937,
+   "secs": 0.3,
    "parser_version": 1,
-   "attempts": 1
+   "attempts": 1,
+   "n": null,
+   "n_by_path": null,
+   "complete": null,
+   "completeness_check": "unknown",
+   "reported_total": null,
+   "truncated": false,
+   "dup_keys": null
   },
   "audit_registry_certik": {
    "ok": true,
@@ -170,7 +177,7 @@
    "attempts": 1
   }
  },
- "fetched_at": "2026-09-03T00:00:02.661416+00:00",
+ "fetched_at": "2026-09-03T11:13:28.706256+00:00",
  "runs": [
   {
    "at": "2026-09-03T00:00:02.661416+00:00",
@@ -199,6 +206,12 @@
     "project_tokenomics_docs",
     "vast_gpu",
     "x402_bazaar"
+   ]
+  },
+  {
+   "at": "2026-09-03T11:13:28.706256+00:00",
+   "sources": [
+    "airdrop_claim_pages"
    ]
   }
  ]

@@ -73,6 +73,7 @@ TARGET_REL = {
     "healthcheck":       "scripts/healthcheck.py",
     "daily_report":      "scripts/daily_report.py",
     "snap_gov":          "track-gov/scripts/snap_gov.py",   # 輔助：揮發性欄位守門實作位置見 docs/selftest.md
+    "snap_crypto":       "track-crypto/scripts/snap_crypto.py",  # SPEC-manifest-fields.md，2026-09-03 新增
 }
 
 
@@ -562,6 +563,28 @@ def mut_hc_parser_version(text):
         text, "if any(v != v_today for v in v_prev):",
         "if False:  # [selftest mutant] parser-version window guard disabled",
         "hc_parser_version")
+
+
+# --------------------------------------------------------------------------
+# track-crypto/scripts/snap_crypto.py — manifest 完整性欄位（SPEC-manifest-fields.md，
+# 2026-09-03 新增）的破壞驗證。兩條都只動 compute_manifest_fields() 內部，
+# 不影響 collect()／write_gz()／payload 組裝等既有行為。
+# --------------------------------------------------------------------------
+def mut_sc_fields_complete(text):
+    return apply_mutation(
+        text, '"dup_keys": dup_total,\n    }',
+        '"dup_keys_MUTANT_REMOVED": dup_total,  # [selftest mutant] key renamed, dup_keys now absent\n    }',
+        "sc_fields_complete")
+
+
+def mut_sc_truncated_default(text):
+    return apply_mutation(
+        text,
+        'truncated, _trunc_src = _find_truncated_flag(data)\n'
+        '    if truncated is None:\n        truncated = False',
+        'truncated, _trunc_src = _find_truncated_flag(data)\n'
+        '    if False:  # [selftest mutant] None->False fallback disabled\n        truncated = False',
+        "sc_truncated_default")
 
 
 def mut_dr_all_listed(text):
@@ -1487,6 +1510,162 @@ def chk_hc_parser_version_real(is_mutant):
                   "real-replay 2026-09-02：pres_news issues=%d(期望0) "
                   "fda_clarify issues=%d(期望1) tpe_clarify issues=%d(期望1)"
                   % (len(found["pres_news"]), len(found["fda_clarify"]), len(found["tpe_clarify"])))
+
+
+# ==========================================================================
+# track-crypto/scripts/snap_crypto.py — manifest 完整性欄位，4 條不變量
+# （SPEC-manifest-fields.md，2026-09-03 新增）
+# ==========================================================================
+
+def _install_sc(sandbox, text):
+    """compute_manifest_fields() 是純函式（不依賴 __file__ 推算的 BASE/DATA/ADPT 做任何
+    I/O），放在對應正式部署路徑下純粹是比照本檔既有慣例、方便閱讀對照，不是必要條件。"""
+    return install_text(sandbox, "track-crypto/scripts/snap_crypto.py", text)
+
+
+@check("snap_crypto.manifest_fields_complete", mutate_target="snap_crypto", mutate=mut_sc_fields_complete)
+def chk_sc_fields_complete(is_mutant):
+    """核心不變量（SPEC-manifest-fields.md 任務1：manifest 新欄位齊全)。對一個 total_match
+    型合成來源（形狀比照 x402_bazaar：{"items":[...], "total":N}）呼叫
+    compute_manifest_fields()，斷言 n/n_by_path/complete/completeness_check/
+    reported_total/truncated/dup_keys 七個欄位全部存在，且對這組已知輸入算出正確值。"""
+    sandbox = new_sandbox("sc_fields_mut" if is_mutant else "sc_fields")
+    text = read_source("snap_crypto")
+    if is_mutant:
+        text = mut_sc_fields_complete(text)
+    script_path = _install_sc(sandbox, text)
+    mod = load_module(script_path)
+    # 用 "x402_bazaar" 當來源 key（而非任意合成名稱）：_KEY_FIELD_HINTS 對它已登記
+    # key_field="resource"，dup_keys 才真的會被算出來（而不是因為查無主鍵線索而留 None），
+    # 這樣才能同時驗證「欄位齊全」與「值正確」，也讓下面 mut_sc_fields_complete 的
+    # 破壞驗證（改掉 dup_keys 這個鍵名）對本檢查的斷言真的有影響。
+    data = {"items": [{"resource": "r%d" % i} for i in range(5)], "total": 5}
+    result = mod.compute_manifest_fields("x402_bazaar", data)
+    required = ("n", "n_by_path", "complete", "completeness_check",
+                "reported_total", "truncated", "dup_keys")
+    fields_present = all(k in result for k in required)
+    values_ok = (fields_present and result["n"] == 5 and result["complete"] is True
+                 and result["completeness_check"] == "total_match"
+                 and result["reported_total"] == 5 and result["truncated"] is False
+                 and result["dup_keys"] == 0)
+    guard_active = fields_present and values_ok
+    return Result(guard_active,
+                  "七欄位齊全=%s；值=%r（期望 n=5/complete=True/check=total_match/"
+                  "reported_total=5/truncated=False/dup_keys=0）" % (fields_present, result))
+
+
+@check("snap_crypto.manifest_fields_real_replay", mutate_target="snap_crypto", mutate=mut_sc_fields_complete)
+def chk_sc_fields_real_replay(is_mutant):
+    """real-replay：對 x402_bazaar 一份真實歷史快照（VPS 正式資料，唯讀複製）算
+    compute_manifest_fields()，斷言 completeness_check==total_match 且 complete=True——
+    這是 docs/crypto-detect-design.md 附錄 A.1 已實測驗證過的既知事實（data.total 與
+    len(items) 七天全部相符），用真實資料佐證欄位計算邏輯正確，不只是合成資料自圓其說。"""
+    sandbox = new_sandbox("sc_real_mut" if is_mutant else "sc_real")
+    text = read_source("snap_crypto")
+    if is_mutant:
+        text = mut_sc_fields_complete(text)
+    script_path = _install_sc(sandbox, text)
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/x402_bazaar")
+    real_files = (sorted(f for f in os.listdir(src_dir) if f.endswith(".json.gz"))
+                  if os.path.isdir(src_dir) else [])
+    if not real_files:
+        return Result(False, "找不到任何真實 x402_bazaar 歷史快照，無法做 real-replay 驗證")
+    rel = "track-crypto/data/x402_bazaar/%s" % real_files[-1]
+    local_path = install_binary_copy(os.path.join(SOURCE_REPO, rel), sandbox, rel)
+    with gzip.open(local_path, "rt", encoding="utf-8") as f:
+        real_payload = json.load(f)
+    mod = load_module(script_path)
+    result = mod.compute_manifest_fields("x402_bazaar", real_payload["data"])
+    expect_n = len(real_payload["data"].get("items") or [])
+    # dup_keys 也一併斷言（x402_bazaar 在 _KEY_FIELD_HINTS 有登記 key_field="resource"，
+    # 真實資料應該算得出一個整數，不是 None）：這樣 mut_sc_fields_complete（改掉
+    # "dup_keys" 這個回傳鍵名）才會讓這條 real-replay 檢查也翻盤，不是只有
+    # snap_crypto.manifest_fields_complete 那條合成資料檢查測得到。
+    guard_active = (result.get("completeness_check") == "total_match"
+                    and result.get("complete") is True
+                    and result.get("n") == expect_n
+                    and result.get("dup_keys") is not None)
+    return Result(guard_active,
+                  "real-replay(%s)：n=%r(期望%d) complete=%r(期望True) check=%r(期望total_match) "
+                  "dup_keys=%r(期望非None)"
+                  % (real_files[-1], result.get("n"), expect_n,
+                     result.get("complete"), result.get("completeness_check"), result.get("dup_keys")))
+
+
+@check("snap_crypto.truncated_semantics_match_track_gov",
+       mutate_target="snap_crypto", mutate=mut_sc_truncated_default)
+def chk_sc_truncated_semantics(is_mutant):
+    """核心不變量（SPEC-manifest-fields.md：truncated 語意必須與軌二一致)。truncated
+    一律是布林值（不可為 None／缺席），比照軌二 snap_gov.py 對不支援 deadline 的舊式
+    adapter 一律預設 truncated=False 的既有慣例。三種輸入分別對應 agent_virtuals
+    （data.truncated 同極性）、mcp_smithery（data.is_full 反極性）、以及完全沒有
+    旗標的一般來源（必須預設 False，不是 None——這是本檢查要守住的核心行為）。"""
+    sandbox = new_sandbox("sc_trunc_mut" if is_mutant else "sc_trunc")
+    text = read_source("snap_crypto")
+    if is_mutant:
+        text = mut_sc_truncated_default(text)
+    script_path = _install_sc(sandbox, text)
+    mod = load_module(script_path)
+    r_same_polarity = mod.compute_manifest_fields(
+        "selftest_synth_av", {"items": [{"id": 1}], "truncated": True})
+    r_inverted = mod.compute_manifest_fields(
+        "selftest_synth_mcp", {"servers": [{"id": 1}], "is_full": False})
+    r_absent = mod.compute_manifest_fields(
+        "selftest_synth_plain", {"items": [{"id": 1}]})
+    checks = {
+        "same_polarity_true": r_same_polarity["truncated"] is True,
+        "inverted_true": r_inverted["truncated"] is True,
+        "absent_defaults_false_not_none": r_absent["truncated"] is False,
+        "all_bool_type": all(isinstance(r["truncated"], bool)
+                              for r in (r_same_polarity, r_inverted, r_absent)),
+    }
+    guard_active = all(checks.values())
+    return Result(guard_active,
+                  "truncated=%r/%r/%r（期望 True/True/False，且三者皆為 bool 非 None）：%r"
+                  % (r_same_polarity["truncated"], r_inverted["truncated"],
+                     r_absent["truncated"], checks))
+
+
+@check("healthcheck.truncation_streak_covers_track_crypto",
+       mutate_target="healthcheck", mutate=mut_hc_streak)
+def chk_hc_streak_track_crypto(is_mutant):
+    """核心不變量（SPEC-manifest-fields.md 任務3：確認 healthcheck.py 現有的
+    check_truncation_streak() 不修改就能涵蓋軌一)。完全比照既有
+    healthcheck.truncation_streak（chk_hc_streak，只測 track-gov／"channels" 鍵名），
+    改寫入 track-crypto/data/_manifest/*.json 並用 "sources" 鍵名（軌一 manifest 自
+    snap_crypto.py v1 起既有的頂層鍵名，不是本次新增），呼叫同一支未經任何修改的
+    check_truncation_streak("track-crypto", issues)——沿用 healthcheck.py 原始碼完全
+    不改，只證明它本來就同時支援兩種鍵名（見該函式原始碼
+    `m.get("channels") or m.get("sources") or {}`），不是本次新增的相容邏輯。
+    破壞驗證沿用既有 mut_hc_streak（同一個函式 check_truncation_streak 的同一個
+    門檻判斷式，此處只是換用不同的 track 參數與資料重新驗證一次，不需要新錨點）。"""
+    sandbox = new_sandbox("hc_streak_crypto_mut" if is_mutant else "hc_streak_crypto")
+    text = read_source("healthcheck")
+    if is_mutant:
+        text = mut_hc_streak(text)
+    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
+    dm2, dm1, d0 = "2030-08-01", "2030-08-02", "2030-08-03"
+    m_dm2 = {"date": dm2, "sources": {
+        "synth_streak2": {"ok": True, "n": 100, "secs": 8, "truncated": False},
+        "synth_streak1": {"ok": True, "n": 100, "secs": 8, "truncated": False}}}
+    m_dm1 = {"date": dm1, "sources": {
+        "synth_streak2": {"ok": True, "n": 30, "secs": 10, "truncated": True, "items_fetched": 30},
+        "synth_streak1": {"ok": True, "n": 98, "secs": 8, "truncated": False}}}
+    m_d0 = {"date": d0, "sources": {
+        "synth_streak2": {"ok": True, "n": 25, "secs": 12, "truncated": True, "items_fetched": 25},
+        "synth_streak1": {"ok": True, "n": 20, "secs": 12, "truncated": True, "items_fetched": 20}}}
+    for d, m in [(dm2, m_dm2), (dm1, m_dm1), (d0, m_d0)]:
+        install_text(sandbox, "track-crypto/data/_manifest/%s.json" % d, json.dumps(m))
+    with temp_env(HEALTHCHECK_TODAY=d0, HEALTHCHECK_NOW=d0 + "T12:00:00+00:00"):
+        mod = load_module(script_path)
+        issues = []
+        mod.check_truncation_streak("track-crypto", issues)
+    names = [a for a, b in issues]
+    guard_active = ("track-crypto/synth_streak2" in names) and ("track-crypto/synth_streak1" not in names)
+    return Result(guard_active,
+                  "軌一（sources 鍵名）連續2天截斷來源 issues=%r "
+                  "(期望含 synth_streak2，不含僅1天的 synth_streak1；證明 healthcheck.py "
+                  "未修改也能涵蓋軌一)" % (names,))
 
 
 # ==========================================================================
