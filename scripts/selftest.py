@@ -576,10 +576,24 @@ def mut_dr_all_listed(text):
 
 def mut_dr_alert_consistency(text):
     return apply_mutation(
-        text, 'except Exception:\n        return None, None\n    return issues, pending',
-        'except Exception:\n        return None, None\n'
-        '    return (issues[:-1] if issues else issues), pending  # [selftest mutant] silently drop last issue',
+        text, 'except Exception:\n        return None, None, None\n    return issues, pending, notices',
+        'except Exception:\n        return None, None, None\n'
+        '    return (issues[:-1] if issues else issues), pending, notices  '
+        '# [selftest mutant] silently drop last issue',
         "dr_alert_consistency")
+
+
+def mut_dr_notice_block(text):
+    """SPEC-notice-and-dr.md：模擬『REPORT.md 資訊區塊接線被誤刪』的迴歸——
+    render_notice_section() 收到的參數被換成永遠是空清單，資訊區塊因此永遠顯示
+    「目前沒有來源處於此狀態」，即使 healthcheck.check_source() 明明印出了
+    NOTICE。用來證明 daily_report.notice_surfaced_not_anomaly 真的有在檢查
+    『NOTICE 有沒有被接到 REPORT.md』，不是恆真檢查。"""
+    return apply_mutation(
+        text, 'sections.append(render_notice_section(health_notices))',
+        'sections.append(render_notice_section([]))  '
+        '# [selftest mutant] notice info block silently emptied',
+        "dr_notice_block")
 
 
 # ==========================================================================
@@ -1564,6 +1578,140 @@ def chk_dr_alert_consistency(is_mutant):
     return Result(guard_active,
                   "rc_hc=%d rc_dr=%d ALERT.md異常列數=%d REPORT.md解析異常數=%r (期望相等且 >=2)"
                   % (rc_hc, rc_dr, alert_rows, report_n))
+
+
+def _extract_md_section(text, heading_prefix):
+    """從 Markdown 文字裡擷取「以 heading_prefix 開頭的那一段」：從該行開始，
+    到下一個以 `## ` 開頭的行（或檔尾）為止。找不到該標題就回傳空字串。
+    供 daily_report.notice_surfaced_not_anomaly 精確核對『某個來源字串出現在
+    哪一個區塊』，而不只是「整份 REPORT.md 裡有沒有出現」（那樣測不出來源被
+    放錯區塊的錯誤）。"""
+    lines = text.splitlines()
+    start = None
+    for i, l in enumerate(lines):
+        if l.startswith(heading_prefix):
+            start = i
+            break
+    if start is None:
+        return ""
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("## "):
+            end = i
+            break
+    return "\n".join(lines[start:end])
+
+
+@check("daily_report.notice_surfaced_not_anomaly", mutate_target="daily_report", mutate=mut_dr_notice_block)
+def chk_dr_notice_surfaced(is_mutant):
+    """SPEC-notice-and-dr.md 任務一驗收：healthcheck.check_source() 對
+    parser_version 於比較視窗內改變過的來源印出的 NOTICE（見
+    healthcheck.parser_version_skip 系列檢查），必須經 daily_report.py 的
+    build_health_issues() 擷取後，出現在 REPORT.md『暫不判定／基準重建中』
+    資訊區塊，且不得算進異常數、不得出現在 healthcheck.py 產生的 ALERT.md。
+    兩個對照組同時驗證，證明不是『把所有東西都塞進資訊區塊』或『資訊區塊/
+    異常清單分類錯亂』：
+      (a) synth_notice：parser_version 7 天比較視窗內 1→2（前 4 天 v1、後 3 天
+          已是 v2，藉此同時驗證『第 X/7 天』的 X 不是恆為 0）＋今日體積暴增
+          （若未跳過，20→200 筆遠超 0.5–3.0x 門檻）→ 應只出現在 REPORT.md
+          資訊區塊（含正確的「1 → 2」與「第 3／7 天」字樣），不得出現在
+          ALERT.md 或 REPORT.md〈異常摘要〉。
+      (b) synth_real_anomaly：parser_version 全程一致（v1）、今日體積驟降
+          （20→1 筆）→ 應正常出現在 ALERT.md 與 REPORT.md〈異常摘要〉，不得
+          出現在資訊區塊。
+    sandbox 刻意把 timestamps/、track-crypto/adapters/ 建成空目錄、track-crypto
+    manifest 建成空 sources，讓 healthcheck.py 的其他檢查（check_timestamps／
+    track-crypto 這一側的 check_manifest／check_source fallback 清單）不產生
+    任何額外雜訊，藉此把「issues 應恰好只有 1 筆（synth_real_anomaly）」也一併
+    斷言，非僅寬鬆判斷 >=n。
+    mutate（mut_dr_notice_block）把資訊區塊來源清單改成永遠清空，模擬『REPORT.md
+    資訊區塊接線被誤刪』的迴歸：(a) 應該從『出現在資訊區塊』翻盤成『沒有出現』，
+    其餘斷言（ALERT.md／異常摘要／issues 筆數）不受影響（那些由 healthcheck.py
+    與 build_health_issues() 的既有邏輯決定，不是本次新增的接線）。"""
+    sandbox = new_sandbox("dr_notice_mut" if is_mutant else "dr_notice")
+    dr_text = read_source("daily_report")
+    if is_mutant:
+        dr_text = mut_dr_notice_block(dr_text)
+    install_text(sandbox, "scripts/healthcheck.py", read_source("healthcheck"))
+    dr_path = install_text(sandbox, "scripts/daily_report.py", dr_text)
+    hc_path = os.path.join(sandbox, "scripts/healthcheck.py")
+
+    os.makedirs(os.path.join(sandbox, "timestamps"), exist_ok=True)
+    os.makedirs(os.path.join(sandbox, "track-crypto", "adapters"), exist_ok=True)
+    install_fake_adapter(sandbox, "track-gov", "synth_notice", "Synthetic Notice Source")
+    install_fake_adapter(sandbox, "track-gov", "synth_real_anomaly", "Synthetic Real Anomaly Source")
+
+    hist_days = ["2030-08-%02d" % d for d in range(21, 28)]   # 7 天比較視窗
+    today = "2030-08-28"
+
+    # synth_notice：前 4 天 v1、後 3 天已是 v2（驗證「第 3/7 天」而非只有 0/7 這種
+    # 邊界值），今日 v2 且體積暴增（若未跳過會遠超 0.5–3.0x 門檻，20 -> 200 筆）。
+    for i, d in enumerate(hist_days):
+        pv = 1 if i < 4 else 2
+        write_gz_json(os.path.join(sandbox, "track-gov/data/synth_notice/%s.json.gz" % d),
+                      gov_snapshot(_pv_items(20, "n%d" % i), parser_version=pv))
+    write_gz_json(os.path.join(sandbox, "track-gov/data/synth_notice/%s.json.gz" % today),
+                  gov_snapshot(_pv_items(200, "ntoday"), parser_version=2))
+
+    # synth_real_anomaly：版本全程一致（v1），今日體積驟降（20 -> 1 筆）→ 真異常。
+    for i, d in enumerate(hist_days):
+        write_gz_json(os.path.join(sandbox, "track-gov/data/synth_real_anomaly/%s.json.gz" % d),
+                      gov_snapshot(_pv_items(20, "r%d" % i), parser_version=1))
+    write_gz_json(os.path.join(sandbox, "track-gov/data/synth_real_anomaly/%s.json.gz" % today),
+                  gov_snapshot(_pv_items(1, "rtoday"), parser_version=1))
+
+    gov_manifest = {"date": today, "channels": {
+        "synth_notice": {"ok": True, "n": 200, "bytes": 1, "secs": 1.0, "attempts": 1, "truncated": False},
+        "synth_real_anomaly": {"ok": True, "n": 1, "bytes": 1, "secs": 1.0, "attempts": 1, "truncated": False},
+    }}
+    crypto_manifest = {"date": today, "sources": {}}   # 空 track-crypto，避免無關雜訊
+    install_text(sandbox, "track-gov/data/_manifest/%s.json" % today, json.dumps(gov_manifest))
+    install_text(sandbox, "track-crypto/data/_manifest/%s.json" % today, json.dumps(crypto_manifest))
+
+    env = {"HEALTHCHECK_TODAY": today, "HEALTHCHECK_NOW": today + "T12:00:00+00:00"}
+    rc_hc, out_hc, err_hc = run_py(hc_path, cwd=sandbox, extra_env=env)
+    rc_dr, out_dr, err_dr = run_py(dr_path, cwd=sandbox, extra_env=env)
+
+    alert_path = os.path.join(sandbox, "ALERT.md")
+    alert_text = open(alert_path, encoding="utf-8").read() if os.path.exists(alert_path) else ""
+    report_path = os.path.join(sandbox, "REPORT.md")
+    report_text = open(report_path, encoding="utf-8").read() if os.path.exists(report_path) else ""
+
+    notice_section = _extract_md_section(report_text, "## 暫不判定／基準重建中")
+    summary_section = _extract_md_section(report_text, "## 異常摘要")
+
+    # 直接重呼叫 build_health_issues()（與 REPORT.md 用的同一支函式）取得 issues 筆數，
+    # 不必再解析 REPORT.md 的「一句話結論」文字，避免額外一層文字解析誤差。
+    # 注意：load_module()（動態 import daily_report.py）必須放在 temp_env() 區塊「裡面」——
+    # daily_report.py import 時會連帶 import healthcheck.py，healthcheck.py 的
+    # NOW_UTC/TODAY 是模組載入當下讀一次環境變數的模組層級常數，不是每次呼叫函式時
+    # 重讀；load_module() 放在 with 區塊外會讀到當下真實系統時間，而非本檢查指定的
+    # 合成日期（比照 chk_hc_parser_version 等既有檢查的正確寫法）。
+    with temp_env(HEALTHCHECK_TODAY=today, HEALTHCHECK_NOW=today + "T12:00:00+00:00"):
+        mod = load_module(dr_path)
+        issues2, pending2, notices2 = mod.build_health_issues()
+    issues_ok = (issues2 is not None and len(issues2) == 1
+                 and issues2[0][0] == "track-gov/synth_real_anomaly")
+
+    checks = {
+        "rc_hc=0": rc_hc == 0,
+        "rc_dr=0": rc_dr == 0,
+        "issues恰好1筆且為synth_real_anomaly": issues_ok,
+        "ALERT.md不含synth_notice": "synth_notice" not in alert_text,
+        "ALERT.md含synth_real_anomaly": "track-gov/synth_real_anomaly" in alert_text,
+        "資訊區塊含synth_notice": "track-gov/synth_notice" in notice_section,
+        "資訊區塊含版本變化1→2": "1 → 2" in notice_section,
+        "資訊區塊含進度第3／7天": "第 3／7 天" in notice_section,
+        "資訊區塊不含synth_real_anomaly": "synth_real_anomaly" not in notice_section,
+        "異常摘要含synth_real_anomaly": "track-gov/synth_real_anomaly" in summary_section,
+        "異常摘要不含synth_notice": "synth_notice" not in summary_section,
+    }
+    guard_active = all(checks.values())
+    failed = [k for k, v in checks.items() if not v]
+    detail = "rc_hc=%d rc_dr=%d issues=%r; %s" % (
+        rc_hc, rc_dr, (issues2 if issues2 is not None else None),
+        ("全部通過" if not failed else "未通過：" + "、".join(failed)))
+    return Result(guard_active, detail)
 
 
 # ==========================================================================

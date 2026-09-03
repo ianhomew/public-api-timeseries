@@ -35,6 +35,15 @@ daily_report.py
    欄位已就緒，屆時會自動顯示，不需再改本檔）、`truncated`、`attempts`。
 5. 相容 track-gov 用 `channels` 鍵、track-crypto 用 `sources` 鍵。
 
+2026-09-03 改版（SPEC-notice-and-dr.md）：
+  healthcheck.py（commit 641e9d3）新增「parser_version 變更期間跳過體積判定」
+  時會印出 NOTICE，但只印在 stdout，實務上沒人看得到（不進 ALERT.md 是刻意
+  設計，那是異常檔；也從未出現在 REPORT.md）。本版在 REPORT.md 新增「暫不
+  判定／基準重建中」資訊區塊（render_notice_section()），明確標示為非異常：
+  不計入 total_anomalies、不寫入 ALERT.md。資料來源是 build_health_issues()
+  呼叫 healthcheck.check_source() 時用 contextlib.redirect_stdout 擷取的
+  NOTICE 訊息，與〈異常摘要〉同一次函式呼叫，避免另一套邏輯各算各的。
+
 回放測試（不影響正式排程行為）：
   可用環境變數 HEALTHCHECK_NOW（ISO8601 UTC）／HEALTHCHECK_TODAY（YYYY-MM-DD）
   覆寫「現在時刻」／「今天日期」——這兩個變數與 healthcheck.py 共用同一套
@@ -50,6 +59,8 @@ import glob
 import re
 import importlib.util
 import statistics
+import io
+import contextlib
 from datetime import datetime, date, timedelta, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -898,23 +909,104 @@ def build_alert_section():
 
 def build_health_issues():
     """呼叫 healthcheck.py 產生 ALERT.md 所用的**同一套**唯讀判定函式，
-    取得 (issues, pending)。這是本報告「官方異常總數」的唯一依據，
+    取得 (issues, pending, notices)。這是本報告「官方異常總數」的唯一依據，
     確保與 ALERT.md 逐項一致（同一套邏輯，同一份程式碼路徑）。
-    healthcheck.py 載入失敗時回傳 (None, None)，呼叫端要能處理。"""
+    healthcheck.py 載入失敗時回傳 (None, None, None)，呼叫端要能處理。
+
+    2026-09-03 新增 notices（SPEC-notice-and-dr.md）：check_source() 對
+    parser_version 於比較視窗內改變過的來源，會印出 NOTICE 訊息並直接 return
+    （不寫入 issues／pending，也不寫入 ALERT.md，見 healthcheck.py 該節註解）。
+    這裡不重新判斷「是否該跳過」——那個決定完全由 healthcheck.check_source()
+    做出；本函式只是在同一次呼叫裡用 contextlib.redirect_stdout 擷取它印出的
+    NOTICE 訊息，交給 _parse_notice_lines() 解析成結構化資料，避免另外用一套
+    邏輯自行重算 parser_version 是否改變（本專案已因兩邊算法不同出過事，
+    見 docs/healthcheck-parserver-report.md 第 10 節）。"""
     if healthcheck is None:
-        return None, None
+        return None, None, None
     issues = []
     pending = []
+    notices = []
     try:
         healthcheck.check_timestamps(issues)
         for track in ("track-crypto", "track-gov"):
             healthcheck.check_manifest(track, issues, pending)
             healthcheck.check_truncation_streak(track, issues)
-        for track, key in healthcheck.ACTIVE:
-            healthcheck.check_source(track, key, issues, pending)
+        notice_buf = io.StringIO()
+        with contextlib.redirect_stdout(notice_buf):
+            for track, key in healthcheck.ACTIVE:
+                healthcheck.check_source(track, key, issues, pending)
+        notices = _parse_notice_lines(notice_buf.getvalue())
     except Exception:
-        return None, None
-    return issues, pending
+        return None, None, None
+    return issues, pending, notices
+
+
+# NOTICE 行格式固定由 healthcheck.py 的 check_source() 印出（見該檔案「體積檢查：
+# parser_version 改版時跳過判定」一節），本檔不重新產生文字，只解析，避免兩邊
+# 各算各的（SPEC-notice-and-dr.md 硬性要求，本專案已因此出過事）。
+_NOTICE_RE = re.compile(
+    r"^NOTICE (?P<label>\S+): parser_version (?P<old>\S+)→(?P<new>\S+)，"
+    r"體積基準重建中，暫不判定（第 (?P<day>\d+)/(?P<of>\d+) 天"
+)
+
+
+def _parse_notice_lines(text):
+    """把 check_source() 印出的 NOTICE 行解析成結構化資料
+    [{"label","old","new","day","of","raw"}, ...]，供 render_notice_section()
+    使用。只做文字解析，不重新判斷是否該跳過（判斷本身由 healthcheck.py 做出，
+    見 build_health_issues() 說明）。格式若未來變動導致無法解析，仍保留完整
+    原始整行文字（raw），不靜默丟棄資訊。"""
+    out = []
+    for line in text.splitlines():
+        if not line.startswith("NOTICE "):
+            continue
+        m = _NOTICE_RE.match(line)
+        if m:
+            out.append({"label": m.group("label"), "old": m.group("old"),
+                        "new": m.group("new"), "day": m.group("day"), "of": m.group("of"),
+                        "raw": line})
+        else:
+            m2 = re.match(r"^NOTICE (\S+):", line)
+            out.append({"label": m2.group(1) if m2 else "?", "old": None,
+                        "new": None, "day": None, "of": None, "raw": line})
+    return out
+
+
+def render_notice_section(notices):
+    """SPEC-notice-and-dr.md 任務一：把「暫不判定／基準重建中」的 NOTICE 來源
+    列成 REPORT.md 的資訊區塊。明確非異常：呼叫端（main()）不得把這裡的筆數
+    計入 total_anomalies；本函式本身也絕對不寫入 ALERT.md——本檔從未呼叫
+    healthcheck.main()，全檔唯一的寫入動作是檔尾寫 REPORT.md（見檔頭說明）。"""
+    intro = (
+        "以下來源的 `parser_version` 在體積比較視窗（最近 7 天）內發生變更，"
+        "`healthcheck.py` 的 `check_source()`（與 `ALERT.md` 同一套判定函式，"
+        "見上方〈異常摘要〉呼叫的 `build_health_issues()`）依既有原則（比照 "
+        "`detect_changes.py`）暫時跳過本次體積判定，等視窗內全部天數都變成新"
+        "版本後自動恢復判定，不需人工介入、不留白名單。**這是資訊性狀態，"
+        "不是異常**：不計入本報告與 `ALERT.md` 的異常總數，也不會寫入 "
+        "`ALERT.md`。下表直接解析自 `check_source()` 本次執行時印出的 NOTICE "
+        "訊息，與〈異常摘要〉同一次呼叫、非本檔另行計算。"
+    )
+    lines = [intro, ""]
+    if notices is None:
+        lines.append("（healthcheck.py 無法載入，本次無法取得此清單。）")
+        return "\n".join(lines)
+    if not notices:
+        lines.append("目前沒有來源處於此狀態。")
+        return "\n".join(lines)
+    lines.append("| 來源 | parser_version 變化 | 進度（第幾天／共幾天） |")
+    lines.append("|---|---|---|")
+    for n in notices:
+        if n["day"] is not None:
+            change = f"{n['old']} → {n['new']}"
+            progress = f"第 {n['day']}／{n['of']} 天"
+        else:
+            change = "（格式未預期，見原文）"
+            progress = "—"
+        lines.append(f"| `{n['label']}` | {change} | {progress} |")
+        if n["day"] is None:
+            lines.append(f"| | | 原文：{n['raw']} |")
+    return "\n".join(lines)
 
 
 def render_health_issues_table(issues):
@@ -945,7 +1037,7 @@ def main():
     cex_section, cex_count = safe(lambda: build_cex_events_section(today_str), ("無法讀取交易所事件。", 0))
     change_section = safe(build_change_detection_section, "無法讀取變動偵測紀錄。")
     cumulative_section = safe(build_cumulative_stats, "無法計算累積統計。")
-    health_issues, health_pending = safe(build_health_issues, (None, None))
+    health_issues, health_pending, health_notices = safe(build_health_issues, (None, None, None))
 
     # 官方異常總數：優先採用與 healthcheck.py／ALERT.md 完全相同的判定結果
     # （見 build_health_issues 說明）。只有在 healthcheck.py 無法載入／執行時
@@ -1031,6 +1123,12 @@ def main():
         sections.append("以下為 ALERT.md 等檔案的原始內容（供交叉核對）：")
         sections.append("")
     sections.append(alert_section)
+    sections.append("")
+
+    sections.append(
+        "## 暫不判定／基準重建中（資訊，非異常，不計入異常數，不寫入 ALERT.md）\n"
+    )
+    sections.append(render_notice_section(health_notices))
     sections.append("")
 
     sections.append(
