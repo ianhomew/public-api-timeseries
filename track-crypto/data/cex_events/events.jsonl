@@ -164,3 +164,63 @@
 {"date": "2026-09-02", "exchange": "mexc", "symbol": "PBALLUSDT", "event": "STATUS_CHANGED", "from": "2", "to": "1"}
 {"date": "2026-09-02", "exchange": "okx", "symbol": "CP-TRY", "event": "LISTED", "from": null, "to": "preopen"}
 {"date": "2026-09-02", "exchange": "okx", "symbol": "CP-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "CPUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RAMCRUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RCUBEUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RGISUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RGLPIUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RMAINUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RMPLXUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RNNNUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "ROWLUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RPAAUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RVICIUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RWESUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "CROUSDT", "event": "STATUS_CHANGED", "from": "online", "to": "halt"}
+{"date": "2026-09-03", "exchange": "bitget", "symbol": "RAPHUSDT", "event": "STATUS_CHANGED", "from": "online", "to": "halt"}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "AINVDA_USDT", "event": "LISTED", "from": null, "to": "tradable"}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "1CAT_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "BEAM_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "CATCOIN_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "DIO_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "EMYC_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "EYWA_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "HOPR_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "KCAL_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "KLO_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "LNDX_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "LUMINT_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "LUNAI_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "MAGATRUMP_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "MDUS_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "MRLN_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "NOBODY_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "PALM_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "PRIMAL_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "PURR_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "PUSH_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "SPEC_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "TAI_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "TRC_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "ULTI_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "WAT_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "ZF_USDT", "event": "DELISTED", "from": "tradable", "to": null, "note": "anomalous_scale", "removed_pct": 1.1571}
+{"date": "2026-09-03", "exchange": "gateio", "symbol": "CP_USDT", "event": "STATUS_CHANGED", "from": "sellable", "to": "tradable"}
+{"date": "2026-09-03", "exchange": "kucoin", "symbol": "CP-USDT", "event": "LISTED", "from": null, "to": "True"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "FLORKUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "FLORKUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "MODAUSDT", "event": "LISTED", "from": null, "to": "2"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "ORBIOUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "ORBIOUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "RAMUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "RAMUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "UBIKUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "UBIKUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "AUCUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "CSWAPUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "XPLKUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-03", "exchange": "mexc", "symbol": "CPUSDT", "event": "STATUS_CHANGED", "from": "2", "to": "1"}
+{"date": "2026-09-03", "exchange": "okx", "symbol": "GRVT-EUR", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-03", "exchange": "okx", "symbol": "GRVT-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-03", "exchange": "okx", "symbol": "CP-TRY", "event": "STATUS_CHANGED", "from": "preopen", "to": "live"}
+{"date": "2026-09-03", "exchange": "okx", "symbol": "CP-USDT", "event": "STATUS_CHANGED", "from": "preopen", "to": "live"}

@@ -5,3 +5,4 @@
 {"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "TEAEUR", "event": "LISTED", "from": null, "to": "TEA/EUR"}
 {"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "USTABLESUSD", "event": "LISTED", "from": null, "to": "USTABLES/USD"}
 {"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "XU3O8EUR", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
+{"date": "2026-09-03", "source": "cex_symbols_ext", "group": "kraken", "key": "USTABLESUSD", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}

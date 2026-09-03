@@ -50,3 +50,53 @@
 {"date": "2026-09-02", "source": "cex_currency_status", "group": "gate", "key": "MOVE", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
 {"date": "2026-09-02", "source": "cex_currency_status", "group": "gate", "key": "XAR", "event": "STATUS_CHANGED", "from": {"delisted": false}, "to": {"delisted": true}}
 {"date": "2026-09-02", "source": "cex_currency_status", "group": "coinbase", "key": "CP", "event": "LISTED", "from": null, "to": "Cluster Protocol"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "AAPL", "event": "LISTED", "from": null, "to": "Apple Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "AINVDA", "event": "LISTED", "from": null, "to": "Artificial Inu"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "BONER", "event": "LISTED", "from": null, "to": "Boner Coin"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "COIN", "event": "LISTED", "from": null, "to": "Coinbase Global, Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "CRCL", "event": "LISTED", "from": null, "to": "Circle Internet Group, Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "FLORK", "event": "LISTED", "from": null, "to": "FLORK"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "FONE", "event": "LISTED", "from": null, "to": "apeonfone"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "GOOGL", "event": "LISTED", "from": null, "to": "Google"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "HOOD", "event": "LISTED", "from": null, "to": "Robinhood Markets, Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "META", "event": "LISTED", "from": null, "to": "Meta Platforms, Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MICRODUCK", "event": "LISTED", "from": null, "to": "microduck"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MOOOLD", "event": "LISTED", "from": null, "to": "MooMonster"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MSTR", "event": "LISTED", "from": null, "to": "MicroStrategy Incorporated"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "NVDA", "event": "LISTED", "from": null, "to": "NVIDIA"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "PLTR", "event": "LISTED", "from": null, "to": "Palantir Technologies Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "QQQ", "event": "LISTED", "from": null, "to": "Invesco QQQ Trust"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "SPACEHOOD", "event": "LISTED", "from": null, "to": "SPACEHOOD"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "SPY", "event": "LISTED", "from": null, "to": "SPDR S&P 500 ETF Trust"}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "TSLA", "event": "LISTED", "from": null, "to": "Tesla, Inc."}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "1CAT", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "BB", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "BEAM", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "CATCOIN", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "DIO", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "EMYC", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "EYWA", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "GTSOL", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "HOPR", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "KCAL", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "KLO", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "LNDX", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "LUMINT", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "LUNAI", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MAGATRUMP", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MDUS", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MOO", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "MRLN", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "NOBODY", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "PALM", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "PRIMAL", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false, "withdraw_disabled": false}, "to": {"delisted": true, "trade_disabled": true, "withdraw_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "PURR", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "PUSH", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "PYBOBO", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "SPEC", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "TAI", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "TRC", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "ULTI", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "WAT", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "WAXP", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-03", "source": "cex_currency_status", "group": "gate", "key": "ZF", "event": "STATUS_CHANGED", "from": {"delisted": false, "trade_disabled": false}, "to": {"delisted": true, "trade_disabled": true}}

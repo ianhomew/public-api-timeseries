@@ -1,0 +1,205 @@
+{
+ "date": "2026-09-03",
+ "sources": {
+  "agent_virtuals": {
+   "ok": true,
+   "bytes": 1845716,
+   "secs": 1251.3,
+   "parser_version": 2,
+   "attempts": 1
+  },
+  "airdrop_claim_pages": {
+   "ok": true,
+   "bytes": 926,
+   "secs": 0.7,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "audit_registry_certik": {
+   "ok": true,
+   "bytes": 677,
+   "secs": 0.1,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "cex_announcements": {
+   "ok": true,
+   "bytes": 6977,
+   "secs": 15.8,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "cex_currency_status": {
+   "ok": true,
+   "bytes": 292933,
+   "secs": 3.9,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "cex_earn_apr": {
+   "ok": true,
+   "bytes": 9027,
+   "secs": 2.4,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "cex_symbols": {
+   "ok": true,
+   "bytes": 406408,
+   "secs": 13.1,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "cex_symbols_ext": {
+   "ok": true,
+   "bytes": 63143,
+   "secs": 5.0,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "cex_withdrawal_limits": {
+   "ok": true,
+   "bytes": 142107,
+   "secs": 0.5,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "crypto_project_liveness": {
+   "ok": true,
+   "bytes": 33557,
+   "secs": 0.1,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "dao_proposal_snapshot": {
+   "ok": true,
+   "bytes": 396315,
+   "secs": 10.8,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "defi_yield_rates": {
+   "ok": true,
+   "bytes": 1519,
+   "secs": 3.5,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "eth_validator_queue": {
+   "ok": true,
+   "bytes": 215,
+   "secs": 4.2,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "hf_trending_models": {
+   "ok": true,
+   "bytes": 105095,
+   "secs": 0.3,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "mcp_smithery": {
+   "ok": true,
+   "bytes": 83934,
+   "secs": 7.2,
+   "parser_version": 2,
+   "attempts": 1
+  },
+  "ofac_sanctions_crypto": {
+   "ok": true,
+   "bytes": 934694,
+   "secs": 11.7,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "openrouter_models": {
+   "ok": true,
+   "bytes": 71354,
+   "secs": 0.1,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "openrouter_providers": {
+   "ok": true,
+   "bytes": 3662,
+   "secs": 0.0,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "oracle_feed_directory": {
+   "ok": true,
+   "bytes": 168009,
+   "secs": 1.7,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "payment_pricing_pages": {
+   "ok": true,
+   "bytes": 809,
+   "secs": 0.3,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "payment_protocol_repos": {
+   "ok": true,
+   "bytes": 554,
+   "secs": 0.9,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "project_tokenomics_docs": {
+   "ok": true,
+   "bytes": 751,
+   "secs": 0.1,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "vast_gpu": {
+   "ok": true,
+   "bytes": 173922,
+   "secs": 1.7,
+   "parser_version": 1,
+   "attempts": 1
+  },
+  "x402_bazaar": {
+   "ok": true,
+   "bytes": 6627578,
+   "secs": 48.4,
+   "parser_version": 1,
+   "attempts": 1
+  }
+ },
+ "fetched_at": "2026-09-03T00:00:02.661416+00:00",
+ "runs": [
+  {
+   "at": "2026-09-03T00:00:02.661416+00:00",
+   "sources": [
+    "agent_virtuals",
+    "airdrop_claim_pages",
+    "audit_registry_certik",
+    "cex_announcements",
+    "cex_currency_status",
+    "cex_earn_apr",
+    "cex_symbols",
+    "cex_symbols_ext",
+    "cex_withdrawal_limits",
+    "crypto_project_liveness",
+    "dao_proposal_snapshot",
+    "defi_yield_rates",
+    "eth_validator_queue",
+    "hf_trending_models",
+    "mcp_smithery",
+    "ofac_sanctions_crypto",
+    "openrouter_models",
+    "openrouter_providers",
+    "oracle_feed_directory",
+    "payment_pricing_pages",
+    "payment_protocol_repos",
+    "project_tokenomics_docs",
+    "vast_gpu",
+    "x402_bazaar"
+   ]
+  }
+ ]
+}
