@@ -2,7 +2,8 @@
 
 回上層：[README](../README.md)　｜　相關：[track-gov README](../track-gov/README.md)
 
-資料來源：2026-08-31 直接讀取 VPS `/home/agentops/snap/public-api-timeseries/{track-crypto,track-gov}/adapters/*.py` 原始碼，
+資料來源：2026-08-31（多數來源）／2026-09-02（本輪新增 `payment_pricing_pages`、
+確認 `x402_index_thirdparty` 停抓狀態）直接讀取 VPS `/home/agentops/snap/public-api-timeseries/{track-crypto,track-gov}/adapters/*.py` 原始碼，
 欄位取自各檔案內的 `KEY`／`DESC`／`SOURCE_HOME`／`ROBOTS_VERIFIED`／`PARSER_VERSION`／`MAX_ITEMS`／`MAX_PAGES` 等常數，
 以及 VPS `crontab -l` 的排程設定。**缺的欄位一律標「未記載」，不臆造。**
 
@@ -12,21 +13,52 @@
 
 | 項目 | 排程（台北時間） | 執行程式 |
 |---|---|---|
-| `track-crypto`（23 個來源，另有 1 個已停抓 `x402_index_thirdparty`，歷史資料保留） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
+| `track-crypto`（24 個來源，另有 1 個已停抓 `x402_index_thirdparty`、1 個人工封存 `mcp_pulsemcp`，兩者歷史資料皆保留） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
 | `track-gov`（18 個來源） | 每日 09:30（`flock -w 1800` 等抓取鎖，最多等 30 分鐘） | `track-gov/scripts/snap_gov.py` |
 | git push | 每日 11:30（`flock -w 7200`，最多等 2 小時） | `scripts/push.sh` |
 
 每個來源**每日僅抓取一輪**，同一 track 內部無來源別排程差異；`fetch()` 請求間隔固定 1 秒。
 
-## track-crypto（23 個來源）
+## 來源狀態說明（活躍／已停抓／人工封存）
+
+`track-crypto/` 的來源依所在目錄分三種狀態，決定是否被每日排程與自動探索機制（`snap_crypto.py`／`detect_changes.py`／`healthcheck.py`／`daily_report.py` 共用同一套探索邏輯）納入：
+
+| 狀態 | 目錄 | 是否每日排程 | 是否被自動探索 | 目前數量 |
+|---|---|---|---|---|
+| **活躍** | `track-crypto/adapters/`、`track-gov/adapters/` | 是 | 是 | 42（track-crypto 24 ＋ track-gov 18） |
+| **已停抓** | `track-crypto/retired_adapters/` | 否 | 否 | 1（`x402_index_thirdparty`） |
+| **人工封存** | `track-crypto/manual_adapters/` | 否（人工不定期手動執行） | 否 | 1（`mcp_pulsemcp`） |
+
+三者差異：
+
+- **活躍**＝每日自動抓取，計入來源總數。
+- **已停抓**＝曾每日抓取，因故永久停止（例如與既有來源高度重疊、觸及第三方站台自身收錄上限）；
+  依目前慣例，adapter 原始碼**搬移**（非刪除）到 `retired_adapters/`，方便查證但不再被排程／自動探索；
+  已抓歷史資料**保留，不刪除、不覆寫**。
+- **人工封存**＝從未進入每日排程，由人工在特定時機（例如官方即將關閉端點前）手動執行一次或多次，
+  adapter 原始碼放在 `manual_adapters/`，同樣不被自動探索。
+
+**例外／慣例沿革說明**（避免讀者誤以為所有已停抓來源都能在 `retired_adapters/` 找到原始碼）：
+`mcp_registry`（2026-08-27 起停抓，本專案第一個「停抓」案例）早於 `retired_adapters/` 這個目錄慣例
+設立之前，其 adapter 原始碼已**直接刪除**、未保留移動版本；只有 `data/mcp_registry/` 下的歷史快照
+資料保留。`x402_index_thirdparty`（本專案第二個「停抓」案例）才開始採用「搬移保留原始碼」的現行慣例。
+
+`track-gov/` 目前沒有 `retired_adapters/` 或 `manual_adapters/` 目錄，尚無已停抓或人工封存案例。
+
+## track-crypto（24 個來源）
 
 抓取程式：`track-crypto/scripts/snap_crypto.py`（自動載入 `track-crypto/adapters/*.py`）
 
-> 已停抓來源 `mcp_registry`（2026-08-27 起停止，已抓資料保留）**不計入本次 23 個**，
+> 已停抓來源 `mcp_registry`（2026-08-27 起停止，已抓資料保留）**不計入本次 24 個**，
 > 因其 adapter 檔已不在 `track-crypto/adapters/` 目錄下（沿用既有文件記載，本輪未重新驗證）。
 >
-> 已停抓來源 `x402_index_thirdparty`（2026-09-02 起停止，已抓資料保留）**同樣不計入本次 23 個**，
+> 已停抓來源 `x402_index_thirdparty`（2026-09-02 起停止，已抓資料保留）**同樣不計入本次 24 個**，
 > 詳細停抓日期／理由／歷史資料保留說明見本節末〈已停抓〉小節。
+>
+> 人工封存來源 `mcp_pulsemcp`（`manual_adapters/`，不在每日排程內，人工不定期執行）
+> **同樣不計入本次 24 個**，詳見本檔末〈人工封存來源〉小節。
+>
+> 本輪新增 `payment_pricing_pages`（2026-09-02 起，見下方同名小節）**已計入本次 24 個**。
 
 ### `agent_virtuals`
 
@@ -258,6 +290,21 @@
 | 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
 | robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-08-28 沿用規格書重驗結論：兩個托管網域的 robots.txt 皆為 404（視為無限制），本輪皆正常回應 200（Chainlink 292 筆／Pyth 1,843 筆），本 adapter 實作時另行親驗 robots.txt。 |
 
+### `payment_pricing_pages`
+
+| 項目 | 值 |
+|---|---|
+| 中文名／內容 | Circle 官方開發者文件 Gateway 產品費率頁 |
+| 程式內 DESC | Circle 官方開發者文件 Gateway 產品費率頁（跨鏈轉帳手續費率、各來源鏈 gas 費、轉發服務費） |
+| 端點 | `https://developers.circle.com/gateway/references/fees` |
+| parser_version | 1 |
+| MAX_ITEMS／等效上限 | 未記載（本來源為單頁靜態文件，無分頁；驗收改用 `MIN_GAS_FEE_ROWS=5`／`MAX_GAS_FEE_ROWS=100`／`MIN_TEXT_LEN=1500` 三個結構性下限／上限防呆，非分頁上限） |
+| 抓取頻率 | 每日一次（台北時間 08:00，`snap_crypto.py`） |
+| robots.txt 結論（adapter 內 `ROBOTS_VERIFIED` 原文） | 2026-09-02 親驗 https://www.circle.com/robots.txt：HTTP 200，User-agent: * 只有 Content-Signal: ai-train=no, search=yes, ai-input=yes，其餘為表單/policy-hub/search-results 等具體路徑的 Disallow，未見 /pricing 或本 adapter實際目標路徑被擋（但本輪發現 /pricing 本身已 301 導向 /contact/partner，非費率頁，故未採用）。2026-09-02 親驗 https://developers.circle.com/robots.txt（本 adapter 實際目標主機）：HTTP 200，全文為 'User-agent: * Content-Signal: ai-train=yes, search=yes, ai-input=yes Disallow: /cdn-cgi/ Allow: /_next/image Disallow: /_next/ Sitemap: https://developers.circle.com/sitemap.xml'，本 adapter 目標路徑 /gateway/references/fees 不在 /cdn-cgi/ 或 /_next/ 之下 → 允許。 |
+| 實測值（2026-09-02 UTC，首次快照） | 812 B；耗時 0.1s；`attempts=1`；已累積天數 1 天。內容：`transfer_fee` 0.005%（0.5 basis points）、`gas_fees_by_source_chain` 12 條鏈（Arbitrum／Avalanche／Base／Ethereum／HyperEVM／OP／Polygon PoS／Sei／Solana／Sonic／Unichain／World Chain）、`forwarding_fee` $0.05／筆、`main_text_len` 3,253 字元。次日（2026-09-03 UTC）再次快照 809 B、耗時 0.3s，`gas_fees` 等欄位數字穩定 |
+| 規格書原定目標網址 | `https://www.circle.com/pricing`（本輪親驗已 301 導向 `https://www.circle.com/contact/partner` 聯絡表單頁，不含任何費率數字，故改用上述 Circle 官方開發者文件頁；判斷過程詳見本節下方〈已排除的來源〉的 Circle 定價頁條目與 adapter 原始碼內註記） |
+| 收錄範疇限制 | 僅收錄 Gateway 產品費率頁；Circle 另有 CCTP／Wallets／xReserve／StableFX 等產品各自獨立的費率文件頁，本輪未擴大收錄（adapter 內 `not_covered` 欄位如實標註） |
+
 ### `payment_protocol_repos`
 
 | 項目 | 值 |
@@ -310,7 +357,7 @@
 
 | 來源 | 停抓日期 | 理由 | 歷史資料處置 |
 |---|---|---|---|
-| `x402_index_thirdparty` | 2026-09-02 | 與軌一權威來源 `x402_bazaar` 高度重疊（同一 x402 生態系）：2026-09-02 UTC 直接讀取兩者當日快照原始碼實測，`x402_index_thirdparty` 當日 `total=1044`、`/server/` 前綴 `server_count=1000`，同日 `x402_bazaar` `total=14929`，`x402_index_thirdparty` 的 `/server/` 前綴筆數僅約為 `x402_bazaar` 掛牌數的 6.7%（即 `x402_bazaar` 約為其 14.9 倍）。且 `total=1044`／`server_count=1000` 這兩個數字在 2026-08-31 與 2026-09-02（相隔 3 天）逐位元組相同，`server_count` 恰好卡在 1,000 這個整數，指向第三方索引站 sitemap 本身有收錄／分頁上限，非本專案抓取邏輯漏抓。完整價值盤點見 [docs/source-value-audit.md](source-value-audit.md)。 | 2026-08-28～2026-09-02 共 6 天快照（`2026-08-28.json.gz` ~ `2026-09-02.json.gz`）完整保留於 `track-crypto/data/x402_index_thirdparty/`，不刪除、不覆寫；adapter 原始碼**移動**（非刪除）至 `track-crypto/retired_adapters/x402_index_thirdparty.py`，檔案內容未修改（`sha256` 搬移前後一致），只是不再被 `snap_crypto.py`／`healthcheck.py`／`daily_report.py` 的 `track-crypto/adapters/*.py` 自動探索機制掃到，故**不計入本次 23 個** |
+| `x402_index_thirdparty` | 2026-09-02 | 與軌一權威來源 `x402_bazaar` 高度重疊（同一 x402 生態系）：2026-09-02 UTC 直接讀取兩者當日快照原始碼實測，`x402_index_thirdparty` 當日 `total=1044`、`/server/` 前綴 `server_count=1000`，同日 `x402_bazaar` `total=14929`，`x402_index_thirdparty` 的 `/server/` 前綴筆數僅約為 `x402_bazaar` 掛牌數的 6.7%（即 `x402_bazaar` 約為其 14.9 倍）。且 `total=1044`／`server_count=1000` 這兩個數字在 2026-08-31 與 2026-09-02（相隔 3 天）逐位元組相同，`server_count` 恰好卡在 1,000 這個整數，指向第三方索引站 sitemap 本身有收錄／分頁上限，非本專案抓取邏輯漏抓。 | 2026-08-28～2026-09-02 共 6 天快照（`2026-08-28.json.gz` ~ `2026-09-02.json.gz`）完整保留於 `track-crypto/data/x402_index_thirdparty/`，不刪除、不覆寫；adapter 原始碼**移動**（非刪除）至 `track-crypto/retired_adapters/x402_index_thirdparty.py`，檔案內容未修改（`sha256` 搬移前後一致），只是不再被 `snap_crypto.py`／`healthcheck.py`／`daily_report.py` 的 `track-crypto/adapters/*.py` 自動探索機制掃到，故**不計入本次 24 個** |
 
 `x402_index_thirdparty` 停抓前的端點與驗證細節（歷史記錄，供查證）：
 
@@ -596,8 +643,12 @@
 本次人工執行完整分頁抓取（沿用官方 `next` 分頁連結，遇隨機 410 逐頁重試），
 去重後實得 **21982 筆**（覆蓋率約 99.995%，`_meta.truncated=true`，差 1 筆記錄為分頁邊界筆數波動，
 非請求失敗漏抓），存於 `track-crypto/data/mcp_pulsemcp/2026-08-31.json.gz`；
-上一次封存為 2026-08-28（單頁 250 筆）。個資掃描結果與判斷詳見
-`docs/pulsemcp-archive-report.md`。
+上一次封存為 2026-08-28（單頁 250 筆）。個資掃描結果（去識別化統計）：email 樣式命中 4 筆，
+皆出現在 `EXPERIMENTAL_ai_generated_description`（AI 產生的服務描述文字）欄位內，屬開發者
+自行於服務介紹頁公開揭露的聯絡方式，非結構化「聯絡人」欄位；電話樣式命中 8 筆，逐一核對後
+全數為誤判（URL slug 或 `github_stars`／`package_download_count` 等數值欄位中的連續數字，
+非真實電話號碼）；身分證字號等台灣特有 PII 未見（本來源為 MCP 伺服器全球性註冊表，非台灣
+在地資料）。依專案「照原文保存、如實揭露、不做遮蔽」原則直接存入快照，未做遮蔽。
 
 ## 已排除的來源
 

@@ -9,9 +9,12 @@ daily_report.py
 
 2026-08-31 改版（SPEC-daily-report.md）：
 1. 來源清單改為「自動探索」：直接沿用 healthcheck.py 既有的
-   `<track>/adapters/*.py` 掃描寫法（本檔不重新發明一套），新增來源
-   （新增 adapter 檔）不必再改這支程式。目前應可探索到 42 個來源
-   （軌一 track-crypto 24 個 + 軌二 track-gov 18 個）。
+   `<track>/adapters/*.py` 掃描寫法（本檔不重新發明一套），新增或移除來源
+   （新增／搬移 adapter 檔）不必再改這支程式。可探索到的來源數量會隨
+   `track-crypto/adapters/`、`track-gov/adapters/` 目錄下實際檔案數量變動，
+   本檔不寫死具體數字（避免註解與實際目錄狀態不同步）；執行時的實際數量
+   由下方 `ACTIVE = _discover_sources()` 動態計算，並直接顯示於產出的
+   `REPORT.md`（「一句話結論」段落）。
 2. 修正「悄悄漏列」：
    - 舊版硬編碼的來源清單漏了 fda_clarify／fsc_lawnotice／fsc_penalty／
      ftc_decision／pres_news／tpe_clarify 六個軌二來源，這些來源從未出現在
@@ -352,7 +355,7 @@ def all_manifest_dates(track_dir):
 def build_source_table(today_str, yesterday_str):
     """
     回傳 (rows, anomaly_count)。
-    rows 涵蓋 `ACTIVE`（自動探索得到的全部來源，目前應為 42 個），逐一標註：
+    rows 涵蓋 `ACTIVE`（自動探索得到的全部來源，數量隨 adapters/ 目錄實際檔案數變動，不寫死），逐一標註：
     今日筆數／昨日筆數／增減／今日體積／體積增減%／耗時／嘗試次數／截斷／
     解析失敗（parse_failed）／備註（缺 manifest 紀錄、抓取失敗原因等，
     確保「截斷／解析器改版/抓取失敗」都明確列出、不靜默略過）。
