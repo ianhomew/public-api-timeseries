@@ -13,7 +13,7 @@
 
 | 項目 | 排程（台北時間） | 執行程式 |
 |---|---|---|
-| `track-crypto`（24 個來源，另有 1 個已停抓 `x402_index_thirdparty`、1 個人工封存 `mcp_pulsemcp`，兩者歷史資料皆保留） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
+| `track-crypto`（24 個來源，另有 1 個已停抓 `x402_index_thirdparty`、1 個人工封存 `mcp_pulsemcp`（端點已於 2026-09-04 實測全面停用），兩者歷史資料皆保留） | 每日 08:00 | `track-crypto/scripts/snap_crypto.py` |
 | `track-gov`（18 個來源） | 每日 09:30（`flock -w 1800` 等抓取鎖，最多等 30 分鐘） | `track-gov/scripts/snap_gov.py` |
 | git push | 每日 11:30（`flock -w 7200`，最多等 2 小時） | `scripts/push.sh` |
 
@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | **活躍** | `track-crypto/adapters/`、`track-gov/adapters/` | 是 | 是 | 42（track-crypto 24 ＋ track-gov 18） |
 | **已停抓** | `track-crypto/retired_adapters/` | 否 | 否 | 1（`x402_index_thirdparty`） |
-| **人工封存** | `track-crypto/manual_adapters/` | 否（人工不定期手動執行） | 否 | 1（`mcp_pulsemcp`） |
+| **人工封存** | `track-crypto/manual_adapters/` | 否（人工不定期手動執行） | 否 | 1（`mcp_pulsemcp`，端點 2026-09-04 起全面 410，2026-08-31 版為永久最終版） |
 
 三者差異：
 
@@ -55,7 +55,7 @@
 > 已停抓來源 `x402_index_thirdparty`（2026-09-02 起停止，已抓資料保留）**同樣不計入本次 24 個**，
 > 詳細停抓日期／理由／歷史資料保留說明見本節末〈已停抓〉小節。
 >
-> 人工封存來源 `mcp_pulsemcp`（`manual_adapters/`，不在每日排程內，人工不定期執行）
+> 人工封存來源 `mcp_pulsemcp`（`manual_adapters/`，不在每日排程內；端點已於 2026-09-04 實測全面停用，無法再抓取）
 > **同樣不計入本次 24 個**，詳見本檔末〈人工封存來源〉小節。
 >
 > 本輪新增 `payment_pricing_pages`（2026-09-02 起，見下方同名小節）**已計入本次 24 個**。
