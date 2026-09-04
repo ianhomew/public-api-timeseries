@@ -135,7 +135,7 @@ fi
 
 # 資料抓取本身有異常時（healthcheck.py 產生了 ALERT.md），
 # 即使 push 成功也回報失敗，讓使用者收到通知，不必自己去 GitHub 看。
-if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ] || [ -f ALERT-DELIST.md ] || [ -f ALERT-BACKUP.md ] || [ -f ALERT-CEXGATE.md ]; then
+if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ] || [ -f ALERT-DELIST.md ] || [ -f ALERT-BACKUP.md ] || [ -f ALERT-CEXGATE.md ] || [ -f ALERT-DELISTGATE.md ]; then
   echo "$(date -Is) ALERT.md 存在 → 回報 fail"
   hc_ping /fail
 else

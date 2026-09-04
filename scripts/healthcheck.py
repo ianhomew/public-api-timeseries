@@ -461,6 +461,107 @@ def check_disk(issues):
 # 該交易所下一次轉換恢復正常（不再產生 date==TODAY 的紀錄）時，本檔自動被刪除。
 GATE_ALERT_OUT = os.path.join(REPO, "ALERT-CEXGATE.md")
 
+# --- track-crypto 下架偵測完整性守門告警（SPEC-gate-dedup.md，2026-09-04 新增）---
+# 背景：track-crypto/scripts/detect_delistings.py 的完整性守門不通過時（judge() 回傳
+# "GATE_FAIL"），先前只落地 changes/<source>/YYYY-MM-DD.md 與 CHANGES.md 索引列，
+# 沒有接任何告警——只有 BREAKER（熔斷）會呼叫 write_alert_block()／
+# write_alert_block_group() 寫 ALERT-DELIST.md。這與上面 check_cex_gate_skips()
+# 處理的 gate_skips.jsonl 缺告警是同一類但不同程式的缺口（gate-alert 子代理
+# 2026-09-04 稽核 SPEC-gate-alert.md 時一併發現，本輪一併修，見
+# docs/gate-alert-and-reaudit.md §5、specs/SPEC-gate-dedup.md）。
+#
+# 為什麼不沿用 ALERT-DELIST.md、改開獨立檔案（與上面 check_cex_gate_skips() 選擇
+# 獨立於 ALERT.md 的理由同構，但這裡是相對於 ALERT-DELIST.md 而非 ALERT.md）：
+#   1. ALERT-DELIST.md 的檔頭文字（write_alert_block_group() 寫入、已隨每日 push
+#      進公開 repo）明文宣告「本檔案由 track-crypto/scripts/detect_delistings.py
+#      獨佔寫入，不與任何其他程式共用」——這是已發布的設計不變量。若讓本檔案
+#      （healthcheck.py）也寫入 ALERT-DELIST.md，會讓這句已公開的話變成謊言，
+#      也讓兩支排程時機不同的程式（detect_delistings.py 在 push.sh 第 2c 步、
+#      healthcheck.py 在第 4b 步）對同一個檔案做「讀-改-寫」，任一方的格式假設
+#      稍有出入就可能損毀對方已寫入的永久熔斷紀錄——這正是要避免的檔案所有權衝突
+#      （量化細節與其他方案的取捨見本機 docs/gate-dedup-report.md「設計理由」一節）。
+#   2. ALERT-DELIST.md 的生命週期語意是「永久觸發紀錄，刻意不會因隔天恢復正常而
+#      消失」（detect_delistings.py 檔頭原文），與 SPEC 要求 GATE_FAIL 告警「要能
+#      自動消失」直接相反——與上面 gate_skips/ALERT-CEXGATE.md 面對 ALERT-DELIST.md
+#      時的判斷完全同構（見 check_cex_gate_skips() 上方模組層級註解第 2 點），
+#      沿用同一個結論：語意不相容的兩種生命週期不該共用同一個實體檔案。
+# 做法（與 check_cex_gate_skips() 完全對稱）：只看 track-crypto/data/_gate_fail/
+# gate_skips.jsonl 裡 date==TODAY 的紀錄，異常排除後（不再有 date==TODAY 的紀錄）
+# 自動刪除本檔案，不留永久殘留。
+DELIST_GATE_ALERT_OUT = os.path.join(REPO, "ALERT-DELISTGATE.md")
+
+def check_delist_gate_fail():
+    """讀 track-crypto/data/_gate_fail/gate_skips.jsonl，只取 date==TODAY 的紀錄
+    判斷「這次轉換」是否觸發 GATE_FAIL；寫入／刪除獨立檔案 ALERT-DELISTGATE.md
+    （不進 ALERT.md 的 issues 清單，理由見上方模組層級註解；與 check_cex_gate_skips()
+    是結構相同的姊妹函式，唯一差別是讀的事實檔案／鍵值欄位／輸出檔名不同）。"""
+    p = os.path.join(REPO, "track-crypto", "data", "_gate_fail", "gate_skips.jsonl")
+    today_fails = []
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    g = json.loads(line)
+                except Exception:
+                    continue
+                if g.get("date") == TODAY:
+                    today_fails.append(g)
+
+    # record_gate_fail() 寫入時已去重（見 track-crypto/scripts/detect_delistings.py），
+    # 這裡再做一次顯示層去重純屬防禦性寫法，比照 check_cex_gate_skips() 的既有慣例
+    # （即使上游手動被重跑導致罕見的重複，這裡也只影響顯示筆數，不影響正確性）。
+    dedup = {}
+    for g in today_fails:
+        key = (g.get("source"), g.get("group"), g.get("from_date"), g.get("date"), g.get("reason"))
+        dedup[key] = g
+    today_fails = sorted(dedup.values(), key=lambda g: (g.get("source") or "", g.get("group") or ""))
+
+    print("DELIST_GATE_FAIL 今日（%s）觸發來源數 = %d" % (TODAY, len(today_fails)))
+
+    if not today_fails:
+        if os.path.exists(DELIST_GATE_ALERT_OUT):
+            os.remove(DELIST_GATE_ALERT_OUT)
+        return
+
+    def _label(g):
+        source, group = g.get("source"), g.get("group")
+        return ("`%s`" % source) if group == source else ("`%s`／子集合 `%s`" % (source, group))
+
+    lines = [
+        "# 🔴 track-crypto 下架偵測完整性守門觸發",
+        "",
+        f"檢查時間（UTC）：{NOW_UTC.isoformat(timespec='seconds')}",
+        f"檢查時間（台北）：{NOW_TAIPEI.isoformat(timespec='seconds')}",
+        f"對應轉換目標日（UTC，該來源最新快照日）：{TODAY}",
+        "",
+        "| 來源 | 比對區間 | 前日筆數 | 當日筆數 | 原因 |",
+        "|---|---|---|---|---|",
+    ] + [
+        "| %s | `%s` → `%s` | %r | %r | %s |"
+        % (_label(g), g.get("from_date"), g.get("date"), g.get("n_old"), g.get("n_new"), g.get("reason"))
+        for g in today_fails
+    ] + [
+        "",
+        ("以上來源（或子集合）本次轉換的自清單消失／新增判定**已跳過**（不寫 LISTED／"
+         "DELISTED／REAPPEARED／STATUS_CHANGED），原始快照本身仍照常保存，只是這次轉換"
+         "不參與比對。人類可讀細節見對應 `changes/<source>/%s.md`。" % TODAY),
+        "",
+        ("排查建議：檢查對應來源的 adapter 是否變更或暫時性故障"
+         "（`track-crypto/adapters/`／`track-crypto/logs/`），確認後可手動重跑 "
+         "`python3 track-crypto/scripts/detect_delistings.py` 補算。"),
+        "",
+        ("本檔由 `scripts/healthcheck.py`（`check_delist_gate_fail()`）自動產生，只反映"
+         "**最新一次轉換**的守門狀態；異常排除後（該來源下一次轉換不再觸發）會自動刪除，"
+         "不留永久殘留。完整歷史紀錄（含已排除的舊紀錄）見 "
+         "`track-crypto/data/_gate_fail/gate_skips.jsonl`。"),
+    ]
+    open(DELIST_GATE_ALERT_OUT, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    print("ALERT-DELISTGATE %s %d 個來源／子集合觸發完整性守門" % (TODAY, len(today_fails)))
+
+
 def check_cex_gate_skips():
     """讀 track-crypto/data/cex_events/gate_skips.jsonl，只取 date==TODAY 的紀錄
     判斷「這次轉換」是否觸發守門；寫入／刪除獨立檔案 ALERT-CEXGATE.md（不進 ALERT.md
@@ -546,6 +647,7 @@ def main():
 
     # 獨立告警檔（不進 issues／ALERT.md，見 check_cex_gate_skips() 模組層級註解）
     check_cex_gate_skips()
+    check_delist_gate_fail()  # 同上，見 check_delist_gate_fail() 模組層級註解（本輪新增）
 
     if not issues:
         if os.path.exists(OUT):

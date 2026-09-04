@@ -221,6 +221,42 @@ docs/detect-phase2-report.md（不隨程式碼進 repo，只在派工方本機�
 本輪同樣硬性限制：只在 VPS /tmp/detect-phase2/ 驗證，正式目錄一個字元都
 沒有改，未 git commit、未安裝套件。
 ============================================================================
+
+第三階段（本輪，2026-09-04，接續第一、二階段完成後，依 specs/SPEC-gate-dedup.md）：
+GATE_FAIL（完整性守門不通過）先前只落地 changes/<source>/YYYY-MM-DD.md 與
+CHANGES.md 索引列，沒有接任何告警——只有 BREAKER（熔斷）會寫 ALERT-DELIST.md
+（gate-alert 子代理 2026-09-04 稽核 SPEC-gate-alert.md 時發現的額外缺口，
+與同一輪發現的 gate_skips.jsonl 缺去重是姊妹缺口，兩者本輪一併修）。
+
+本輪只新增 GATE_FAIL_LOG／GATE_FAIL_LOG_SIZE_HINT_LINES 兩個模組層級常數、
+load_gate_fail_seen()／record_gate_fail() 兩個新函式，並在 process_pair()／
+process_group_source_pair() 各自的既有 BREAKER 判斷式之前，各新增一段對稱的
+「if judged == GATE_FAIL: 呼叫 record_gate_fail()」（純加法，不改動任一函式
+既有的判定或輸出邏輯）；process_pair()／process_group_source_pair() 的函式簽名
+各自多一個有預設值（None）的 gate_fail_seen 關鍵字引數，未傳入時函式行為與
+本輪之前完全相同（自行讀檔判斷），所有既有呼叫端（含 scripts/selftest.py
+既有 66 條檢查目前的呼叫方式）不必修改也不受影響。
+
+record_gate_fail() 把 GATE_FAIL 事實寫進新的 track-crypto/data/_gate_fail/
+gate_skips.jsonl（去重鍵 (date,source,group,reason)，設計與寫入時機的完整理由見
+該函式 docstring 與本機 docs/gate-dedup-report.md），供 scripts/healthcheck.py
+新增的 check_delist_gate_fail() 讀取後決定要不要產生／移除 ALERT-DELISTGATE.md
+（獨立新檔案，理由見 healthcheck.py 該函式模組層級註解——ALERT-DELIST.md 檔頭
+明文宣告「本檔案由 detect_delistings.py 獨佔寫入，不與任何其他程式共用」，
+GATE_FAIL 需要的「異常排除後自動消失」語意也與 ALERT-DELIST.md「一旦觸發永久
+留存」的設計初衷相反，比照 cex_events.py 的 gate_skips.jsonl／ALERT-CEXGATE.md
+既有先例，不去打破這兩個既有的設計不變量）。
+
+本輪不修改：compare_pair()／compare_group()／judge()／build_group_events()／
+render_report()／render_group_source_report()／write_alert_block()／
+write_alert_block_group()／dedup()／completeness()／completeness_group() 這些
+既有判定與輸出核心函式一個字元都沒有改，ALERT-DELIST.md／events.jsonl／
+changes/*.md／CHANGES.md 四個既有輸出管道的邏輯與格式完全不變（已用「對真實
+歷史資料重跑、events.jsonl 逐位元組不變」驗證，見本機 docs/gate-dedup-report.md）。
+
+本輪同樣硬性限制：只在 VPS /tmp/gate-dedup/ 驗證，正式目錄一個字元都沒有改，
+未 git commit、未安裝套件。
+============================================================================
 """
 import os
 import sys
@@ -242,6 +278,23 @@ REPO = os.path.dirname(TRACK_CRYPTO)
 CHANGES = os.path.join(REPO, "changes")
 INDEX = os.path.join(REPO, "CHANGES.md")
 ALERT_DELIST = os.path.join(REPO, "ALERT-DELIST.md")
+
+# GATE_FAIL 事實紀錄檔（2026-09-04 新增，specs/SPEC-gate-dedup.md，設計理由見本機
+# docs/gate-dedup-report.md）：完整性守門不通過時，除了現有的 changes/<source>/
+# YYYY-MM-DD.md 人類可讀紀錄與 CHANGES.md 索引列之外，另外寫一筆結構化事實到這裡，
+# 供 scripts/healthcheck.py 的 check_delist_gate_fail() 讀取後決定要不要產生
+# ALERT-DELISTGATE.md（比照 scripts/cex_events.py 的 gate_skips.jsonl／
+# scripts/healthcheck.py 的 check_cex_gate_skips() 同構設計，見 record_gate_fail()
+# docstring）。放在 track-crypto/data/_gate_fail/ 而不是 REPO 根目錄：本檔案涵蓋
+# SOURCES／GROUP_SOURCES 全部來源（跨來源共用，不屬於任何單一 <source> 自己的
+# data/<source>/ 目錄），比照 track-crypto/data/_manifest/（snap_crypto.py 寫的
+# 跨來源完整性資料）已有的「底線開頭＝非單一來源專屬」命名慣例；檔名沿用
+# gate_skips.jsonl，與 cex_events.py 那份保持一致，方便日後維護者辨識用途。
+GATE_FAIL_LOG = os.path.join(TRACK_CRYPTO, "data", "_gate_fail", "gate_skips.jsonl")
+# 檔案大小防護的提示門檻（比照 scripts/cex_events.py 的 GATE_LOG_SIZE_HINT_LINES，
+# 同一設計理由：go-forward 去重已把成長速度限制在「每個 (date,source,group,reason)
+# 最多一行」，正常運作下極罕見觸發）。
+GATE_FAIL_LOG_SIZE_HINT_LINES = 500
 
 EMDASH = "\u2014"  # 「改寫」欄固定值，SPEC 指定用 em dash，不是連字號
 
@@ -786,7 +839,7 @@ def write_alert_block_group(source, gname, d_new, lines):
     return True
 
 
-def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by_group):
+def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by_group, gate_fail_seen=None):
     """比照 process_pair()，處理一個多子集合來源的一組相鄰快照，逐子集合各自判定、
     合併寫入同一份 events.jsonl（該來源專屬）與同一份 changes/<source>/YYYY-MM-DD.md。"""
     d_old, d_new = os.path.basename(f_old)[:10], os.path.basename(f_new)[:10]
@@ -844,6 +897,18 @@ def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by
             % (d_new, source, EMDASH, removed_cell, added_cell, source, d_new))
 
         for gname, gr in group_results.items():
+            if gr["judged"] == "GATE_FAIL":
+                # 記錄 GATE_FAIL 事實供 healthcheck.py 告警用（specs/SPEC-gate-dedup.md），
+                # 手法與 process_pair() 的同一段落完全對稱，差別只在欄位來源（ok_old／
+                # ok_new／n_old_raw／n_new_raw 是 compare_group() 的回傳欄位，見該函式）。
+                r, gcfg = gr["r"], gr["gcfg"]
+                reasons = []
+                if not r["ok_old"]:
+                    reasons.append("前日(%s)：%s（n=%r）" % (d_old, r["reason_old"], r["n_old_raw"]))
+                if not r["ok_new"]:
+                    reasons.append("當日(%s)：%s（n=%r）" % (d_new, r["reason_new"], r["n_new_raw"]))
+                record_gate_fail(source, gname, d_new, d_old, "；".join(reasons),
+                                  r["n_old_raw"], r["n_new_raw"], gate_fail_seen)
             if gr["judged"] == "BREAKER":
                 r, gcfg = gr["r"], gr["gcfg"]
                 lines = [
@@ -1091,6 +1156,69 @@ def write_events(jsonl_path, new_events, seen):
     return fresh
 
 
+def load_gate_fail_seen():
+    """讀 GATE_FAIL_LOG 目前所有 (date, source, group, reason) 鍵值，供 record_gate_fail()
+    冪等判斷用。比照 load_seen() 同一手法（同一份檔案讀取＋容錯解析慣例），
+    唯一差別是鍵值定義（見 record_gate_fail() docstring）。"""
+    seen = set()
+    if os.path.exists(GATE_FAIL_LOG):
+        with open(GATE_FAIL_LOG, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    g = json.loads(line)
+                    seen.add((g["date"], g["source"], g["group"], g["reason"]))
+                except Exception:
+                    pass
+    return seen
+
+
+def record_gate_fail(source, group, date, from_date, reason, n_old, n_new, seen=None):
+    """冪等記錄一筆 GATE_FAIL（完整性守門不通過）事實到 GATE_FAIL_LOG，供
+    scripts/healthcheck.py 的 check_delist_gate_fail() 讀取後判斷是否要產生
+    ALERT-DELISTGATE.md（見該常數定義處註解、specs/SPEC-gate-dedup.md）。
+
+    去重鍵 (date, source, group, reason)：main() 的 SOURCES／GROUP_SOURCES 兩個迴圈
+    都會對「完整歷史」重新配對計算（snapshots() 回傳全部歷史快照，不是只算最新一天），
+    若不去重，同一筆 GATE_FAIL 事實會被每天重複附加——這正是本次派工另一項任務
+    （gate_skips.jsonl 缺去重，見 scripts/cex_events.py）教訓的直接應用：這份全新的
+    紀錄檔從第一天就內建去重，不重蹈覆轍。只用附加模式（"a"）寫檔，從不覆寫或刪減
+    既有內容。
+
+    seen：呼叫端傳入、原地更新的集合，供跨多次呼叫共用同一份已知鍵值（main() 在兩個
+    迴圈開始前呼叫 load_gate_fail_seen() 一次、共用同一份 set 物件傳給
+    process_pair()／process_group_source_pair()，理由是兩者寫的是同一份共用檔案，
+    比照 ALERT_DELIST 本來就是兩個迴圈共用同一個輸出檔案的既有設計）。
+    未傳入（None，例如既有呼叫端／測試直接呼叫本函式而不先呼叫 load_gate_fail_seen()）
+    時，退化成每次呼叫都重新讀檔案判斷——正確性不變，只是失去跨呼叫共用記憶體狀態的
+    效能好處，對 GATE_FAIL 這種罕見事件（實測至今 0 次觸發）的呼叫頻率而言可忽略；
+    這個預設值的存在是為了不必修改任何既有呼叫端或既有 selftest 檢查的既有呼叫方式
+    （純加法，比照本檔案一貫的相容性原則）。"""
+    if seen is None:
+        seen = load_gate_fail_seen()
+    key = (date, source, group, reason)
+    if key in seen:
+        return False
+    os.makedirs(os.path.dirname(GATE_FAIL_LOG), exist_ok=True)
+    rec = {"date": date, "source": source, "group": group, "from_date": from_date,
+           "reason": reason, "n_old": n_old, "n_new": n_new}
+    with open(GATE_FAIL_LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    seen.add(key)
+    try:
+        _lines = sum(1 for _ in open(GATE_FAIL_LOG, encoding="utf-8"))
+    except OSError:
+        _lines = None
+    if _lines is not None and _lines >= GATE_FAIL_LOG_SIZE_HINT_LINES:
+        print("   [NOTE] %s 已累積 %d 行（提示門檻 %d），可考慮執行 "
+              "scripts/dedup_gate_skips.py --file %s --key date,source,group,reason "
+              "--apply --archive-before <YYYY-MM-DD> 歸檔舊紀錄"
+              % (GATE_FAIL_LOG, _lines, GATE_FAIL_LOG_SIZE_HINT_LINES, GATE_FAIL_LOG))
+    return True
+
+
 def update_index(entries):
     """完全比照 scripts/detect_changes.py 的 update_index()：讀舊列 + 合併 + 去重 + 反序。
     與軌二共用同一個 CHANGES.md，兩支程式互相 append 不會覆寫對方。"""
@@ -1159,7 +1287,7 @@ resource 已永久下架**：本程式對「自清單消失」與「永久下架
     return True
 
 
-def process_pair(source, cfg, f_old, f_new, seen, last_delisted):
+def process_pair(source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=None):
     """比對一組相鄰快照並落地事件／報告／索引／告警。
 
     last_delisted（呼叫端傳入、本函式原地更新的 dict：key -> 最近一次被記為
@@ -1239,6 +1367,21 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted):
             "| %s | `track-crypto/%s` | %s | %s | %s | [紀錄](changes/%s/%s.md) |"
             % (r["d_new"], source, EMDASH, removed_cell, added_cell, source, r["d_new"]))
 
+    if judged == "GATE_FAIL":
+        # 記錄 GATE_FAIL 事實供 healthcheck.py 告警用（specs/SPEC-gate-dedup.md）。
+        # reason 文字直接沿用 completeness() 算出的 reason_old／reason_new，不重新
+        # 詮釋（比照 scripts/healthcheck.py 的 check_cex_gate_skips() 對
+        # gate_skips.jsonl reason 欄位的既有處理原則）。
+        reasons = []
+        if r["reason_old"] != "total_match":
+            reasons.append("前日(%s)：%s（total=%r, len(items)=%r）"
+                            % (r["d_old"], r["reason_old"], r["total_old"], r["n_old"]))
+        if r["reason_new"] != "total_match":
+            reasons.append("當日(%s)：%s（total=%r, len(items)=%r）"
+                            % (r["d_new"], r["reason_new"], r["total_new"], r["n_new"]))
+        record_gate_fail(source, source, r["d_new"], r["d_old"], "；".join(reasons),
+                          r["n_old"], r["n_new"], gate_fail_seen)
+
     alert_written = False
     if judged == "BREAKER":
         lines = [
@@ -1266,18 +1409,25 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted):
 
 def main():
     # --------------------------------------------------------------------
-    # 第一階段（x402_bazaar，SOURCES）：本迴圈與下方三行 summary print 逐字元
-    # 保持 commit 7cce2dc 原樣，未新增、未刪除、未重排任何一行，只是把原本
+    # 第一階段（x402_bazaar，SOURCES）：本迴圈與下方三行 summary print 自 commit
+    # 7cce2dc 起除下述一項新增外逐字元原樣，未刪除、未重排任何一行，只是把原本
     # 「唯一迴圈」改成「第一個迴圈」，緊接第二階段迴圈之前。all_index_entries
     # 改成先收集、最後統一呼叫一次 update_index()（原本就是這個模式，只是現在
     # 兩個迴圈共用同一份 all_index_entries 累積清單，update_index() 本身完全
     # 不變——它是「讀舊行+合併+去重+反序」，天然支援多來源各自追加，見該函式
     # docstring）。
+    # 本輪（specs/SPEC-gate-dedup.md）唯一新增：process_pair() 呼叫多傳一個
+    # gate_fail_seen 關鍵字引數（供 GATE_FAIL 事實紀錄冪等判斷，見該函式與
+    # record_gate_fail() docstring）——純粹多傳一個有預設值的引數，不改變
+    # events.jsonl／changes/*.md／CHANGES.md／ALERT-DELIST.md 這四個既有輸出管道
+    # 的任何既有邏輯或輸出內容，已用「對真實歷史資料重跑、events.jsonl 逐位元組
+    # 不變」驗證，見本機 docs/gate-dedup-report.md。
     # --------------------------------------------------------------------
     total_listed = total_delisted = total_reappeared = 0
     normal_days = gate_fail_days = breaker_days = 0
     all_index_entries = []
     any_source = False
+    gate_fail_seen = load_gate_fail_seen()  # 本輪新增：跨 SOURCES／GROUP_SOURCES 兩迴圈共用一份
     for source, cfg in SOURCES.items():
         any_source = True
         snaps = snapshots(source)
@@ -1288,7 +1438,8 @@ def main():
         seen = load_seen(jsonl_path)
         last_delisted = {}  # REAPPEARED 判定用狀態（本輪新增），見 process_pair() docstring
         for f_old, f_new in zip(snaps[:-1], snaps[1:]):
-            judged, r, fresh, entries, alert_written = process_pair(source, cfg, f_old, f_new, seen, last_delisted)
+            judged, r, fresh, entries, alert_written = process_pair(
+                source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=gate_fail_seen)
             if judged == "GATE_FAIL":
                 gate_fail_days += 1
             elif judged == "BREAKER":
@@ -1325,7 +1476,7 @@ def main():
         last_delisted_by_group = {}  # {group: {key: date}}，REAPPEARED 判定用狀態
         for f_old, f_new in zip(snaps[:-1], snaps[1:]):
             group_results, fresh, entries, alert_written = process_group_source_pair(
-                source, scfg, f_old, f_new, seen, last_delisted_by_group)
+                source, scfg, f_old, f_new, seen, last_delisted_by_group, gate_fail_seen=gate_fail_seen)
             d_old = os.path.basename(f_old)[:10]
             d_new = os.path.basename(f_new)[:10]
             n_listed = sum(1 for e in fresh if e["event"] == "LISTED")
@@ -1360,6 +1511,8 @@ def main():
           "normal=%d gate_fail=%d breaker=%d"
           % (g_total_listed, g_total_delisted, g_total_reappeared, g_total_status,
              g_normal, g_gate_fail, g_breaker))
+    print("GATE_FAIL 事實紀錄檔：%s（去重後累積 %d 筆歷史紀錄，供 healthcheck.py 告警用）"
+          % (GATE_FAIL_LOG, len(gate_fail_seen)))
     return 0
 
 

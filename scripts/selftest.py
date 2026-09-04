@@ -619,6 +619,54 @@ def mut_dr_notice_block(text):
         "dr_notice_block")
 
 
+# --------------------------------------------------------------------------
+# SPEC-gate-dedup.md（2026-09-04 新增）：gate_skips 冪等 + detect_delistings 的
+# GATE_FAIL 告警，3 支目標程式（cex_events／detect_delistings／healthcheck）
+# 各一支對應的 mutation 函式，供下方各自章節的新檢查使用。
+# --------------------------------------------------------------------------
+
+def mut_ce_gate_dedup(text):
+    """目標：cex_events.py main() 寫入 gate_skips.jsonl 前的去重過濾。還原成
+    「不去重，直接把這次算出的完整清單全部附加」的修復前行為，模擬去重邏輯被
+    意外刪除／重構掉的情境（見 docs/gate-dedup-report.md）。"""
+    return apply_mutation(
+        text,
+        '    fresh_gate_skips = [g for g in gate_skips\n'
+        '                        if (g["date"], g["exchange"], g["reason"]) not in gate_seen]',
+        '    fresh_gate_skips = list(gate_skips)  '
+        '# [selftest mutant] gate_skips dedup disabled',
+        "ce_gate_dedup")
+
+
+def mut_dd_gate_fail_log_dedup(text):
+    """目標：detect_delistings.py record_gate_fail() 的去重判斷。還原成「永遠寫入，
+    不管有沒有寫過」，模擬去重邏輯被意外刪除的情境（gate_skips.jsonl 曾經發生過的
+    同一種錯誤，這份新紀錄檔本應從第一天就避免重蹈覆轍）。"""
+    return apply_mutation(
+        text,
+        '    key = (date, source, group, reason)\n'
+        '    if key in seen:\n'
+        '        return False',
+        '    key = (date, source, group, reason)\n'
+        '    if False:  # [selftest mutant] gate_fail dedup disabled\n'
+        '        return False',
+        "dd_gate_fail_log_dedup")
+
+
+def mut_hc_delist_gate_fail_today_filter(text):
+    """目標：healthcheck.py check_delist_gate_fail() 的 date==TODAY 過濾。拿掉過濾，
+    模擬「忘記只看最新一次轉換」的情境——main() 對完整歷史重新配對計算，若不過濾，
+    所有歷史 GATE_FAIL 紀錄都會被當成『現在』的問題，永遠不會自動消失（與
+    check_cex_gate_skips() 已解決過的同一類錯誤，見該函式模組層級註解第 2 點）。"""
+    return apply_mutation(
+        text,
+        '                if g.get("date") == TODAY:\n'
+        '                    today_fails.append(g)',
+        '                today_fails.append(g)  '
+        '# [selftest mutant] TODAY filter removed, all history always alerts',
+        "hc_delist_gate_fail_today_filter")
+
+
 # ==========================================================================
 # detect_changes.py — 4 條不變量
 # ==========================================================================
@@ -1168,6 +1216,69 @@ def chk_dd_ppr_require_empty(is_mutant):
                   % (n_bad, len(repos2), ok_bad, reason_bad, ok_good))
 
 
+
+@check("detect_delistings.gate_fail_recorded", mutate_target="detect_delistings",
+       mutate=mut_dd_gate_fail_log_dedup)
+def chk_dd_gate_fail_recorded(is_mutant):
+    """SPEC-gate-dedup.md：GATE_FAIL（完整性守門不通過）除了既有的 changes/<source>/
+    YYYY-MM-DD.md 與 CHANGES.md 索引列之外，本輪新增要求額外寫一筆結構化事實到
+    track-crypto/data/_gate_fail/gate_skips.jsonl（供 healthcheck.py 告警用，見
+    detect_delistings.gate_fail_recorded 姊妹檢查 healthcheck.delist_gate_fail_alert）。
+    main() 對完整歷史重新配對計算，若這份新紀錄檔不去重，會重蹈 cex_events.py 的
+    gate_skips.jsonl 覆轍——本檢查用 process_pair() 對同一組快照呼叫兩次（模擬同一組
+    快照被重新處理兩次，例如隔天重跑時完整歷史裡這一對還在），斷言事實紀錄檔只有
+    1 筆；另外用一個 group source 的 GATE_FAIL 驗證 process_group_source_pair()
+    也會正確寫入同一份共用檔案（兩條路徑都要接上，不能只接一半）。"""
+    sandbox = new_sandbox("dd_gfail_mut" if is_mutant else "dd_gfail")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_gate_fail_log_dedup(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+
+    # --- x402_bazaar（process_pair() 路徑）---
+    cfg = mod.SOURCES["x402_bazaar"]
+    old = x402_snapshot([x402_item("R%d" % i, "d%d" % i) for i in range(100)])  # total=100，正確
+    new_items = [x402_item("R%d" % i, "d%d" % i) for i in range(98)]
+    new = x402_snapshot(new_items, total=100)  # total 造假，觸發 GATE_FAIL（比照既有 integrity_gate_skips 檢查手法）
+    f_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-09-01.json.gz"), old)
+    f_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-09-02.json.gz"), new)
+    seen, last_delisted = set(), {}
+    gate_fail_seen = mod.load_gate_fail_seen()
+    j1, r1, fresh1, e1, a1 = mod.process_pair("x402_bazaar", cfg, f_old, f_new, seen, last_delisted,
+                                               gate_fail_seen=gate_fail_seen)
+    j2, r2, fresh2, e2, a2 = mod.process_pair("x402_bazaar", cfg, f_old, f_new, seen, last_delisted,
+                                               gate_fail_seen=gate_fail_seen)  # 同區間重跑
+    log_after_x402 = read_jsonl(mod.GATE_FAIL_LOG)
+    x402_rows = [g for g in log_after_x402 if g["source"] == "x402_bazaar"]
+
+    # --- group source（process_group_source_pair() 路徑，證明共用同一份檔案）---
+    scfg = {"label": "selftest gate-fail group", "groups": {
+        "grp": {"path": ("items",), "shape": "list", "key_field": "id", "desc_field": "name",
+                "completeness": "range_check", "range": (90, 110),
+                "status_fields": (), "breaker_pct": 50.0, "abs_floor": 5},
+    }}
+    g_old = [gs_item("id", "R%d" % i, "name", "r%d" % i) for i in range(100)]
+    g_new = [gs_item("id", "R%d" % i, "name", "r%d" % i) for i in range(50)]  # 跌破區間下界 [90,110]
+    gf_old = write_gz_json(
+        os.path.join(sandbox, "track-crypto/data/selftest_gfail_grp/2030-09-01.json.gz"), gs_snapshot({"items": g_old}))
+    gf_new = write_gz_json(
+        os.path.join(sandbox, "track-crypto/data/selftest_gfail_grp/2030-09-02.json.gz"), gs_snapshot({"items": g_new}))
+    g_seen, g_last = set(), {}
+    mod.process_group_source_pair("selftest_gfail_grp", scfg, gf_old, gf_new, g_seen, g_last,
+                                   gate_fail_seen=gate_fail_seen)
+    log_after_group = read_jsonl(mod.GATE_FAIL_LOG)
+    group_rows = [g for g in log_after_group if g["source"] == "selftest_gfail_grp"]
+
+    guard_active = (j1 == "GATE_FAIL" and j2 == "GATE_FAIL"
+                     and len(x402_rows) == 1 and len(group_rows) == 1)
+    return Result(guard_active,
+                  "judged 第一次=%s 第二次=%s；x402_bazaar GATE_FAIL 事實紀錄=%d 筆"
+                  "（process_pair 呼叫 2 次，期望 1：冪等）；group source GATE_FAIL 事實紀錄=%d 筆"
+                  "（期望 1：process_group_source_pair 也會寫入同一份檔案）"
+                  % (j1, j2, len(x402_rows), len(group_rows)))
+
+
 # ==========================================================================
 # scripts/cex_events.py — 3 條不變量 + 1 項 real-replay
 # ==========================================================================
@@ -1321,6 +1432,37 @@ def chk_ce_anomaly(is_mutant):
                   "mexc DELISTED=%d(已加註=%d) bybit DELISTED=%d(已加註=%d) "
                   "(期望 mexc 50/50 全加註；bybit 1/0 完全不加註，因低於門檻)"
                   % (len(mexc_delisted), len(mexc_annotated), len(bybit_delisted), len(bybit_annotated)))
+
+
+
+@check("cex_events.gate_skips_idempotent", mutate_target="cex_events", mutate=mut_ce_gate_dedup)
+def chk_ce_gate_dedup(is_mutant):
+    """SPEC-gate-dedup.md：main() 對完整歷史重新配對計算（見上面 daily_last_snapshot_only
+    等檢查已驗證的既有行為），若 gate_skips.jsonl 寫入不去重，同一天手動重跑
+    push.sh（或任何原因重跑 cex_events.py，例如隔天執行時完整歷史裡這一對快照依然
+    存在）會把同一筆完整性守門紀錄重複附加，長期線性膨脹（docs/gate-alert-and-reaudit.md
+    §5 額外發現 1）。用同一組快照（okx 第二天完全缺席，觸發交易所級守門）連續執行
+    cex_events.py 兩次，斷言 gate_skips.jsonl 裡 okx 那一筆不會因為第二次執行而變成
+    兩筆。"""
+    sandbox = new_sandbox("ce_gdedup_mut" if is_mutant else "ce_gdedup")
+    text = read_source("cex_events")
+    if is_mutant:
+        text = mut_ce_gate_dedup(text)
+    script_path = _install_ce(sandbox, text)
+    stable = {ex: [("STABLE1", "ok")] for ex in ALL_EXCHANGES if ex != "okx"}
+    day1 = cex_snapshot(dict(stable, okx=[("OKXA-USDT", "live"), ("OKXB-USDT", "live")]))
+    day2 = cex_snapshot(stable)  # okx 完全缺席（連 key 都沒有）-> 交易所級守門觸發
+    write_gz_json(os.path.join(sandbox, "track-crypto/data/cex_symbols/2030-08-01.json.gz"), day1)
+    write_gz_json(os.path.join(sandbox, "track-crypto/data/cex_symbols/2030-08-02.json.gz"), day2)
+    rc1, out1, err1, events1, gate_skips1 = _run_ce(sandbox, script_path)
+    rc2, out2, err2, events2, gate_skips2 = _run_ce(sandbox, script_path)  # 同一個 sandbox 原地重跑
+    okx_after_first = [g for g in gate_skips1 if g["exchange"] == "okx"]
+    okx_after_second = [g for g in gate_skips2 if g["exchange"] == "okx"]
+    guard_active = (rc1 == 0 and rc2 == 0 and len(okx_after_first) == 1 and len(okx_after_second) == 1)
+    return Result(guard_active,
+                  "rc1=%d rc2=%d；第一次執行後 gate_skips 裡 okx=%d 筆，同區間重跑後 okx=%d 筆 "
+                  "(期望皆為 1：不因重跑而重複附加，且完全不刪減既有紀錄)"
+                  % (rc1, rc2, len(okx_after_first), len(okx_after_second)))
 
 
 # ==========================================================================
@@ -1510,6 +1652,66 @@ def chk_hc_parser_version_real(is_mutant):
                   "real-replay 2026-09-02：pres_news issues=%d(期望0) "
                   "fda_clarify issues=%d(期望1) tpe_clarify issues=%d(期望1)"
                   % (len(found["pres_news"]), len(found["fda_clarify"]), len(found["tpe_clarify"])))
+
+
+
+@check("healthcheck.delist_gate_fail_alert", mutate_target="healthcheck",
+       mutate=mut_hc_delist_gate_fail_today_filter)
+def chk_hc_delist_gate_fail(is_mutant):
+    """SPEC-gate-dedup.md：detect_delistings.py 的 GATE_FAIL 要能被看見（產生
+    ALERT-DELISTGATE.md，內容可直接行動：來源／子集合、比對區間、前日與當日筆數、
+    原因），且異常排除後要能自動消失——不能因為 detect_delistings.py 的 main() 對
+    完整歷史重新配對計算，就把歷史上任何一天的 GATE_FAIL 都當成『現在』的問題
+    （這正是 gate_skips.jsonl／ALERT-CEXGATE.md 已經解決過的同一類問題，
+    check_delist_gate_fail() 用同一個 date==TODAY 過濾手法，見該函式模組層級註解）。"""
+    sandbox = new_sandbox("hc_dgf_mut" if is_mutant else "hc_dgf")
+    text = read_source("healthcheck")
+    if is_mutant:
+        text = mut_hc_delist_gate_fail_today_filter(text)
+    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
+    today, yesterday = "2030-07-20", "2030-07-19"
+    gate_fail_rel = "track-crypto/data/_gate_fail/gate_skips.jsonl"
+    gate_fail_path = os.path.join(sandbox, gate_fail_rel)
+    stale = {"date": yesterday, "source": "x402_bazaar", "group": "x402_bazaar",
+             "from_date": "2030-07-18", "reason": "total(100) != len(items)(97)",
+             "n_old": 100, "n_new": 97}
+    fresh = {"date": today, "source": "selftest_src", "group": "grp",
+             "from_date": yesterday, "reason": "n=45 超出實測合理區間 [90, 110]",
+             "n_old": 100, "n_new": 45}
+    install_text(sandbox, gate_fail_rel,
+                 json.dumps(stale, ensure_ascii=False) + "\n" + json.dumps(fresh, ensure_ascii=False) + "\n")
+    out_path = os.path.join(sandbox, "ALERT-DELISTGATE.md")
+
+    # 情境 1（觸發）：今天（2030-07-20）有 1 筆 GATE_FAIL（selftest_src），
+    # 昨天（07-19，x402_bazaar）的舊紀錄不應出現在今天的告警內容裡。
+    with temp_env(HEALTHCHECK_TODAY=today, HEALTHCHECK_NOW=today + "T12:00:00+00:00"):
+        mod = load_module(script_path)
+        mod.check_delist_gate_fail()
+    triggered = os.path.exists(out_path)
+    content = open(out_path, encoding="utf-8").read() if triggered else ""
+    contains_today_source = "selftest_src" in content
+    contains_stale_source = "x402_bazaar" in content
+    contains_counts = ("100" in content) and ("45" in content)  # SPEC 明文要求：當日與前日筆數
+
+    # 情境 2（自動消失）：隔天（07-21）沒有新的 GATE_FAIL，但 07-19／07-20 的舊紀錄
+    # 仍原封不動留在事實紀錄檔裡 -> ALERT-DELISTGATE.md 應自動消失，且本函式絕不能
+    # 動過事實紀錄檔本身（比照 check_cex_gate_skips() 的既有驗證原則）。
+    before_log = open(gate_fail_path, encoding="utf-8").read()
+    with temp_env(HEALTHCHECK_TODAY="2030-07-21", HEALTHCHECK_NOW="2030-07-21T12:00:00+00:00"):
+        mod2 = load_module(script_path)
+        mod2.check_delist_gate_fail()
+    resolved = not os.path.exists(out_path)
+    after_log = open(gate_fail_path, encoding="utf-8").read()
+    log_untouched = (before_log == after_log)
+
+    guard_active = (triggered and contains_today_source and not contains_stale_source
+                     and contains_counts and resolved and log_untouched)
+    return Result(guard_active,
+                  "情境1(今天有事，2030-07-20)：觸發=%s 含今日來源=%s 含舊紀錄來源(不應含)=%s "
+                  "含前日/當日筆數=%s；情境2(隔天無新紀錄，2030-07-21)：已自動消失=%s "
+                  "事實紀錄檔未被動過=%s"
+                  % (triggered, contains_today_source, contains_stale_source, contains_counts,
+                     resolved, log_untouched))
 
 
 # ==========================================================================
