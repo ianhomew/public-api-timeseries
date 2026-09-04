@@ -5,6 +5,12 @@
 內頁  ：News_Content.aspx?n=<單元ID>&sms=<選單ID>&s=<公告ID>
 正文  ：<div id="ContentPlaceHolder1_divcontent" class="data_midlle_news_box02"> ... </div>
 只用標準函式庫。每次 HTTP 請求後 time.sleep(1)。
+
+2026-09-04 依 SPEC-y2-deadline.md 補上 collect(fetch, clean, deadline=None) 支援：
+deadline 為驅動程式傳入的 UNIX 時間戳，本 adapter 在每次翻頁／每抓一筆內頁前檢查
+time.time() < deadline，超過就停止並回傳已取得的資料（向下相容：deadline 為 None
+時視為無時間限制，行為與舊版完全相同）。只新增提早停止的能力，不改動既有抓取邏輯、
+欄位、排序或 MAX_ITEMS。
 """
 import re
 import time
@@ -57,12 +63,18 @@ def _list_page(fetch, page):
     return h
 
 
-def collect(fetch, clean):
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def collect(fetch, clean, deadline=None):
     # ---- 1. 清單 ----
     entries = []
     seen = set()
     for page in range(1, MAX_PAGES + 1):
         if len(entries) >= MAX_ITEMS:
+            break
+        if _deadline_hit(deadline):
             break
         listing = _list_page(fetch, page)
         found = 0
@@ -94,6 +106,8 @@ def collect(fetch, clean):
     # ---- 2. 內頁正文 ----
     out = []
     for e in entries:
+        if _deadline_hit(deadline):
+            break
         try:
             page_html = fetch(e["url"])
         except Exception:

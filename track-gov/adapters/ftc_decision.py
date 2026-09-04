@@ -12,6 +12,12 @@ string 對 ?page=N 無效。本 adapter 對第 1 頁用 harness 提供的 fetch(
 __EVENTVALIDATION，透過『跳頁下拉選單』控制項
 ctl00$ContentPlaceHolder1$dl_toPage 直接 POST 目標頁碼（非逐頁點『下一頁』），
 實測可行、不需鏈式攜帶前一頁的 viewstate。只用 urllib.request（標準函式庫）。
+
+2026-09-04 依 SPEC-y2-deadline.md 補上 collect(fetch, clean, deadline=None) 支援：
+deadline 為驅動程式傳入的 UNIX 時間戳，本 adapter 在每次翻頁／每抓一筆內頁前檢查
+time.time() < deadline，超過就停止並回傳已取得的資料（向下相容：deadline 為 None
+時視為無時間限制，行為與舊版完全相同）。只新增提早停止的能力，不改動既有抓取邏輯、
+欄位、排序或 MAX_ITEMS。
 """
 import re, time, urllib.request, urllib.parse
 
@@ -91,7 +97,11 @@ def _post_page(vs, vsg, ev, page):
     raise last
 
 
-def collect(fetch, clean):
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def collect(fetch, clean, deadline=None):
     page1 = fetch(LIST_URL)
     items = _parse_items(page1, clean)
     if not items:
@@ -102,6 +112,8 @@ def collect(fetch, clean):
         vs, vsg, ev = vs_m.group(1), vsg_m.group(1), ev_m.group(1)
         page = 2
         while len(items) < MAX_PAGES * ITEMS_PER_PAGE and page <= MAX_PAGES:
+            if _deadline_hit(deadline):
+                break
             time.sleep(1)
             raw = _post_page(vs, vsg, ev, page)
             new_items = _parse_items(raw, clean)

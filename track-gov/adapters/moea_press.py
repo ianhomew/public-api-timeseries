@@ -33,6 +33,12 @@ harness 提供的 fetch() 即可。
 <meta name="DC.Coverage.t.min/max"> 是全站共用的樣板固定值，所有文章
 都是同一組數字，完全不是該篇文章的發布日期，不能拿來當 date 欄位。
 真正的日期來自清單頁 lblBeginDate 那個 span（YYYY-MM-DD）。
+
+2026-09-04 依 SPEC-y2-deadline.md 補上 collect(fetch, clean, deadline=None) 支援：
+deadline 為驅動程式傳入的 UNIX 時間戳，本 adapter 在每次翻頁／每抓一筆內頁前檢查
+time.time() < deadline，超過就停止並回傳已取得的資料（向下相容：deadline 為 None
+時視為無時間限制，行為與舊版完全相同）。只新增提早停止的能力，不改動既有抓取邏輯、
+欄位、排序或 MAX_ITEMS。
 """
 import re
 import time
@@ -164,7 +170,11 @@ def _extract_balanced_div(doc, marker):
     return ""
 
 
-def _collect_list():
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def _collect_list(deadline=None):
     """回傳 [(news_id, title, date), ...]，最新在前，最多 MAX_ITEMS 筆。"""
     doc, cookies = _http()
     time.sleep(1)
@@ -193,19 +203,23 @@ def _collect_list():
         hidden = _hidden_fields(doc)
         hidden[field[0]] = field[1]
         body = urllib.parse.urlencode(hidden).encode("utf-8")
+        if _deadline_hit(deadline):
+            break
         doc, _ = _http(data=body, cookie=cookie_header)
         time.sleep(1)
         page = nxt
     return rows[:MAX_ITEMS]
 
 
-def collect(fetch, clean):
-    rows = _collect_list()
+def collect(fetch, clean, deadline=None):
+    rows = _collect_list(deadline)
     if not rows:
         raise RuntimeError("moea_press：清單抓到 0 筆，可能改版或被擋，視為失敗")
 
     items = []
     for news_id, title, date in rows:
+        if _deadline_hit(deadline):
+            break
         url = DETAIL_URL % news_id
         doc = fetch(url)
         time.sleep(1)

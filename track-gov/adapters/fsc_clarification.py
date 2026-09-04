@@ -1,4 +1,11 @@
-"""金管會即時新聞澄清（原 snap_gov.py 內建邏輯，改寫為 adapter）"""
+"""金管會即時新聞澄清（原 snap_gov.py 內建邏輯，改寫為 adapter）
+
+2026-09-04 依 SPEC-y2-deadline.md 補上 collect(fetch, clean, deadline=None) 支援：
+deadline 為驅動程式傳入的 UNIX 時間戳，本 adapter 在每次翻頁／每抓一筆內頁前檢查
+time.time() < deadline，超過就停止並回傳已取得的資料（向下相容：deadline 為 None
+時視為無時間限制，行為與舊版完全相同）。只新增提早停止的能力，不改動既有抓取邏輯、
+欄位、排序或 MAX_ITEMS。
+"""
 import re, time
 
 KEY = "fsc_clarification"
@@ -37,9 +44,14 @@ def _body(raw, clean):
                 j = min(j, m)
     return clean(re.sub(r"<[^>]*$", "", raw[i:j]))
 
-def collect(fetch, clean):
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+def collect(fetch, clean, deadline=None):
     sernos, seen, page = [], set(), 1
     while page <= MAX_PAGES:
+        if _deadline_hit(deadline):
+            break
         u = (ROOT + "home.jsp?id=" + CH["id"] + "&parentpath=" + CH["parentpath"] +
              "&mcustomize=" + CH["list_mc"] + "&page=" + str(page))
         found = re.findall(re.escape(CH["view_mc"]) + r"&dataserno=(\d+)", fetch(u))
@@ -54,6 +66,8 @@ def collect(fetch, clean):
         raise RuntimeError("fsc 清單 0 筆 —— 視為抓取失敗")
     items = []
     for s in sernos:
+        if _deadline_hit(deadline):
+            break
         u = (ROOT + "home.jsp?id=" + CH["id"] + "&parentpath=" + CH["parentpath"] +
              "&mcustomize=" + CH["view_mc"] + "&dataserno=" + s + "&dtable=" + CH["dtable"])
         raw = fetch(u)

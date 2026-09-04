@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""財政部「本部新聞」每日快照 adapter（只用標準函式庫）。"""
+"""財政部「本部新聞」每日快照 adapter（只用標準函式庫）。
+
+2026-09-04 依 SPEC-y2-deadline.md 補上 collect(fetch, clean, deadline=None) 支援：
+deadline 為驅動程式傳入的 UNIX 時間戳，本 adapter 在每次翻頁／每抓一筆內頁前檢查
+time.time() < deadline，超過就停止並回傳已取得的資料（向下相容：deadline 為 None
+時視為無時間限制，行為與舊版完全相同）。只新增提早停止的能力，不改動既有抓取邏輯、
+欄位、排序或 MAX_ITEMS。
+"""
 import re, time
 
 KEY = "mof_press"
@@ -52,9 +59,15 @@ def _list_page(fetch, page):
     return out
 
 
-def collect(fetch, clean):
+def _deadline_hit(deadline):
+    return deadline is not None and time.time() >= deadline
+
+
+def collect(fetch, clean, deadline=None):
     seen, metas = set(), []
     for p in range(1, MAX_PAGES + 1):
+        if _deadline_hit(deadline):
+            break
         rows = _list_page(fetch, p)
         if not rows:
             break
@@ -73,6 +86,8 @@ def collect(fetch, clean):
 
     items = []
     for cid, title, date in metas:
+        if _deadline_hit(deadline):
+            break
         url = ITEM_URL % cid
         html = fetch(url)
         time.sleep(1)
