@@ -256,6 +256,32 @@ changes/*.md／CHANGES.md 四個既有輸出管道的邏輯與格式完全不變
 
 本輪同樣硬性限制：只在 VPS /tmp/gate-dedup/ 驗證，正式目錄一個字元都沒有改，
 未 git commit、未安裝套件。
+
+本輪修正紀錄（第三階段，本輪，接續第二階段與 gate-dedup，依 specs/SPEC-detect-phase3.md）：
+  把乙組 3 個來源實測後納入 2 個（agent_virtuals／crypto_project_liveness），
+  第 3 個來源（oracle_feed_directory）只納入其中 1 個子集合（pyth；chainlink
+  因 8 天實測零異動、range_check 缺乏真實變動範圍可校準，判定證據不足不納入，
+  依 SPEC 指示「不足就不要納入，寧可少做」處理，完整理由見下方 GROUP_SOURCES
+  第三階段新增區塊第 3 點與本機 docs/detect-phase3-report.md §4.3）。
+  本輪新增兩處泛化機制，皆為純加法、不修改任何既有分支：
+    1. completeness_group() 新增第三種完整性檢查方式 tolerant_total_match
+       （agent_virtuals 專用：自報總數與原始筆數容許實測校準的相對誤差，
+       且要求來源自帶的 truncated 旗標明確為 False）。
+    2. dedup() 新增 key_field 為 tuple 時的複合鍵支援（crypto_project_liveness
+       專用：(name, date) 複合鍵，字串成分正規化小寫以避免大小寫修正造成的
+       假消失，見報告 §2.2 的 Saturn／SATURN 實測案例）。
+  本輪不修改：compare_pair()／compare_group()／judge()／build_group_events()／
+  render_report()／render_group_source_report()／write_alert_block()／
+  write_alert_block_group()／process_pair()／process_group_source_pair()／
+  record_gate_fail()／completeness()／completeness_group() 既有兩個分支
+  （total_match／range_check）／dedup() 既有單一欄位分支這些既有判定與輸出
+  核心邏輯一個字元都沒有改；events.jsonl／changes/*.md／CHANGES.md／
+  ALERT-DELIST.md／gate_skips.jsonl 五個既有輸出管道的邏輯與格式完全不變
+  （已用「對真實歷史資料重跑、既有 9 個來源 events.jsonl 逐位元組不變」驗證，
+  見本機 docs/detect-phase3-report.md 驗收 4）。
+
+  本輪同樣硬性限制：只在 VPS /tmp/detect-phase3/ 驗證，正式目錄一個字元都沒有改，
+  未 git commit、未安裝套件。
 ============================================================================
 """
 import os
@@ -516,7 +542,131 @@ GROUP_SOURCES = {
             },
         },
     },
+# ============================================================================
+# 第三階段新增（2026-09-04，接續第二階段，見 specs/SPEC-detect-phase3.md、
+# 本機 docs/detect-phase3-report.md）：乙組 3 個來源實測後納入 2 個、1 個來源
+# 只納入其中 1 個子集合（另 1 個子集合本輪判定證據不足，不納入，理由見下）。
+# 完整推導過程、逐日實測數字、四項驗收見報告；本檔案只放程式碼與必要的簡短依據。
+#
+#   1.【agent_virtuals，新增完整性檢查方式 tolerant_total_match，見
+#      completeness_group() 對應分支】該來源用嚴格相等（total_match）比對
+#      平台自報總數 total_reported 與可分頁取得筆數 total_returned 永遠不通過
+#      （兩者恆有約 0.05% 落差，屬預期現象，見報告 §2.1），等於沒有偵測。
+#      新增第三種完整性檢查方式：truncated_field 必須明確是布林 False（缺失／
+#      True 一律 fail-closed），且 total_field 與原始筆數的相對誤差 ≤
+#      tolerance_pct。
+#      tolerance_pct=0.3%：實測 4 個乾淨日（2026-09-01～09-04，truncated=False）
+#      相對誤差穩定落在 0.0532%~0.0558%，門檻取約 5.4 倍安全邊界；同時仍比
+#      單一分頁遺漏的量級 0.604%（500 筆/頁 ÷ 82,765 總數）更嚴格，兩者間留
+#      約 2 倍緩衝，不會把「漏一頁」誤判為「正常」。4 個時間預算截斷日
+#      （2026-08-28~08-31，data.truncated=True，落差 48.96%~59.84%）與乾淨日
+#      之間相差 3 個數量級，門檻取值在此區間內都能正確區分，不是精確調校
+#      依賴症；truncated 旗標本身已是 fail-closed 的第一道防線，tolerance_pct
+#      是第二道防線（見報告 §2.1 完整推導）。
+#      breaker_pct=0.02%、abs_floor=20：在目前規模（n≈8.3 萬）等同固定門檻
+#      20 筆（0.02%×82,721≈16.5 < 20，floor 主導，直到 n 成長超過約 10 萬），
+#      是實測 3 組乾淨日相鄰配對中最大單日消失數 2 筆的 10 倍。這 2 筆消失項目
+#      皆為 status=UNDERGRAD 且 totalValueLocked 極低（3、438）的代幣，與已
+#      graduate 的 AVAILABLE 代幣無關，比較像平台常態淘汰未畢業代幣的現象
+#      （見報告 §2.1，僅陳述觀察到的欄位相關性，不推測平台政策原因）。
+#   2.【crypto_project_liveness，dedup() 新增 tuple 複合鍵支援，見 dedup()
+#      對應段落】defillamaId 58.4%缺失（731/1252）不能當主鍵；改用 (name, date)
+#      複合鍵（SPEC 明文指定）。複合鍵字串成分一律先轉小寫再組字串鍵——實測
+#      發現 2026-08-29 出現同一筆歷史事件（同 date=1715040000、同
+#      classification/technique/amount/chain）的 name 欄位從 "Saturn" 修正為
+#      "SATURN"，純大小寫變更；若不忽略大小寫，複合鍵集合差會把這筆事實上
+#      沒有變化的紀錄誤判為「一筆消失＋一筆新增」，這是本輪實測發現、滿足
+#      「零假消失」驗收的必要修正，不是 SPEC 原始要求（見報告 §2.2）。
+#      忽略大小寫後複合鍵在 8 天歷史內穩定剩 3 組真實重複
+#      （Gamma／OcelotDex／Merlin 各自同 name+date 有 2 筆技術手法與金額都
+#      不同的獨立事件，見報告 §2.2），套用既有 dedup()「同鍵取最後出現」規則；
+#      本輪已驗證這 3 組留存記錄在 8 天內的相對順序完全穩定，去重結果具
+#      決定性、不會逐日翻動。
+#      完整性檢查沿用既有 total_match（data.count 自報值）；本輪讀 adapter
+#      原始碼查明 count 實為 len(hacks) 的同義重複計算（adapter 單次不分頁
+#      取得 https://api.llama.fi/hacks 全量陣列後才組出這個欄位），對「抓到
+#      一半」沒有獨立驗證力，僅對欄位缺失／型別錯誤等結構性問題有防護——
+#      本項為誠實揭露，不隱藏此檢查的實際強度（見報告 §2.1）。
+#      breaker_pct=1.0%、abs_floor=5：實測 7 組乾淨相鄰配對中唯一一次真實
+#      消失事件 1 筆／1247 筆，門檻約為其 12.5 倍；該事件（MORE Markets，
+#      2026-09-01→09-02）經追查其 defillamaId／parentProtocolId 在後續
+#      09-02～09-04 三份快照皆未再出現，未觸發 REAPPEARED（見報告 §2.2）。
+#   3.【oracle_feed_directory，只納入 pyth 子集合，chainlink 本輪不納入，
+#      依 SPEC「range 規則不足就不要納入，寧可少做」的指示】chainlink 292 筆
+#      在整個可用歷史（8 天，2026-08-28~09-04）逐筆內容（含 contractAddress
+#      集合本身）除了 09-02→09-03 對既有 2 筆做過中繼資料補充（欄位值變更，
+#      membership 未變）之外完全零異動。既有 range_check 公式
+#      [floor(min×0.9), ceil(max×1.1)] 的前提是「min／max 反映真實觀測到的
+#      變動範圍」（本檔案其餘 range_check 設定皆是如此，見第二階段新增段落
+#      開頭原則 4）；chainlink 沒有這個前提（min＝max＝292，觀測不到任何
+#      變動），套用同一公式會退化成「單一觀測值 ± 10%」，證據強度與其餘
+#      range_check 設定不同一個等級，本輪判定不足以防止假消失，依 SPEC
+#      指示不納入（詳見報告 §4.3）。
+#      pyth 子集合有真實 8 天增減證據可供校準，納入：key_field="id"
+#      （adapter 端 _collect_pyth() 已用 RuntimeError 保證唯一，本輪 8 天
+#      複驗同樣 0 重複）；completeness=range_check，range=(1658, 2051)
+#      （8 天實測 min=1843／max=1864，套用既有公式 floor(1843×0.9)=1658、
+#      ceil(1864×1.1)=2051）；breaker_pct=1.0%、abs_floor=5（實測 7 組相鄰
+#      配對最大單日消失 3 筆，門檻約為其 6.2 倍）。desc_field 留 None：pyth
+#      項目的人類可讀描述在巢狀 attributes.description，short_desc_generic()
+#      只支援單層欄位存取，本輪不擴充該函式（風險/效益不對稱，比照
+#      cex_earn_apr.okx 已有的 desc_field=None 先例）。
+#      補充背景（報告 §4.3 有更完整說明，本輪未實測驗證，僅供未來參考）：
+#      chainlink 每筆同時有 contractAddress 與 proxyAddress 兩個位址欄位，
+#      adapter 端只對 contractAddress 做唯一性保證；但公開文件描述的 Chainlink
+#      架構慣例是代理合約（proxy）位址在餵送升級時保持不變、底層實作合約
+#      位址會變動，若未來累積足夠歷史重新評估納入 chainlink，主鍵應優先
+#      考慮 proxyAddress（與設計文件原始建議一致）而非 contractAddress，
+#      這點屬背景知識推論，未經本輪實測資料驗證。
+#   4.【風險揭露】本階段新納入的 agent_virtuals、crypto_project_liveness、
+#      oracle_feed_directory.pyth 三者完整性判定依據，除 agent_virtuals 的
+#      truncated 旗標是來源一手訊號外，其餘（total_match 的同義重複計算（tautology）、
+#      range_check 的 10% 邊界）皆為本輪工程判斷，非官方欄位保證，且樣本數
+#      僅 7~8 天，日後應隨資料累積定期重新校準（沿用第二階段 range_check
+#      註解的同一立場）。熔斷門檻同樣只用 7~8 天資料訂定，樣本數雖比
+#      第二階段的 6 天略多，但仍屬相對少量樣本，比照同一立場處理。
+# ============================================================================
+    "agent_virtuals": {
+        "label": "Virtuals Protocol Agent 代幣清單",
+        "groups": {
+            "_items": {
+                "path": ("items",), "shape": "list", "key_field": "id",
+                "desc_field": "name",
+                "completeness": "tolerant_total_match",
+                "total_field": "total_reported",
+                "truncated_field": "truncated",
+                "tolerance_pct": 0.3,
+                "status_fields": (),
+                "breaker_pct": 0.02, "abs_floor": 20,
+            },
+        },
+    },
+    "crypto_project_liveness": {
+        "label": "DefiLlama 駭客事件清單（死亡監控資料面）",
+        "groups": {
+            "_hacks": {
+                "path": ("hacks",), "shape": "list", "key_field": ("name", "date"),
+                "desc_field": "name",
+                "completeness": "total_match", "total_fields": ("count",),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+    "oracle_feed_directory": {
+        "label": "Pyth 價格餵送目錄（chainlink 子集合本輪評估後不納入，見上方本區塊第 3 點）",
+        "groups": {
+            "pyth": {
+                "path": ("pyth",), "shape": "list", "key_field": "id",
+                "desc_field": None,
+                "completeness": "range_check", "range": (1658, 2051),
+                "status_fields": (),
+                "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
 }
+
 
 
 def path_get(root, path):
@@ -555,9 +705,13 @@ def completeness_group(data_root, gcfg):
     total_match：gcfg["total_fields"] 逐一比對 data_root 上的自報欄位是否等於子集合原始筆數
                  （去重前），全部存在且相符才 ok；require_empty 額外要求指定欄位為空/假值。
     range_check：子集合原始筆數是否落在 gcfg["range"] = (lo, hi) 區間內。
-    total_fields／require_empty 一律讀 data_root 這一層（來源的 data 節點本身），
-    不是子集合節點內——本階段 8 個來源的自報總數欄位（count／total_count／errors）
-    實測皆位於 data 頂層，不在子集合節點內部（見報告 §2 逐來源小節的實測依據）。
+    tolerant_total_match：第三階段新增（見下方對應分支的行內註解），自報總數與原始筆數
+                 容許 gcfg["tolerance_pct"] 相對誤差，並要求 gcfg["truncated_field"]
+                 明確為 False，目前只有 agent_virtuals 使用。
+    total_fields／require_empty／total_field／truncated_field 一律讀 data_root 這一層
+    （來源的 data 節點本身），不是子集合節點內——本階段 8 個來源的自報總數欄位
+    （count／total_count／errors）實測皆位於 data 頂層，不在子集合節點內部
+    （見報告 §2 逐來源小節的實測依據）。
     """
     node = path_get(data_root, gcfg["path"]) if gcfg["path"] else data_root
     if gcfg["shape"] == "list":
@@ -591,6 +745,34 @@ def completeness_group(data_root, gcfg):
         if n_raw < lo or n_raw > hi:
             return False, n_raw, "n=%d 超出實測合理區間 [%d, %d]" % (n_raw, lo, hi)
         return True, n_raw, "range_check[%d,%d]" % (lo, hi)
+    elif method == "tolerant_total_match":
+        # 第三階段新增（specs/SPEC-detect-phase3.md，目前只有 agent_virtuals 使用）：
+        # 來源本身有自報總數，但該總數與可分頁取得筆數之間有一個已知、小幅且持續
+        # 存在的落差（agent_virtuals 實測 4 個乾淨日恆為 0.05%~0.06%，見報告 §2.1），
+        # 嚴格相等（total_match）在這個來源永遠不通過，等於沒有偵測；改用「容忍度」：
+        #   1. truncated_field 必須明確是布林 False（不是 falsy，是 is False 這個精確
+        #      型別檢查）。缺失、None、True 或任何非 False 值一律 fail-closed 視為
+        #      不完整——這是來源自己回報的「這次抓取有沒有被分頁上限/時間預算中止」
+        #      一手訊號，比本函式其餘方式都更直接，優先權最高。
+        #   2. total_field 讀到的自報總數與 n_raw（原始筆數，去重前）相對誤差不得
+        #      超過 tolerance_pct（相對誤差以 total_field 的值為分母）。
+        # 兩者皆通過才算完整；任一者不通過即回傳 False，理由文字分別標示。
+        if not isinstance(data_root, dict):
+            return False, n_raw, "data 節點非物件，無法讀自報欄位與 truncated 旗標"
+        tf_name = gcfg["truncated_field"]
+        tf_val = data_root.get(tf_name)
+        if tf_val is not False:
+            return False, n_raw, "%s(%r) 非布林 False（缺失/True 一律 fail-closed 視為不完整）" % (tf_name, tf_val)
+        total_field = gcfg["total_field"]
+        total = data_root.get(total_field)
+        if not isinstance(total, (int, float)) or isinstance(total, bool) or total <= 0:
+            return False, n_raw, "缺 %s 欄位或非正數（%r）" % (total_field, total)
+        gap_pct = abs(total - n_raw) / total * 100.0
+        tol = gcfg["tolerance_pct"]
+        if gap_pct > tol:
+            return False, n_raw, ("%s(%r) 與原始筆數(%d) 相對誤差 %.4f%% 超過容忍度 %.2f%%"
+                                   % (total_field, total, n_raw, gap_pct, tol))
+        return True, n_raw, "tolerant_total_match(gap=%.4f%%,tol=%.2f%%)" % (gap_pct, tol)
     return False, n_raw, "未知完整性檢查方式 %r" % (method,)
 
 
@@ -971,17 +1153,48 @@ def completeness(data, cfg):
 def dedup(items, key_field):
     """同鍵取最後出現的一筆。回傳 (dict[key->item], dup_keys 數量, missing_key 數量)。
     missing_key：主鍵欄位缺失或為空值的筆數，這類項目不參與比對（不計入 dup_keys，
-    也不計入任何一邊的集合），x402_bazaar 實測 08-26～09-01 全部為 0。"""
+    也不計入任何一邊的集合），x402_bazaar 實測 08-26～09-01 全部為 0。
+
+    key_field 型別（第三階段新增，見 specs/SPEC-detect-phase3.md、本機
+    docs/detect-phase3-report.md §2.2）：
+      - str（既有行為，完全不變）：k = it.get(key_field)。
+      - tuple（本輪新增，複合主鍵，目前只有 crypto_project_liveness 使用
+        ("name", "date")）：把 tuple 內各欄位的值依序取出，任一欄位缺失或為
+        空字串則整筆視為 missing（比照單一欄位鍵既有規則）；字串型別的欄位值
+        一律先轉小寫再組字串鍵，其餘型別（例如 date 是 int）原樣轉字串——
+        用 "\x1f"（ASCII Unit Separator，正常業務資料不會出現的字元）連接，
+        確保複合鍵仍是單一、可雜湊、可 JSON 往返（json.dumps/loads 後仍能繼續
+        當 dict 鍵用於 REAPPEARED 判定）的純字串，不是 JSON 陣列。
+        大小寫正規化理由（實測發現，非規格書原始要求）：crypto_project_liveness
+        2026-08-29 出現同一筆歷史事件（同 date、同 classification/technique/
+        amount/chain）的 name 欄位從 "Saturn" 修正為 "SATURN"，純大小寫變更；
+        若不忽略大小寫，複合鍵集合差會把這筆事實上沒有變化的紀錄誤判為
+        「一筆消失＋一筆新增」，屬於必須修正的假消失風險，見報告 §2.2。
+    """
     d = {}
     missing = 0
     for it in items:
         if not isinstance(it, dict):
             missing += 1
             continue
-        k = it.get(key_field)
-        if not k:
-            missing += 1
-            continue
+        if isinstance(key_field, tuple):
+            parts = []
+            ok = True
+            for f in key_field:
+                v = it.get(f)
+                if v is None or v == "":
+                    ok = False
+                    break
+                parts.append(v.lower() if isinstance(v, str) else v)
+            if not ok:
+                missing += 1
+                continue
+            k = "\x1f".join(str(p) for p in parts)
+        else:
+            k = it.get(key_field)
+            if not k:
+                missing += 1
+                continue
         d[k] = it  # 同鍵取最後出現的一筆
     dup_keys = len(items) - len(d) - missing
     return d, dup_keys, missing

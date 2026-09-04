@@ -667,6 +667,37 @@ def mut_hc_delist_gate_fail_today_filter(text):
         "hc_delist_gate_fail_today_filter")
 
 
+# --------------------------------------------------------------------------
+# 第三階段新增（track-crypto/scripts/detect_delistings.py 的兩個新分支，
+# 見對應 chk_* 檢查與 GROUP_SOURCES 第三階段新增段落，specs/SPEC-detect-phase3.md）
+# --------------------------------------------------------------------------
+def mut_dd_group_tolerant_total_match(text):
+    """目標：completeness_group() 的 tolerant_total_match 分支（第三階段新增，
+agent_virtuals 專用）。同時停用兩個子條件（truncated 旗標檢查、
+相對誤差容忍度檢查）——agent_virtuals 真實壞資料（時間預算截斷日）
+剛好兩個子條件同時失敗（truncated=True 且落差遠超容忍度），只停用
+其中一個子條件的話，另一個仍會正確擋下，real-replay 檢查測不出來，
+見 docs/detect-phase3-report.md §3 的破壞驗證設計說明。"""
+    return apply_mutation(
+        text,
+        '        if tf_val is not False:\n            return False, n_raw, "%s(%r) 非布林 False（缺失/True 一律 fail-closed 視為不完整）" % (tf_name, tf_val)\n        total_field = gcfg["total_field"]\n        total = data_root.get(total_field)\n        if not isinstance(total, (int, float)) or isinstance(total, bool) or total <= 0:\n            return False, n_raw, "缺 %s 欄位或非正數（%r）" % (total_field, total)\n        gap_pct = abs(total - n_raw) / total * 100.0\n        tol = gcfg["tolerance_pct"]\n        if gap_pct > tol:',
+        '        if False:  # [selftest mutant] tolerant_total_match truncated-flag gate disabled\n            return False, n_raw, "%s(%r) 非布林 False（缺失/True 一律 fail-closed 視為不完整）" % (tf_name, tf_val)\n        total_field = gcfg["total_field"]\n        total = data_root.get(total_field)\n        if not isinstance(total, (int, float)) or isinstance(total, bool) or total <= 0:\n            return False, n_raw, "缺 %s 欄位或非正數（%r）" % (total_field, total)\n        gap_pct = abs(total - n_raw) / total * 100.0\n        tol = gcfg["tolerance_pct"]\n        if False:  # [selftest mutant] tolerant_total_match tolerance gate disabled',
+        'dd_group_tolerant_total_match')
+
+
+def mut_dd_group_composite_key_casefold(text):
+    """目標：dedup() 複合鍵 tuple 分支的大小寫正規化（第三階段新增，
+crypto_project_liveness 專用）。拿掉 .lower()，模擬「複合鍵大小寫
+正規化被誤刪」的迴歸——真實資料 2026-08-29 的 Saturn→SATURN 大小寫
+修正會因此被誤判為一筆消失＋一筆新增，見 docs/detect-phase3-report.md
+§2.2 的實測案例。"""
+    return apply_mutation(
+        text,
+        '                parts.append(v.lower() if isinstance(v, str) else v)',
+        '                parts.append(v)  # [selftest mutant] composite key case-fold disabled',
+        'dd_group_composite_key_casefold')
+
+
 # ==========================================================================
 # detect_changes.py — 4 條不變量
 # ==========================================================================
@@ -847,7 +878,7 @@ def chk_dc_volatile(is_mutant):
 
 
 # ==========================================================================
-# track-crypto/scripts/detect_delistings.py — 11 條不變量（第一階段 4 條 + 第二階段新行為 5 條 + 覆蓋缺口補齊 2 條，SPEC-selftest-gap.md）
+# track-crypto/scripts/detect_delistings.py — 17 條不變量（第一階段 4 條 + 第二階段新行為 5 條 + 覆蓋缺口補齊 2 條，SPEC-selftest-gap.md + gate-dedup 新增 1 條，SPEC-gate-dedup.md + 第三階段新增 5 條，SPEC-detect-phase3.md）
 # ==========================================================================
 
 def _install_dd(sandbox, text):
@@ -2093,6 +2124,215 @@ def chk_dr_notice_surfaced(is_mutant):
         rc_hc, rc_dr, (issues2 if issues2 is not None else None),
         ("全部通過" if not failed else "未通過：" + "、".join(failed)))
     return Result(guard_active, detail)
+
+
+# ==========================================================================
+# track-crypto/scripts/detect_delistings.py 第三階段新增 — 5 條新檢查
+# （specs/SPEC-detect-phase3.md，本機 docs/detect-phase3-report.md；
+#  agent_virtuals／crypto_project_liveness／oracle_feed_directory.pyth
+#  三個來源新增/沿用的完整性判定機制，逐項見各檢查 docstring）
+# ==========================================================================
+
+@check("detect_delistings.group_tolerant_total_match", mutate_target="detect_delistings",
+       mutate=mut_dd_group_tolerant_total_match)
+def chk_dd_group_tolerant_total_match(is_mutant):
+    """第三階段新增（docs/detect-phase3-report.md §2.1）：completeness_group()
+    新增 tolerant_total_match 分支（agent_virtuals 專用）。嚴格相等
+    （total_match）在這個來源永遠不通過（自報總數與可分頁筆數恆有約 0.05%
+    落差，屬預期現象），改用「truncated 旗標必須明確為 False」+「相對誤差
+    ≤ tolerance_pct」兩條件都通過才算完整。用 3 組情境驗證：
+      (a) 落差 0.2%（在容忍度 0.3% 內）且 truncated=False → 應通過；
+      (b) 落差同樣 0.2%，但 truncated=True → 仍要擋下（旗標優先權最高，
+          不是只看誤差百分比）；
+      (c) truncated=False，但落差約 0.99%（超過容忍度）→ 應擋下。
+    """
+    sandbox = new_sandbox("dd_gtol_mut" if is_mutant else "dd_gtol")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_tolerant_total_match(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("items",), "shape": "list", "key_field": "id", "desc_field": "name",
+            "completeness": "tolerant_total_match", "total_field": "total_reported",
+            "truncated_field": "truncated", "tolerance_pct": 0.3,
+            "status_fields": (), "breaker_pct": 50.0, "abs_floor": 1000}
+    items_1000 = [gs_item("id", i, "name", "n%d" % i) for i in range(1000)]
+
+    def mkdata(total_reported, truncated):
+        return {"items": items_1000, "total_reported": total_reported, "truncated": truncated}
+
+    ok_a, _, reason_a = mod.completeness_group(mkdata(1002, False), gcfg)   # 0.2% 落差, 未截斷
+    ok_b, _, reason_b = mod.completeness_group(mkdata(1002, True), gcfg)    # 0.2% 落差, 但截斷
+    ok_c, _, reason_c = mod.completeness_group(mkdata(1010, False), gcfg)   # 約 0.99% 落差, 未截斷
+
+    guard_active = (ok_a is True) and (ok_b is False) and (ok_c is False)
+    return Result(guard_active,
+                  "(a)gap=0.20%%,truncated=False->ok=%r(期望True) "
+                  "(b)gap=0.20%%,truncated=True->ok=%r(期望False，旗標優先) "
+                  "(c)gap=0.99%%,truncated=False->ok=%r(期望False，超容忍度) reasons=%r/%r/%r"
+                  % (ok_a, ok_b, ok_c, reason_a, reason_b, reason_c))
+
+
+@check("detect_delistings.group_tolerant_total_match.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_group_tolerant_total_match)
+def chk_dd_group_tolerant_total_match_real_replay(is_mutant):
+    """real-replay：agent_virtuals 真實歷史快照（VPS 正式資料，唯讀複製）
+    2026-08-29→08-30（兩側皆 data.truncated=True，時間預算截斷造成的真實
+    假下架風險，落差 48.96%~59.84%，added=8978/removed=0）與
+    2026-09-03→09-04（兩側皆 truncated=False，乾淨資料，落差穩定約 0.05%），
+    證明 tolerant_total_match 對前者判 GATE_FAIL、對後者判 NORMAL，
+    不是只在合成資料上正確。用真實 GROUP_SOURCES["agent_virtuals"] 設定
+    （非另建合成 gcfg），一併驗證正式設定值本身正確。"""
+    sandbox = new_sandbox("dd_gtol_real_mut" if is_mutant else "dd_gtol_real")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_tolerant_total_match(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["agent_virtuals"]["groups"]["_items"]
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/agent_virtuals")
+    need = ["2026-08-29.json.gz", "2026-08-30.json.gz", "2026-09-03.json.gz", "2026-09-04.json.gz"]
+    if not all(os.path.exists(os.path.join(src_dir, n)) for n in need):
+        return Result(False, "找不到真實 agent_virtuals 歷史快照，無法做 real-replay 驗證")
+    paths = {n: install_binary_copy(os.path.join(src_dir, n), sandbox, n) for n in need}
+
+    def _judge(name_old, name_new):
+        j_old, j_new = mod.load(paths[name_old]), mod.load(paths[name_new])
+        r = mod.compare_group("agent_virtuals", "_items", gcfg, j_old["data"], j_new["data"])
+        return mod.judge(r, gcfg), r
+
+    judged_bad, r_bad = _judge("2026-08-29.json.gz", "2026-08-30.json.gz")
+    judged_good, r_good = _judge("2026-09-03.json.gz", "2026-09-04.json.gz")
+    guard_active = (judged_bad == "GATE_FAIL" and judged_good == "NORMAL")
+    return Result(guard_active,
+                  "real-replay 08-29->08-30(兩側truncated=True，落差48.96%%~59.84%%)：judged=%s(期望GATE_FAIL)；"
+                  "09-03->09-04(兩側truncated=False，落差~0.05%%)：judged=%s(期望NORMAL，removed=%d)"
+                  % (judged_bad, judged_good, len(r_good["removed_keys"])))
+
+
+@check("detect_delistings.group_composite_key_casefold", mutate_target="detect_delistings",
+       mutate=mut_dd_group_composite_key_casefold)
+def chk_dd_group_composite_key_casefold(is_mutant):
+    """第三階段新增（docs/detect-phase3-report.md §2.2）：dedup() 新增
+    key_field 為 tuple 的複合鍵支援，crypto_project_liveness 用 (name, date)
+    複合鍵，字串成分正規化小寫。用真實案例的合成版本驗證：同一筆事件只有
+    name 大小寫被上游修正（"Saturn"->"SATURN"），date/其餘欄位不變，複合鍵
+    若不忽略大小寫會被誤判為「一筆消失＋一筆新增」——這正是零假消失驗收
+    要防的情境。同時驗證複合鍵集合差本身仍正確：真正新增的獨立事件（New）
+    不受影響，另一筆完全沒變的事件（Other）也不受影響。"""
+    sandbox = new_sandbox("dd_gckey_mut" if is_mutant else "dd_gckey")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_composite_key_casefold(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("hacks",), "shape": "list", "key_field": ("name", "date"), "desc_field": "name",
+            "completeness": "total_match", "total_fields": ("count",),
+            "status_fields": (), "breaker_pct": 50.0, "abs_floor": 1000}
+    day1 = [
+        {"name": "Saturn", "date": 1715040000},
+        {"name": "Other", "date": 1600000000},
+    ]
+    # 大小寫修正（同 date，同一筆事件）＋ Other 不變 ＋ New 是真正新增
+    day2 = [
+        {"name": "SATURN", "date": 1715040000},
+        {"name": "Other", "date": 1600000000},
+        {"name": "New", "date": 1700000000},
+    ]
+    data1 = {"hacks": day1, "count": len(day1)}
+    data2 = {"hacks": day2, "count": len(day2)}
+    r = mod.compare_group("selftest_liveness_src", "grp", gcfg, data1, data2)
+    judged = mod.judge(r, gcfg)
+    guard_active = (judged == "NORMAL" and len(r["removed_keys"]) == 0
+                    and len(r["added_keys"]) == 1)
+    return Result(guard_active,
+                  "Saturn->SATURN(同 date，純大小寫修正)＋Other不變＋New新增；"
+                  "removed=%d(期望0) added=%d(期望1，僅New) judged=%s(期望NORMAL；"
+                  "若未忽略大小寫，removed/added 應各多出 1 筆 Saturn/SATURN)"
+                  % (len(r["removed_keys"]), len(r["added_keys"]), judged))
+
+
+@check("detect_delistings.group_composite_key_casefold.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_group_composite_key_casefold)
+def chk_dd_group_composite_key_casefold_real_replay(is_mutant):
+    """real-replay：crypto_project_liveness 真實歷史快照（VPS 正式資料，
+    唯讀複製）2026-08-28→08-29 驗證：真實發生過的 Saturn->SATURN 大小寫修正
+    （date=1715040000 不變，見報告 §2.2 完整實測數字）用複合鍵比對後不會
+    出現在 removed_keys／added_keys，但同一天真正新增的 CCC（date=1787788800）
+    仍正確出現在 added_keys。用真實 GROUP_SOURCES["crypto_project_liveness"]
+    設定（非另建合成 gcfg）。"""
+    sandbox = new_sandbox("dd_gckey_real_mut" if is_mutant else "dd_gckey_real")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_composite_key_casefold(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["crypto_project_liveness"]["groups"]["_hacks"]
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/crypto_project_liveness")
+    need = ["2026-08-28.json.gz", "2026-08-29.json.gz"]
+    if not all(os.path.exists(os.path.join(src_dir, n)) for n in need):
+        return Result(False, "找不到真實 crypto_project_liveness 歷史快照，無法做 real-replay 驗證")
+    f_old = install_binary_copy(os.path.join(src_dir, need[0]), sandbox, "old.json.gz")
+    f_new = install_binary_copy(os.path.join(src_dir, need[1]), sandbox, "new.json.gz")
+    j_old, j_new = mod.load(f_old), mod.load(f_new)
+    r = mod.compare_group("crypto_project_liveness", "_hacks", gcfg, j_old["data"], j_new["data"])
+    judged = mod.judge(r, gcfg)
+    saturn_removed = any(isinstance(k, str) and k.split("\x1f")[0].lower() == "saturn"
+                          for k in r["removed_keys"])
+    saturn_added = any(isinstance(k, str) and k.split("\x1f")[0].lower() == "saturn"
+                        for k in r["added_keys"])
+    ccc_added = any(isinstance(k, str) and k.split("\x1f")[0].lower() == "ccc"
+                     for k in r["added_keys"])
+    guard_active = (judged == "NORMAL" and not saturn_removed and not saturn_added and ccc_added)
+    return Result(guard_active,
+                  "real-replay 08-28->08-29：judged=%s(期望NORMAL) removed含saturn=%r(期望False) "
+                  "added含saturn=%r(期望False) added含ccc=%r(期望True) removed=%d added=%d"
+                  % (judged, saturn_removed, saturn_added, ccc_added,
+                     len(r["removed_keys"]), len(r["added_keys"])))
+
+
+@check("detect_delistings.oracle_pyth_range_check_real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_group_integrity_gate)
+def chk_dd_oracle_pyth_range_check_real_replay(is_mutant):
+    """real-replay：oracle_feed_directory.pyth 真實歷史快照（VPS 正式資料，
+    唯讀複製，2026-09-04，1864 筆）驗證 completeness=range_check（既有
+    第二階段機制，本階段沿用不改）套用本階段校準的區間 [1658,2051] 時：
+    (a) 真實完整資料本身（1864 筆）在區間內，兩側相同也應判 NORMAL；
+    (b) 保留真實欄位形狀、只把清單截斷到前 1000 筆（低於下界 1658，模擬
+        部分擷取失敗）應被 GATE_FAIL 擋下。
+    真實 8 天資料本身從未真的跌出校準區間（本輪範圍即以此校準），純粹重放
+    無法測到「跌出區間」分支，因此用「真實 schema + 人為截斷筆數」的混合
+    方式驗證，而非另建完全合成資料，理由見 docs/detect-phase3-report.md §4.3。
+    沿用既有 mut_dd_group_integrity_gate（range_check 分支不是本階段新程式碼，
+    不需要另外設計新的破壞驗證）。"""
+    sandbox = new_sandbox("dd_oracle_real_mut" if is_mutant else "dd_oracle_real")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_integrity_gate(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["oracle_feed_directory"]["groups"]["pyth"]
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/oracle_feed_directory")
+    real_file = os.path.join(src_dir, "2026-09-04.json.gz")
+    if not os.path.exists(real_file):
+        return Result(False, "找不到真實 oracle_feed_directory 歷史快照，無法做 real-replay 驗證")
+    f_real = install_binary_copy(real_file, sandbox, "real.json.gz")
+    j_real = mod.load(f_real)
+    data_full = j_real["data"]
+    real_pyth = data_full.get("pyth") or []
+    lo = gcfg["range"][0]
+    data_truncated = {"pyth": real_pyth[:1000]}  # 1000 < 下界 1658，其餘欄位形狀完全真實
+
+    r_full = mod.compare_group("oracle_feed_directory", "pyth", gcfg, data_full, data_full)
+    judged_full = mod.judge(r_full, gcfg)
+    r_bad = mod.compare_group("oracle_feed_directory", "pyth", gcfg, data_full, data_truncated)
+    judged_bad = mod.judge(r_bad, gcfg)
+
+    guard_active = (judged_full == "NORMAL" and judged_bad == "GATE_FAIL")
+    return Result(guard_active,
+                  "真實 09-04 pyth n=%d（區間%r）自我比對 judged=%s(期望NORMAL)；"
+                  "截斷至前 1000 筆（<下界%d）judged=%s(期望GATE_FAIL)"
+                  % (len(real_pyth), gcfg["range"], judged_full, lo, judged_bad))
 
 
 # ==========================================================================
