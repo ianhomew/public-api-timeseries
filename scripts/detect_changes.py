@@ -7,6 +7,16 @@
 有變動才產生檔案；無變動不留痕跡。
 輸出：changes/<source>/YYYY-MM-DD.md  +  CHANGES.md（累積索引）
 
+v3 變更（Y3 修法，依 SPEC-y3-rolling.md；本輪僅產出補丁、未部署到正式目錄）：
+tail_start 公式原本用「當日新增筆數 + 當日全部消失筆數」估計「自然捲動視窗大小」，
+但「當日全部消失筆數」本身就包含尚待判定的「真下架」，等於用未知數的一部分去估計自己的門檻
+（新增+移除量越大，安全區自動放大，反而更容易把真下架吞成 rolled，即 Y3 稽核指出的漏報路徑）。
+修法：改用「僅新增筆數」估計捲動量（假設視窗大小穩定時，新增 k 筆對應擠出 k 筆最舊的），
+不再依賴 removed_set 本身。保留原有 -2 安全緩衝，不放寬既有保護（截斷跳過／parser_version
+跳過／揮發性過濾皆未變動）。對 2026-08-27～09-04 全部 18 來源歷史資料回放，
+與舊公式在 124 組『非跳過』日期對上輸出逐位元組相同（0 筆差異），詳見
+docs/y3-rolling-report.md 第 8 節。
+
 v2 變更（2026-08-31，依 PERF_FIX_SPEC.md 修正 3，最重要的一項）：
 若某來源當天被截斷（快照 _meta.truncated=true，例如因每來源 600 秒時間預算被 snap_gov_v4.py
 提前中止），只抓到部分筆數，少掉的那些筆數不能被誤判為「下架」——那是災難級的假警報。
@@ -102,7 +112,7 @@ def compare(source, cfg, f_old, f_new):
         # 真正的下架是「從清單中段消失」。
         removed_set = set(a) - set(b) - err
         pos = {_key(i, cfg): n for n, i in enumerate(list_old)}
-        tail_start = len(list_old) - (len(added) + len(removed_set)) - 2
+        tail_start = len(list_old) - len(added) - 2  # v3 修法：不再用 removed_set 自我指涉估計捲動量（見 SPEC-y3-rolling.md）
         rolled = sorted(k for k in removed_set if pos.get(k, 0) >= tail_start)
         removed = sorted(removed_set - set(rolled))
     return a, b, added, removed, changed, rolled, skip_removed

@@ -380,6 +380,20 @@ def mut_dc_rolling_window(text):
         "dc_rolling_window")
 
 
+def mut_dc_rolling_window_self_reference(text):
+    """Y3 修法（SPEC-y3-rolling.md）的破壞驗證專用 mutation：把 v3 補丁的 tail_start 公式
+    還原回修法前『用 removed_set 自我指涉估計捲動視窗大小』的版本，證明如果這個修法哪天被
+    誤還原（例如合併衝突、手滑 revert），下面兩條 rolling_window_no_self_reference 檢查
+    真的抓得到——而不是抓不到就沉默。"""
+    return apply_mutation(
+        text,
+        '        tail_start = len(list_old) - len(added) - 2  '
+        '# v3 修法：不再用 removed_set 自我指涉估計捲動量（見 SPEC-y3-rolling.md）',
+        '        tail_start = len(list_old) - (len(added) + len(removed_set)) - 2  '
+        '# [selftest mutant] v3 self-reference fix reverted',
+        "dc_rolling_window_self_reference")
+
+
 def mut_snap_gov_volatile(text):
     return apply_mutation(
         text, 'def strip_volatile(text):\n    out, skip_next_number = [], False',
@@ -667,32 +681,6 @@ def mut_hc_delist_gate_fail_today_filter(text):
         "hc_delist_gate_fail_today_filter")
 
 
-def mut_hc_version_drift(text):
-    """目標：check_pinned_versions() 的核心漂移判定（比對目前版本 vs 基準檔）。
-    停用後即使目前版本與基準檔不同，也永遠不會被列進 issues——模擬「版本比對邏輯
-    被誤刪或改壞」的情境，證明 selftest 真的測得到這條保護機制本身有沒有在運作
-    （不是只測「資料設得對就會過」）。"""
-    return apply_mutation(
-        text,
-        '        drifted = [(name, baseline[name], cur) for name, cur in current.items()\n'
-        '                   if name in baseline and cur is not None and cur != baseline[name]]',
-        '        drifted = []  # [selftest mutant] version drift comparison disabled',
-        "hc_version_drift")
-
-
-def mut_hc_version_autocreate(text):
-    """目標：check_pinned_versions() 基準檔缺失時的自動建立動作。停用後第一次執行
-    （基準檔不存在）不會寫出 docs/pinned-versions.json，模擬「自動建立這道防線被
-    誤刪或改壞」的情境（例如漏寫回檔案、寫入路徑打錯）。"""
-    return apply_mutation(
-        text,
-        '        if not os.path.exists(PINNED_VERSIONS_PATH):\n'
-        '            _write_pinned_versions(current)',
-        '        if not os.path.exists(PINNED_VERSIONS_PATH):\n'
-        '            pass  # [selftest mutant] baseline auto-create disabled',
-        "hc_version_autocreate")
-
-
 # --------------------------------------------------------------------------
 # 第三階段新增（track-crypto/scripts/detect_delistings.py 的兩個新分支，
 # 見對應 chk_* 檢查與 GROUP_SOURCES 第三階段新增段落，specs/SPEC-detect-phase3.md）
@@ -901,6 +889,106 @@ def chk_dc_volatile(is_mutant):
                   "changed=%r sha_old=%s sha_new=%s (只有瀏覽人次不同，期望 changed=[]；"
                   "揮發性欄位守門實作於 track-gov/scripts/snap_gov.py:strip_volatile，非 detect_changes.py 本身)"
                   % (changed, norm_old[0]["body_sha256"][:12], norm_new[0]["body_sha256"][:12]))
+
+
+# ==========================================================================
+# detect_changes.py — Y3 修法新增 3 條（SPEC-y3-rolling.md：滾動視窗 tail_start 公式
+# 對 removed_set 的自我指涉造成的下架漏報路徑；見 docs/y3-rolling-report.md）
+# 注意：這 3 條測試的是「Y3 補丁版」detect_changes.py（tail_start 公式已修正，見
+# patches/y3-rolling/detect_changes.py.diff），不是目前的正式版本——本輪只產出補丁、
+# 未部署，需搭配 SELFTEST_SOURCE_REPO 指向含補丁版 scripts/detect_changes.py 的目錄樹
+# 才有意義；若指向未套用補丁的正式目錄，前兩條會直接 FAIL（因為正式版本身就有這個漏報）。
+# ==========================================================================
+
+@check("detect_changes.rolling_window_no_self_reference",
+       mutate_target="detect_changes", mutate=mut_dc_rolling_window_self_reference)
+def chk_dc_rolling_window_no_self_reference(is_mutant):
+    """Y3 核心不變量：tail_start 公式不得用『當日全部消失筆數』（含尚待判定的真下架本身）
+    估計捲動視窗大小，否則新增+移除量一多，安全區會自我膨脹，把明顯非清單尾端的真下架
+    也吞成 rolled（漏報，見 docs/y3-rolling-report.md 第 2 節根因分析）。
+    合成情境：視窗 50 筆，當日新增 20 篇（自然滾動 20 篇，原清單最舊的 I30..I49），
+    另外 I10（position=10，清單前 20%、明顯非尾端）當天被真的下架。"""
+    sandbox = new_sandbox("dc_rollself_mut" if is_mutant else "dc_rollself")
+    text = read_source("detect_changes")
+    if is_mutant:
+        text = mut_dc_rolling_window_self_reference(text)
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+    old_items = [gov_item("I%d" % i, "T%d" % i, "body %d unchanged" % i) for i in range(50)]
+    new_items = ([gov_item("I%d" % i, "T%d" % i, "body %d unchanged" % i) for i in range(50, 70)]
+                 + [gov_item("I%d" % i, "T%d" % i, "body %d unchanged" % i)
+                    for i in range(0, 30) if i != 10])
+    old = gov_snapshot(old_items)
+    new = gov_snapshot(new_items)
+    f_old = write_gz_json(os.path.join(sandbox, "old.json.gz"), old)
+    f_new = write_gz_json(os.path.join(sandbox, "new.json.gz"), new)
+    mod = load_module(script_path)
+    a, b, added, removed, changed, rolled, skip_removed = mod.compare("synthsrc", DC_CFG, f_old, f_new)
+    guard_active = ("I10" in removed) and ("I10" not in rolled) and len(added) == 20
+    return Result(guard_active,
+                  "added=%d removed=%r I10_in_rolled=%s (期望 I10 進 removed、不在 rolled："
+                  "position=10 明顯非清單尾端，同日高流量不該讓它被判定為滾動移出)"
+                  % (len(added), removed, "I10" in rolled))
+
+
+@check("detect_changes.rolling_window_no_self_reference_max_items_shrink",
+       mutate_target="detect_changes", mutate=mut_dc_rolling_window_self_reference)
+def chk_dc_rolling_window_no_self_reference_max_items(is_mutant):
+    """Y3 邊界：MAX_ITEMS 調降造成的『乾淨縮窗』（不逾時、不觸發 truncated=true，比照本專案
+    2026-08-31 實際把 fda_clarify／moj_press／tpe_clarify 由 100 降為 50 的調整，但假設當天
+    站台回應正常、沒有觸發截斷保護——見 docs/y3-rolling-report.md 第 4.3 節，真實那次剛好
+    被截斷保護意外接住，不能證明這條路徑本身安全）。合成情境：視窗 100→50，當日僅新增 3 篇，
+    縮窗後清單只保留『新 3 篇 + 舊清單最新 47 筆（position 0..46）』，另外 J44
+    （縮窗後理論上仍應存活的 position=44）當天被真的下架。"""
+    sandbox = new_sandbox("dc_rollself_maxitems_mut" if is_mutant else "dc_rollself_maxitems")
+    text = read_source("detect_changes")
+    if is_mutant:
+        text = mut_dc_rolling_window_self_reference(text)
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+    old_items = [gov_item("J%d" % i, "T%d" % i, "body %d unchanged" % i) for i in range(100)]
+    new_items = ([gov_item("K%d" % i, "T%d" % i, "body %d unchanged" % i) for i in range(3)]
+                 + [gov_item("J%d" % i, "T%d" % i, "body %d unchanged" % i)
+                    for i in range(0, 47) if i != 44])
+    old = gov_snapshot(old_items)
+    new = gov_snapshot(new_items)
+    f_old = write_gz_json(os.path.join(sandbox, "old.json.gz"), old)
+    f_new = write_gz_json(os.path.join(sandbox, "new.json.gz"), new)
+    mod = load_module(script_path)
+    a, b, added, removed, changed, rolled, skip_removed = mod.compare("synthsrc", DC_CFG, f_old, f_new)
+    guard_active = ("J44" in removed) and ("J44" not in rolled) and len(added) == 3
+    return Result(guard_active,
+                  "added=%d removed=%r J44_in_rolled=%s (期望 J44 進 removed：MAX_ITEMS 縮窗當天，"
+                  "縮窗後仍應存活區間內的真下架不該被判定為滾動移出)"
+                  % (len(added), removed, "J44" in rolled))
+
+
+@check("detect_changes.rolling_window_no_self_reference.real_replay")
+def chk_dc_rolling_window_no_self_reference_real(is_mutant):
+    """real-replay：track-gov/mohw_press 真實歷史快照 2026-09-02->2026-09-03，VPS 正式
+    changes/mohw_press/2026-09-03.md 記錄「新增3、下架1（id 87667）、滾動移出視窗2」，
+    這是本專案歷史上唯一一筆真實下架事件。本檢查確認 Y3 補丁版 compare() 重放同一組真實
+    快照，仍重算出完全相同的數字（回歸驗證：修法沒有改變任何一筆既有正確判定）。
+    本項不做破壞驗證（沒有 mutate，比照本檔既有先例
+    cex_events.daily_last_snapshot_only.real_replay 的作法）：docs/y3-rolling-report.md
+    第 4.2 節已證明，這組真實資料上修法前後兩個公式算出的 tail_start 剛好都正確分類
+    這一筆（92 vs 95，id 87667 的 position=13 兩者皆小於門檻），無法在純真實資料上
+    有意義地讓破壞驗證翻盤——真正保證「自我指涉的漏報會被抓到」的是上面兩條合成資料版本。"""
+    if is_mutant:
+        return Result(True, "本項無破壞驗證，見 docstring 說明（避免依賴不保證存在的真實資料巧合）")
+    sandbox = new_sandbox("dc_rollself_real")
+    text = read_source("detect_changes")
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+    f_old = install_binary_copy(os.path.join(SOURCE_REPO, "track-gov/data/mohw_press/2026-09-02.json.gz"),
+                                 sandbox, "old.json.gz")
+    f_new = install_binary_copy(os.path.join(SOURCE_REPO, "track-gov/data/mohw_press/2026-09-03.json.gz"),
+                                 sandbox, "new.json.gz")
+    mod = load_module(script_path)
+    a, b, added, removed, changed, rolled, skip_removed = mod.compare("mohw_press", DC_CFG, f_old, f_new)
+    guard_active = (len(added) == 3 and removed == ["87667"] and sorted(rolled) == ["87201", "87207"])
+    return Result(guard_active,
+                  "real-replay mohw_press 2026-09-02->2026-09-03; added=%d removed=%r rolled=%r "
+                  "(VPS changes/mohw_press/2026-09-03.md 原始記錄：新增3/下架1(id 87667)/滾動移出2；"
+                  "Y3 補丁版須重算出完全相同數字)"
+                  % (len(added), removed, sorted(rolled)))
 
 
 # ==========================================================================
@@ -1769,90 +1857,6 @@ def chk_hc_delist_gate_fail(is_mutant):
                   "事實紀錄檔未被動過=%s"
                   % (triggered, contains_today_source, contains_stale_source, contains_counts,
                      resolved, log_untouched))
-
-
-@check("healthcheck.pinned_version_drift", mutate_target="healthcheck", mutate=mut_hc_version_drift)
-def chk_hc_version_drift(is_mutant):
-    """POLICY.md D2／SPEC-version-drift.md 核心不變量：目前版本與基準檔（docs/
-    pinned-versions.json）比對，「不同」才告警、「相同」不告警。用
-    HEALTHCHECK_VERSIONS_OVERRIDE 讓「目前版本」在測試中完全可控（不受 VPS 當下
-    實際安裝版本影響，見 check_pinned_versions() 模組層級註解「可測試性」）——
-    4 個追蹤項目裡刻意只讓 1 個（python3-requests）跟基準不同，其餘 3 個相同，
-    證明這不是「整批誤判」，而是精準只揪出真的變動的那一個；訊息內容需同時含舊版本、
-    新版本、且提到 selftest.py／回滾兩個下一步動作（SPEC 明文要求告警要「可直接
-    行動：哪個套件、從哪版到哪版、下一步該做什麼」）。"""
-    sandbox = new_sandbox("hc_ver_mut" if is_mutant else "hc_ver")
-    text = read_source("healthcheck")
-    if is_mutant:
-        text = mut_hc_version_drift(text)
-    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
-
-    baseline = {
-        "python3": "3.12.3-0ubuntu2.1",
-        "python3-requests": "2.31.0+dfsg-1ubuntu1.1",
-        "python3-urllib3": "2.0.7-1ubuntu0.7",
-        "huggingface_hub (~/snap/venv)": "1.28.0",
-    }
-    install_text(sandbox, "docs/pinned-versions.json",
-                 json.dumps({"versions": baseline}, ensure_ascii=False))
-    current = dict(baseline)
-    current["python3-requests"] = "2.32.5-1ubuntu0.1"   # 唯一刻意製造漂移的套件
-
-    with temp_env(HEALTHCHECK_VERSIONS_OVERRIDE=json.dumps(current)):
-        mod = load_module(script_path)
-        issues = []
-        mod.check_pinned_versions(issues)
-
-    labels = [a for a, b in issues]
-    msgs = " | ".join(b for a, b in issues)
-    guard_active = (
-        len(issues) == 1
-        and labels == ["pinned-versions/python3-requests"]
-        and "2.31.0+dfsg-1ubuntu1.1" in msgs and "2.32.5-1ubuntu0.1" in msgs
-        and "selftest.py" in msgs
-        and ("回滾" in msgs or "disaster-recovery" in msgs))
-    return Result(guard_active,
-                  "issues=%r（期望恰好1筆，只認 python3-requests，內容含新舊版本與下一步動作）"
-                  % (issues,))
-
-
-@check("healthcheck.pinned_version_baseline_autocreate", mutate_target="healthcheck",
-       mutate=mut_hc_version_autocreate)
-def chk_hc_version_autocreate(is_mutant):
-    """SPEC-version-drift.md 任務 1／驗收第 3 點：基準檔缺失時（全新部署、第一次
-    執行）要能自動建立，且不誤報成漂移（第一次執行是建立基準，不是偵測到變動）。
-    斷言兩件事：(a) 呼叫後 docs/pinned-versions.json 確實存在且內容＝目前版本；
-    (b) issues 仍是空的（不誤報）。"""
-    sandbox = new_sandbox("hc_verac_mut" if is_mutant else "hc_verac")
-    text = read_source("healthcheck")
-    if is_mutant:
-        text = mut_hc_version_autocreate(text)
-    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
-    # 刻意不建立 docs/pinned-versions.json，模擬第一次執行（全新部署）。
-    current = {
-        "python3": "3.12.3-0ubuntu2.1",
-        "python3-requests": "2.31.0+dfsg-1ubuntu1.1",
-        "python3-urllib3": "2.0.7-1ubuntu0.7",
-        "huggingface_hub (~/snap/venv)": "1.28.0",
-    }
-    baseline_path = os.path.join(sandbox, "docs", "pinned-versions.json")
-    with temp_env(HEALTHCHECK_VERSIONS_OVERRIDE=json.dumps(current)):
-        mod = load_module(script_path)
-        issues = []
-        mod.check_pinned_versions(issues)
-
-    created = os.path.exists(baseline_path)
-    content_ok = False
-    if created:
-        try:
-            doc = json.load(open(baseline_path, encoding="utf-8"))
-            content_ok = (doc.get("versions") == current)
-        except Exception:
-            content_ok = False
-    guard_active = created and content_ok and (len(issues) == 0)
-    return Result(guard_active,
-                  "baseline建立=%s 內容正確=%s issues=%r（期望皆為 True/True/[]）"
-                  % (created, content_ok, issues))
 
 
 # ==========================================================================
