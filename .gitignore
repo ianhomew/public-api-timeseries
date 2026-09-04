@@ -14,3 +14,6 @@ track-crypto/data/vast_gpu/*.json.gz
 # _manifest 保留：體積小，可證明每日排程確實執行
 __pycache__/
 *.pyc
+
+# 舊版程式備份不進 repo（已移到 ~/snap/backups/repo-bak/，git 歷史仍可追溯）
+*.bak
