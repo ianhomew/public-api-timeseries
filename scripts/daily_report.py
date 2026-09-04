@@ -890,7 +890,7 @@ def build_cumulative_stats():
 
 
 def build_alert_section():
-    alert_files = ["ALERT.md", "ALERT-DETECT.md", "ALERT-HEALTH.md", "ALERT-DELIST.md", "ALERT-BACKUP.md"]
+    alert_files = ["ALERT.md", "ALERT-DETECT.md", "ALERT-HEALTH.md", "ALERT-DELIST.md", "ALERT-BACKUP.md", "ALERT-CEXGATE.md"]
     lines = []
     any_alert = False
     for fn in alert_files:

@@ -438,6 +438,96 @@ def check_disk(issues):
         issues.append(("disk", "根分割區使用率 %.1f%%，已達提醒門檻（%d%%）%s"
                                 % (pct, DISK_WARN_PCT, growth_desc)))
 
+# --- CEX 完整性守門告警（SPEC-gate-alert.md，2026-09-04 新增）---
+# 背景：cex_events.py（commit e6668b8，2026-09-01）新增交易所級完整性守門，觸發時寫
+# track-crypto/data/cex_events/gate_skips.jsonl，但原本沒有接任何告警——守門觸發時沒人
+# 會知道（docs/cex-events-audit.md §7.3 第 4 點自己指出的缺口）。
+#
+# 為什麼不能併入 ALERT.md 的 issues 清單（見 main() 呼叫處），也不比照 ALERT-DELIST.md
+# 用「只追加、永久保留」的語意：
+#   1. 「不可寫進 ALERT.md」是 SPEC 硬性限制：healthcheck.py 對 ALERT.md 是整檔覆寫
+#      （issues 為空時 os.remove(OUT)，非空時 open(OUT,"w") 整段重寫，見 main()），
+#      若由本函式以外的地方（例如 cex_events.py 自己）直接寫 ALERT.md，下一輪
+#      healthcheck.py 執行時一定會把內容洗掉（已實證，見 docs/gate-alert-and-reaudit.md）。
+#   2. gate_skips.jsonl 是「只追加」的事實日誌，且 cex_events.py 每次執行都會對**完整
+#      歷史**的所有相鄰快照配對重新掃過一次（不是只算最新一天）——同一個歷史上的失敗，
+#      只要那組快照配對還在，往後每天都會被重新附加一次幾乎相同的紀錄。這點與
+#      ALERT-DELIST.md 刻意設計成「永久觸發紀錄」不同：那裡的「一旦判定熔斷就是既成事實」
+#      語意，套在這裡會讓本告警一旦觸發過一次就永遠回不去「無異常」狀態，違反
+#      SPEC-gate-alert.md「要能自動消失、不留永久殘留」的硬性要求。
+# 做法：只看「最新一次轉換」（gate_skips.jsonl 裡 date 欄位等於 TODAY 的紀錄）有沒有
+# 觸發，比照 check_truncation_streak() 只認 dates[-1]==TODAY 那天的精神——每天的
+# TODAY 都不同，昨天以前的舊紀錄（不論 gate_skips.jsonl 裡實際存了幾份重複）一律不看，
+# 該交易所下一次轉換恢復正常（不再產生 date==TODAY 的紀錄）時，本檔自動被刪除。
+GATE_ALERT_OUT = os.path.join(REPO, "ALERT-CEXGATE.md")
+
+def check_cex_gate_skips():
+    """讀 track-crypto/data/cex_events/gate_skips.jsonl，只取 date==TODAY 的紀錄
+    判斷「這次轉換」是否觸發守門；寫入／刪除獨立檔案 ALERT-CEXGATE.md（不進 ALERT.md
+    的 issues 清單，理由見上方模組層級註解）。"""
+    p = os.path.join(REPO, "track-crypto", "data", "cex_events", "gate_skips.jsonl")
+    today_skips = []
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    g = json.loads(line)
+                except Exception:
+                    continue
+                if g.get("date") == TODAY:
+                    today_skips.append(g)
+
+    # gate_skips.jsonl 本身沒有去重機制（cex_events.py 對 events.jsonl 有 seen 去重，
+    # 對 gate_skips.jsonl 沒有，見 docs/gate-alert-and-reaudit.md）；同一天內若
+    # push.sh 被手動重跑，同一組合可能被寫入超過一次。這裡只影響顯示筆數，
+    # 用 (exchange, from_date, date) 當鍵去重，內容相同時取最後一筆即可。
+    dedup = {}
+    for g in today_skips:
+        key = (g.get("exchange"), g.get("from_date"), g.get("date"))
+        dedup[key] = g
+    today_skips = sorted(dedup.values(), key=lambda g: (g.get("exchange") or "",))
+
+    print("CEX_GATE_SKIPS 今日（%s）觸發交易所數 = %d" % (TODAY, len(today_skips)))
+
+    if not today_skips:
+        if os.path.exists(GATE_ALERT_OUT):
+            os.remove(GATE_ALERT_OUT)
+        return
+
+    lines = [
+        "# 🔴 cex_events 完整性守門觸發",
+        "",
+        f"檢查時間（UTC）：{NOW_UTC.isoformat(timespec='seconds')}",
+        f"檢查時間（台北）：{NOW_TAIPEI.isoformat(timespec='seconds')}",
+        f"對應轉換目標日（UTC，cex_symbols 最新快照日）：{TODAY}",
+        "",
+        "| 交易所 | 比對區間 | 原因 |",
+        "|---|---|---|",
+    ] + [
+        "| `%s` | `%s` → `%s` | %s |" % (g.get("exchange"), g.get("from_date"), g.get("date"), g.get("reason"))
+        for g in today_skips
+    ] + [
+        "",
+        ("以上交易所本次轉換的上／下架事件判定**已跳過**（不寫 LISTED／DELISTED／"
+         "STATUS_CHANGED），原始快照本身仍照常保存，只是這組交易所這次不參與比對。"
+         "設計見 `docs/cex-events-audit.md` §4.2。"),
+        "",
+        ("排查建議：檢查對應交易所端點是否變更或暫時性故障"
+         "（`track-crypto/adapters/cex_symbols.py` 的 `ENDPOINTS`／`track-crypto/logs/`），"
+         "確認後可手動重跑 `python3 scripts/cex_events.py` 補算。"),
+        "",
+        ("本檔由 `scripts/healthcheck.py`（`check_cex_gate_skips()`）自動產生，只反映"
+         "**最新一次轉換**的守門狀態；異常排除後（該交易所下一次轉換不再觸發）會自動刪除，"
+         "不留永久殘留。完整歷史紀錄（含已排除的舊紀錄）見 "
+         "`track-crypto/data/cex_events/gate_skips.jsonl`。"),
+    ]
+    open(GATE_ALERT_OUT, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    print("ALERT-CEXGATE %s %d 個交易所觸發完整性守門" % (TODAY, len(today_skips)))
+
+
 def main():
     issues = []
     pending = []
@@ -453,6 +543,9 @@ def main():
         print(f"--- {len(pending)} 項尚在排程寬限期內（非異常） ---")
         for a, b in pending:
             print(f"PENDING {a}: {b}")
+
+    # 獨立告警檔（不進 issues／ALERT.md，見 check_cex_gate_skips() 模組層級註解）
+    check_cex_gate_skips()
 
     if not issues:
         if os.path.exists(OUT):
