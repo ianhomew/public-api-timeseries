@@ -90,7 +90,8 @@ fi
 #     失敗不中斷提交流程（異地備援不是當天能否 push 的必要條件），
 #     但**必須留下告警**：本專案原則是「任何失敗但只記 WARN 的地方都要補告警」。
 if [ -n "${HF_TOKEN:-}" ]; then
-  if python3 "$R/scripts/hf_sync.py" >> logs/hf_sync.log 2>&1; then
+  # hf_sync 需要 huggingface_hub，只裝在 ~/snap/venv，不能用系統 python3（2026-09-04 實測踩過）
+  if "$HOME/snap/venv/bin/python3" "$R/scripts/hf_sync.py" >> logs/hf_sync.log 2>&1; then
     rm -f ALERT-BACKUP.md
   else
     echo "$(date -Is) [WARN] hf_sync 失敗" >> logs/hf_sync.log
