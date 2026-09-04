@@ -6,3 +6,9 @@
 {"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "USTABLESUSD", "event": "LISTED", "from": null, "to": "USTABLES/USD"}
 {"date": "2026-09-02", "source": "cex_symbols_ext", "group": "kraken", "key": "XU3O8EUR", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
 {"date": "2026-09-03", "source": "cex_symbols_ext", "group": "kraken", "key": "USTABLESUSD", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
+{"date": "2026-09-04", "source": "cex_symbols_ext", "group": "kraken", "key": "ETHSOFID", "event": "LISTED", "from": null, "to": "ETH/SOFID"}
+{"date": "2026-09-04", "source": "cex_symbols_ext", "group": "kraken", "key": "SOFIDUSD", "event": "LISTED", "from": null, "to": "SOFID/USD"}
+{"date": "2026-09-04", "source": "cex_symbols_ext", "group": "kraken", "key": "SOFIDUSDC", "event": "LISTED", "from": null, "to": "SOFID/USDC"}
+{"date": "2026-09-04", "source": "cex_symbols_ext", "group": "kraken", "key": "SOFIDUSDT", "event": "LISTED", "from": null, "to": "SOFID/USDT"}
+{"date": "2026-09-04", "source": "cex_symbols_ext", "group": "kraken", "key": "SOLSOFID", "event": "LISTED", "from": null, "to": "SOL/SOFID"}
+{"date": "2026-09-04", "source": "cex_symbols_ext", "group": "kraken", "key": "XBTSOFID", "event": "LISTED", "from": null, "to": "XBT/SOFID"}

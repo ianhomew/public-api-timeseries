@@ -10,3 +10,13 @@
 {"date": "2026-09-01", "source": "cex_earn_apr", "group": "bybit", "key": "1226", "event": "LISTED", "from": null, "to": "H"}
 {"date": "2026-09-03", "source": "cex_earn_apr", "group": "bybit", "key": "262", "event": "STATUS_CHANGED", "from": {"status": "Available"}, "to": {"status": "NotAvailable"}}
 {"date": "2026-09-03", "source": "cex_earn_apr", "group": "bybit", "key": "661", "event": "STATUS_CHANGED", "from": {"status": "Available"}, "to": {"status": "NotAvailable"}}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1227", "event": "LISTED", "from": null, "to": "JST"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1228", "event": "LISTED", "from": null, "to": "OPG"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1229", "event": "LISTED", "from": null, "to": "PROVE"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1230", "event": "LISTED", "from": null, "to": "RECALL"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1231", "event": "LISTED", "from": null, "to": "RPL"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1232", "event": "LISTED", "from": null, "to": "SAFE"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1233", "event": "LISTED", "from": null, "to": "SKR"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1234", "event": "LISTED", "from": null, "to": "SLX"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1235", "event": "LISTED", "from": null, "to": "SONIC"}
+{"date": "2026-09-04", "source": "cex_earn_apr", "group": "bybit", "key": "1236", "event": "LISTED", "from": null, "to": "VELO"}

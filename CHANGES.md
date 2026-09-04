@@ -4,6 +4,14 @@
 
 | 日期 | 來源 | 改寫 | 下架 | 新增 | 紀錄 |
 |---|---|---|---|---|---|
+| 2026-09-04 | `track-crypto/x402_bazaar` | — | 298 | 1200（含 8 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/openrouter_providers` | — | 0 | 1 | [紀錄](changes/openrouter_providers/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/openrouter_models` | — | 1；狀態變化 3 | 2 | [紀錄](changes/openrouter_models/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/ofac_sanctions_crypto` | — | 1 | 6 | [紀錄](changes/ofac_sanctions_crypto/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/cex_symbols_ext` | — | 0 | 6 | [紀錄](changes/cex_symbols_ext/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/cex_earn_apr` | — | 0 | 10 | [紀錄](changes/cex_earn_apr/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/cex_currency_status` | — | 0；狀態變化 8 | 10 | [紀錄](changes/cex_currency_status/2026-09-04.md) |
+| 2026-09-04 | `moea_press` | **2** | 0 | 1 | [紀錄](changes/moea_press/2026-09-04.md) |
 | 2026-09-03 | `track-crypto/x402_bazaar` | — | 173 | 542（含 55 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/openrouter_models` | — | 0；狀態變化 1 | 6 | [紀錄](changes/openrouter_models/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/cex_symbols_ext` | — | 0；狀態變化 1 | 0 | [紀錄](changes/cex_symbols_ext/2026-09-03.md) |

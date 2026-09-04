@@ -63,3 +63,9 @@
 {"date": "2026-09-03", "source": "openrouter_models", "group": "_models", "key": "meta/muse-spark-1.3-contributor", "event": "LISTED", "from": null, "to": "Meta: Muse Spark 1.3 Contributor"}
 {"date": "2026-09-03", "source": "openrouter_models", "group": "_models", "key": "~z-ai/glm-flash-latest", "event": "LISTED", "from": null, "to": "Z.ai: GLM Flash Latest"}
 {"date": "2026-09-03", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.5v", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2026-12-31"}}
+{"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "nvidia/nemotron-3-ultra-550b-a55b:batch", "event": "DELISTED", "from": "NVIDIA: Nemotron 3 Ultra (batch)", "to": null}
+{"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "inclusionai/ling-3.0-flash-fin", "event": "LISTED", "from": null, "to": "Ling 3.0 Flash Fin"}
+{"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "nvidia/nemotron-3.5-content-safety", "event": "LISTED", "from": null, "to": "NVIDIA: Nemotron 3.5 Content Safety"}
+{"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.7-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2026-09-10"}}
+{"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}
+{"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "~z-ai/glm-flash-latest", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}
