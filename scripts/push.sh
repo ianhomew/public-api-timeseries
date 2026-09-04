@@ -86,6 +86,20 @@ if ! python3 "$R/scripts/daily_report.py" >> logs/daily_report.log 2>&1; then
   printf '# 每日巡檢報告產生失敗\n\n產生時間（UTC）：%s\n\n請執行 python3 scripts/daily_report.py 查看錯誤。\n' "$(date -u -Is)" > REPORT.md
 fi
 
+# 4d) Hugging Face 私有備份同步（軌一 4 個大型來源異地備份，增量、冪等）
+#     失敗不中斷提交流程（異地備援不是當天能否 push 的必要條件），
+#     但**必須留下告警**：本專案原則是「任何失敗但只記 WARN 的地方都要補告警」。
+if [ -n "${HF_TOKEN:-}" ]; then
+  if python3 "$R/scripts/hf_sync.py" >> logs/hf_sync.log 2>&1; then
+    rm -f ALERT-BACKUP.md
+  else
+    echo "$(date -Is) [WARN] hf_sync 失敗" >> logs/hf_sync.log
+    printf '# 異地備份未更新\n\n時間（UTC）：%s\n\n`scripts/hf_sync.py` 執行失敗，Hugging Face 私有備份本日未同步。\n排查：`logs/hf_sync.log`。\n本檔在下次同步成功後自動刪除。\n' "$(date -u -Is)" > ALERT-BACKUP.md
+  fi
+else
+  echo "$(date -Is) [SKIP] HF_TOKEN 未設定，略過 hf_sync" >> logs/hf_sync.log
+fi
+
 # 4) 提交
 git add -A
 if git diff --cached --quiet; then
@@ -120,7 +134,7 @@ fi
 
 # 資料抓取本身有異常時（healthcheck.py 產生了 ALERT.md），
 # 即使 push 成功也回報失敗，讓使用者收到通知，不必自己去 GitHub 看。
-if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ] || [ -f ALERT-DELIST.md ]; then
+if [ -f ALERT.md ] || [ -f ALERT-DETECT.md ] || [ -f ALERT-HEALTH.md ] || [ -f ALERT-DELIST.md ] || [ -f ALERT-BACKUP.md ]; then
   echo "$(date -Is) ALERT.md 存在 → 回報 fail"
   hc_ping /fail
 else
