@@ -394,6 +394,57 @@ def mut_dc_rolling_window_self_reference(text):
         "dc_rolling_window_self_reference")
 
 
+
+def mut_dc_window_guard_disabled(text):
+    """Window Guard（SPEC-window-guard.md）破壞驗證：關掉「視窗顯著變化 -> 跳過下架」這個
+    分支本身，讓 compare_guarded() 在視窗顯著變化時仍然直接沿用 compare() 的原始（未受
+    保護）判定結果，證明如果這個分支哪天被誤刪，下面的 window_guard_shrink 系列檢查
+    真的抓得到——而不是抓不到就沉默。"""
+    return apply_mutation(
+        text,
+        "    if window_changed_significantly(n_old, n_new):",
+        "    if False:  # [selftest mutant] window-guard branch disabled",
+        "dc_window_guard_disabled")
+
+
+def mut_dc_window_guard_stuck(text):
+    """Window Guard 破壞驗證：讓 window_changed_significantly() 恆真，模擬「視窗保護一旦
+    觸發就再也不會自動恢復」的迴歸（例如誤把門檻判斷寫死成恆真），證明
+    window_guard_recovers_next_day 檢查真的有在驗證『視窗穩定後下一日自動恢復』這件事，
+    不是恆真檢查。"""
+    return apply_mutation(
+        text,
+        "    return rel >= WINDOW_CHANGE_REL_THRESHOLD and abs_diff >= WINDOW_CHANGE_ABS_FLOOR",
+        "    return True  # [selftest mutant] window guard stuck permanently on",
+        "dc_window_guard_stuck")
+
+
+def mut_dc_window_guard_and_to_or(text):
+    """Window Guard 破壞驗證：把雙門檻（相對 20% 且絕對 5 筆）的 and 改成 or，模擬「絕對
+    筆數下限保護被誤刪／誤改」的迴歸——小視窗來源會被 1~2 筆自然雜訊（相對變化可能輕易
+    ≥20%）誤觸發跳過。證明 window_guard_threshold 檢查真的有在驗證雙門檻缺一不可，
+    不是只驗證相對門檻。"""
+    return apply_mutation(
+        text,
+        "    return rel >= WINDOW_CHANGE_REL_THRESHOLD and abs_diff >= WINDOW_CHANGE_ABS_FLOOR",
+        "    return rel >= WINDOW_CHANGE_REL_THRESHOLD or abs_diff >= WINDOW_CHANGE_ABS_FLOOR"
+        "  # [selftest mutant] AND weakened to OR",
+        "dc_window_guard_and_to_or")
+
+
+def mut_dc_window_guard_missing_data_skips(text):
+    """Window Guard 破壞驗證：manifest 讀不到 n 時改成觸發跳過（而非既有設計的保守
+    「不跳過」），模擬「找不到輔助欄位時反而擴大保護範圍」的迴歸——這會讓任何 manifest
+    讀取失敗（不是本保護原本要處理的情境）都意外吞掉下架判定。證明
+    window_guard_missing_manifest_no_skip 檢查真的有在驗證這條保守預設。"""
+    return apply_mutation(
+        text,
+        "    if n_old is None or n_new is None or n_old <= 0:\n        return False",
+        "    if n_old is None or n_new is None or n_old <= 0:\n"
+        "        return True  # [selftest mutant] missing data now wrongly triggers skip",
+        "dc_window_guard_missing_data_skips")
+
+
 def mut_snap_gov_volatile(text):
     return apply_mutation(
         text, 'def strip_volatile(text):\n    out, skip_next_number = [], False',
@@ -631,6 +682,19 @@ def mut_dr_notice_block(text):
         'sections.append(render_notice_section([]))  '
         '# [selftest mutant] notice info block silently emptied',
         "dr_notice_block")
+
+
+def mut_dr_window_guard_block(text):
+    """SPEC-window-guard.md：模擬『## 變動偵測區塊的視窗變動彙總提示被誤刪』的迴歸——
+    window_changed_keys 永遠是空清單，即使 detect.log 裡明明有「視窗變動，不判定」的
+    來源。用來證明 daily_report.window_guard_surfaced_in_change_detection_section
+    真的有在檢查『視窗變動跳過有沒有被接到 REPORT.md』，不是恆真檢查。"""
+    return apply_mutation(
+        text,
+        'window_changed_keys = [r["來源"] for r in rows if r.get("視窗變動")]',
+        'window_changed_keys = []  '
+        '# [selftest mutant] window-change summary line silently emptied',
+        "dr_window_guard_block")
 
 
 # --------------------------------------------------------------------------
@@ -992,6 +1056,336 @@ def chk_dc_rolling_window_no_self_reference_real(is_mutant):
 
 
 # ==========================================================================
+# ==========================================================================
+# detect_changes.py — Window Guard 新增 7 條（SPEC-window-guard.md：補完 Y3 修法
+# docs/y3-rolling-report.md 第 8.3 節誠實揭露的已知缺口——視窗大小刻意變更
+# （例如 MAX_ITEMS 調整）且未同時觸發截斷保護時，v3 公式會把因視窗變小而自然消失的
+# 項目誤判為下架。見 scripts/detect_changes.py 的 compare_guarded()／
+# window_changed_significantly()／window_size_of()。
+# ==========================================================================
+
+def _copy_real_manifest_entry(sandbox, date, source):
+    """把 SOURCE_REPO 當日 track-gov manifest 裡指定來源的紀錄，原樣複製進 sandbox
+    （只複製這一個來源的 dict，不動其餘來源，供 window_size_of() 在 sandbox 內讀到
+    真實歷史的 n）。同一 sandbox、同一天若已有其他來源寫入過，合併而不覆蓋。"""
+    real_path = os.path.join(SOURCE_REPO, "track-gov/data/_manifest", "%s.json" % date)
+    with open(real_path, encoding="utf-8") as f:
+        real_manifest = json.load(f)
+    entry = real_manifest["channels"][source]
+    dest = os.path.join(sandbox, "track-gov/data/_manifest", "%s.json" % date)
+    obj = {"date": date, "channels": {}}
+    if os.path.exists(dest):
+        obj = json.load(open(dest, encoding="utf-8"))
+    obj["channels"][source] = entry
+    install_text(sandbox, "track-gov/data/_manifest/%s.json" % date, json.dumps(obj))
+    return entry
+
+
+@check("detect_changes.window_guard_threshold", mutate_target="detect_changes",
+       mutate=mut_dc_window_guard_and_to_or)
+def chk_dc_window_guard_threshold(is_mutant):
+    """Window Guard 核心不變量：window_changed_significantly() 必須同時滿足「相對變化
+    ≥20%」與「絕對筆數差 ≥5」兩個門檻（見 SPEC-window-guard.md、
+    docs/window-guard-report.md「門檻依據」節：2026-08-27~09-04 全歷史 124 組視窗
+    穩定真實資料，相對變化最大僅 1.01%、絕對差最大 1 筆；已知 MAX_ITEMS 事件相對變化
+    28.2%~67.0%、絕對差 11~67 筆）。逐一驗證邊界案例，包含 AND 邏輯缺一不可的兩組
+    對照（僅相對門檻過／僅絕對門檻過皆不應觸發）與缺值防禦性處理。"""
+    sandbox = new_sandbox("dc_wg_threshold_mut" if is_mutant else "dc_wg_threshold")
+    text = read_source("detect_changes")
+    if is_mutant:
+        text = mut_dc_window_guard_and_to_or(text)
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+    mod = load_module(script_path)
+    cases = [
+        (100, 100, False, "無變化"),
+        (100, 79, True, "-21%/-21筆，雙門檻皆過"),
+        (100, 81, False, "-19%/-19筆，雙門檻皆不過"),
+        (100, 94, False, "-6%/-6筆，僅絕對門檻過（AND 邏輯應擋下）"),
+        (10, 7, False, "-30%/-3筆，僅相對門檻過（AND 邏輯應擋下，小視窗雜訊防線）"),
+        (15, 9, True, "-40%/-6筆，雙門檻皆過"),
+        (None, 100, False, "n_old 缺值"),
+        (100, None, False, "n_new 缺值"),
+        (0, 100, False, "n_old<=0（防禦除以零）"),
+    ]
+    failures = []
+    for n_old, n_new, expected, desc in cases:
+        got = mod.window_changed_significantly(n_old, n_new)
+        if got != expected:
+            failures.append("%s: n_old=%r n_new=%r 預期=%r 實際=%r" % (desc, n_old, n_new, expected, got))
+    return Result(not failures, "; ".join(failures) if failures else
+                  "全部 %d 組邊界案例符合預期（雙門檻 AND 邏輯、缺值保守不觸發）" % len(cases))
+
+
+@check("detect_changes.window_guard_shrink_skips_removed", mutate_target="detect_changes",
+       mutate=mut_dc_window_guard_disabled)
+def chk_dc_window_guard_shrink(is_mutant):
+    """Window Guard 核心不變量：MAX_ITEMS 100->50 乾淨縮窗（無 truncated，比照本專案
+    2026-08-31 實際調整、但假設站台回應正常、未觸發截斷保護，見
+    docs/window-guard-report.md「重現 08-31 情境」節）時，即使 v3（Y3）修法的
+    rolling-window heuristic 本身會把縮窗後仍應存活區間內的真下架（position=44）
+    誤判為 rolled（docs/y3-rolling-report.md 第 8.3 節已證明的已知缺口），
+    Window Guard 必須整批跳過下架判定（removed=[]、rolled=[]、skip_removed=True、
+    reason="window_change"）。另外驗證「改寫（changed）不受影響」：K0 這一筆兩天皆
+    存在但內容不同，縮窗跳過下架判定的同一天，K0 仍必須正確出現在 changed。"""
+    sandbox = new_sandbox("dc_wg_shrink_mut" if is_mutant else "dc_wg_shrink")
+    text = read_source("detect_changes")
+    if is_mutant:
+        text = mut_dc_window_guard_disabled(text)
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+
+    old_items = [gov_item("J%d" % i, "T%d" % i, "body %d unchanged" % i) for i in range(100)]
+    old_items.append(gov_item("K0", "T-K0", "body K0 舊內容"))
+    new_items = ([gov_item("M%d" % i, "T%d" % i, "body %d unchanged" % i) for i in range(3)]
+                 + [gov_item("J%d" % i, "T%d" % i, "body %d unchanged" % i)
+                    for i in range(0, 47) if i != 44]
+                 + [gov_item("K0", "T-K0", "body K0 新內容（改寫）")])
+    old = gov_snapshot(old_items, truncated=False)
+    new = gov_snapshot(new_items, truncated=False)
+    f_old = write_gz_json(os.path.join(sandbox, "track-gov/data/wgsrc/2030-07-01.json.gz"), old)
+    f_new = write_gz_json(os.path.join(sandbox, "track-gov/data/wgsrc/2030-07-02.json.gz"), new)
+    install_text(sandbox, "track-gov/data/_manifest/2030-07-01.json", json.dumps(
+        {"date": "2030-07-01", "channels": {"wgsrc": {"ok": True, "n": len(old_items), "bytes": 1,
+                                                        "secs": 1.0, "attempts": 1, "truncated": False}}}))
+    install_text(sandbox, "track-gov/data/_manifest/2030-07-02.json", json.dumps(
+        {"date": "2030-07-02", "channels": {"wgsrc": {"ok": True, "n": len(new_items), "bytes": 1,
+                                                        "secs": 1.0, "attempts": 1, "truncated": False}}}))
+    mod = load_module(script_path)
+    a, b, added, removed, changed, rolled, skip_removed, reason, n_old, n_new = \
+        mod.compare_guarded("wgsrc", DC_CFG, f_old, f_new)
+    guard_active = (skip_removed is True and reason == "window_change"
+                     and removed == [] and rolled == [] and "K0" in changed
+                     and n_old == 101 and n_new == 50)
+    return Result(guard_active,
+                  "removed=%r rolled=%r skip_removed=%s reason=%s changed=%r n_old=%s n_new=%s "
+                  "(期望縮窗當日 removed/rolled 皆空、skip_removed=True、reason=window_change，"
+                  "且 K0 仍正確出現在 changed)"
+                  % (removed, rolled, skip_removed, reason, changed, n_old, n_new))
+
+
+@check("detect_changes.window_guard_recovers_next_day", mutate_target="detect_changes",
+       mutate=mut_dc_window_guard_stuck)
+def chk_dc_window_guard_recovers(is_mutant):
+    """Window Guard 核心不變量：視窗大小穩定後，下一次比對即自動恢復正常下架判定
+    （SPEC-window-guard.md 驗收 2：「縮窗當日不報下架、次日恢復正常判定；真下架在
+    視窗穩定時仍被偵測到」）。三天合成情境：Day A（視窗 100）-> Day B（MAX_ITEMS
+    縮到 ~50，無 truncated，注入真下架 G44）-> Day C（視窗穩定在 B 的大小，僅 2%
+    變化，遠低於門檻，注入另一筆真下架 位置 5，明顯非清單尾端）。斷言 A->B 當天
+    跳過（reason=window_change，removed/rolled 皆空），B->C 當天恢復正常判定且
+    該筆真下架正確進入 removed（不是 rolled）。"""
+    sandbox = new_sandbox("dc_wg_recover_mut" if is_mutant else "dc_wg_recover")
+    text = read_source("detect_changes")
+    if is_mutant:
+        text = mut_dc_window_guard_stuck(text)
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+
+    ids_A = list(range(1099, 999, -1))  # 100 items，newest-first：1099..1000
+    items_A = [gov_item("G%d" % i, "T%d" % i, "body %d" % i) for i in ids_A]
+    added_B = [2001, 2002, 2003]
+    genuine_pos_B = 44
+    genuine_id_B = ids_A[genuine_pos_B]
+    survivors_B = [i for i in ids_A[:47] if i != genuine_id_B]
+    items_B = ([gov_item("G%d" % i, "T%d" % i, "body %d" % i) for i in added_B]
+               + [it for it in items_A if int(it["id"][1:]) in survivors_B])
+    ids_B = [int(it["id"][1:]) for it in items_B]
+    added_C = [3001, 3002]
+    genuine_pos_C = 5
+    genuine_id_C = ids_B[genuine_pos_C]
+    natural_rolled_C = ids_B[-2:]
+    survivors_C = [i for i in ids_B if i not in natural_rolled_C and i != genuine_id_C]
+    items_C = ([gov_item("G%d" % i, "T%d" % i, "bodyC %d" % i) for i in added_C]
+               + [it for it in items_B if int(it["id"][1:]) in survivors_C])
+
+    def dump(day, items):
+        snap = gov_snapshot(items, truncated=False)
+        f = write_gz_json(os.path.join(sandbox, "track-gov/data/wgrec/%s.json.gz" % day), snap)
+        install_text(sandbox, "track-gov/data/_manifest/%s.json" % day, json.dumps(
+            {"date": day, "channels": {"wgrec": {"ok": True, "n": len(items), "bytes": 1,
+                                                   "secs": 1.0, "attempts": 1, "truncated": False}}}))
+        return f
+
+    f_A = dump("2030-08-01", items_A)
+    f_B = dump("2030-08-02", items_B)
+    f_C = dump("2030-08-03", items_C)
+
+    mod = load_module(script_path)
+    rAB = mod.compare_guarded("wgrec", DC_CFG, f_A, f_B)
+    rBC = mod.compare_guarded("wgrec", DC_CFG, f_B, f_C)
+    ab_ok = (rAB[6] is True and rAB[7] == "window_change" and rAB[3] == [] and rAB[5] == [])
+    bc_ok = (rBC[6] is False and rBC[7] is None
+             and ("G%d" % genuine_id_C) in rBC[3] and ("G%d" % genuine_id_C) not in rBC[5])
+    return Result(ab_ok and bc_ok,
+                  "A->B: skip_removed=%s reason=%s removed=%r rolled=%r (期望縮窗當日整批跳過) | "
+                  "B->C: skip_removed=%s reason=%s removed=%r rolled=%r (期望視窗穩定後自動恢復，"
+                  "真下架 G%d 正確進入 removed)"
+                  % (rAB[6], rAB[7], rAB[3], rAB[5], rBC[6], rBC[7], rBC[3], rBC[5], genuine_id_C))
+
+
+@check("detect_changes.window_guard_real_replay_2026_08_31_without_truncation")
+def chk_dc_window_guard_real_replay_no_trunc(is_mutant):
+    """real-replay（SPEC-window-guard.md 驗收 1）：重現 2026-08-31 MAX_ITEMS 100->50
+    真實事件（fda_clarify／moj_press／tpe_clarify 三個來源皆驗證），把當日快照複本
+    的 `_meta.truncated` 人為改成 False（模擬「這次調整沒有同時逾時」，即當時只是
+    巧合被截斷保護接住，見 docs/y3-rolling-report.md 第 4.3 節；正式檔案唯讀，
+    本檢查只改 sandbox 內的複本），證明即使沒有截斷保護，Window Guard 本身也會
+    獨立擋下——manifest 的 n（100->33/35/39，不受這個人為修改影響，因為 n 來自
+    獨立的 manifest 檔案，不是快照內嵌 _meta）足以觸發視窗變更保護。
+    本項無破壞驗證（比照既有 real_replay 先例，如
+    detect_changes.rolling_window_no_self_reference.real_replay）：破壞驗證已由
+    上面的合成資料版本（window_guard_shrink_skips_removed #mutant）涵蓋，此處只用
+    真實資料驗證同一保護在正式歷史事件上確實生效，不重複做破壞驗證。"""
+    if is_mutant:
+        return Result(True, "本項無破壞驗證，見 docstring 說明（比照既有 real_replay 先例）")
+    text = read_source("detect_changes")
+    all_ok = True
+    details = []
+    for source in ("fda_clarify", "moj_press", "tpe_clarify"):
+        sandbox = new_sandbox("dc_wg_0831_notrunc_%s" % source)
+        script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+        # 檔名刻意維持「日期在前 10 碼」（比照正式快照命名），因為
+        # window_size_of() 靠 os.path.basename(f)[:10] 推算比對日期去查 manifest。
+        f_old = install_binary_copy(
+            os.path.join(SOURCE_REPO, "track-gov/data/%s/2026-08-30.json.gz" % source),
+            sandbox, "track-gov/data/%s/2026-08-30.json.gz" % source)
+        real_new_path = os.path.join(SOURCE_REPO, "track-gov/data/%s/2026-08-31.json.gz" % source)
+        with gzip.open(real_new_path, "rt", encoding="utf-8") as fh:
+            j_new = json.load(fh)
+        j_new["_meta"]["truncated"] = False
+        j_new["_meta"].pop("items_fetched", None)
+        f_new = write_gz_json(
+            os.path.join(sandbox, "track-gov/data/%s/2026-08-31.json.gz" % source), j_new)
+        _copy_real_manifest_entry(sandbox, "2026-08-30", source)
+        _copy_real_manifest_entry(sandbox, "2026-08-31", source)
+        mod = load_module(script_path)
+        cfg = DC_CFG  # 三個真實來源欄位形狀與 DC_CFG 相同（id/title/body_text/body_sha256/url），
+                      # 不透過 TEXT_SOURCES／_discover() 查表——sandbox 內沒有 track-gov/adapters/，
+                      # 比照既有 real_replay 檢查（如 rolling_window_no_self_reference.real_replay）
+                      # 的既有做法，直接用固定 cfg。
+        a, b, added, removed, changed, rolled, skip_removed, reason, n_old, n_new = \
+            mod.compare_guarded(source, cfg, f_old, f_new)
+        ok = (skip_removed is True and reason == "window_change" and removed == [] and rolled == [])
+        all_ok = all_ok and ok
+        details.append("%s: manifest n=%s->%s removed=%d rolled=%d skip_removed=%s reason=%s%s"
+                        % (source, n_old, n_new, len(removed), len(rolled), skip_removed, reason,
+                           "" if ok else " <-- 未如預期跳過"))
+    return Result(all_ok, "; ".join(details))
+
+
+@check("detect_changes.window_guard_real_replay_2026_08_31_truncation_priority")
+def chk_dc_window_guard_real_replay_priority(is_mutant):
+    """real-replay（零回歸驗證）：2026-08-31 真實事件（完全未修改，`_meta.truncated`
+    維持真實值 True），確認 Window Guard 疊加後 reason 仍是 "truncated"（不是
+    "window_change"）——截斷保護優先序高於視窗變更保護（見 compare_guarded()
+    設計原則第 4 點），且與未加保護的 compare() 逐欄位相同，確保這 3 個來源既有的
+    （截斷）行為與訊息逐位元組不變（SPEC-window-guard.md 硬性要求「不得放寬任何
+    既有保護」）。本項無破壞驗證：這裡驗證的是「優先序沒有被打亂、零回歸」，
+    不是「保護本身有沒有生效」，真正的破壞驗證由 window_guard_shrink_skips_removed
+    （#mutant）涵蓋。"""
+    if is_mutant:
+        return Result(True, "本項無破壞驗證，見 docstring 說明")
+    text = read_source("detect_changes")
+    all_ok = True
+    details = []
+    for source in ("fda_clarify", "moj_press", "tpe_clarify"):
+        sandbox = new_sandbox("dc_wg_0831_priority_%s" % source)
+        script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+        f_old = install_binary_copy(
+            os.path.join(SOURCE_REPO, "track-gov/data/%s/2026-08-30.json.gz" % source),
+            sandbox, "track-gov/data/%s/2026-08-30.json.gz" % source)
+        f_new = install_binary_copy(
+            os.path.join(SOURCE_REPO, "track-gov/data/%s/2026-08-31.json.gz" % source),
+            sandbox, "track-gov/data/%s/2026-08-31.json.gz" % source)
+        _copy_real_manifest_entry(sandbox, "2026-08-30", source)
+        _copy_real_manifest_entry(sandbox, "2026-08-31", source)
+        mod = load_module(script_path)
+        cfg = DC_CFG  # 三個真實來源欄位形狀與 DC_CFG 相同（id/title/body_text/body_sha256/url），
+                      # 不透過 TEXT_SOURCES／_discover() 查表——sandbox 內沒有 track-gov/adapters/，
+                      # 比照既有 real_replay 檢查（如 rolling_window_no_self_reference.real_replay）
+                      # 的既有做法，直接用固定 cfg。
+        base = mod.compare(source, cfg, f_old, f_new)
+        guarded = mod.compare_guarded(source, cfg, f_old, f_new)
+        ok = (guarded[6] is True and guarded[7] == "truncated" and guarded[:7] == base)
+        all_ok = all_ok and ok
+        details.append("%s: skip_removed=%s reason=%s 與未加保護版逐欄位相同=%s%s"
+                        % (source, guarded[6], guarded[7], guarded[:7] == base,
+                           "" if ok else " <-- 不符預期"))
+    return Result(all_ok, "; ".join(details))
+
+
+@check("detect_changes.window_guard_stable_window_no_false_positive")
+def chk_dc_window_guard_no_false_positive_real(is_mutant):
+    """real-replay（門檻依據的直接驗證）：本專案 2026-08-27~09-04 全歷史 124 組「視窗
+    穩定」真實資料中，相對變化最大的兩組（mof_press 09-03->09-04 與 ey_press
+    09-02->09-03，相對變化皆 1.00%~1.01%，見 docs/window-guard-report.md「門檻依據」
+    節）用真實快照驗證 Window Guard 在這個「最貼近門檻」的真實案例上不會誤觸發
+    （reason 必須是 None，不是 window_change），且與未加保護的 compare() 逐欄位相同。
+    本項無破壞驗證：這裡驗證的是「正常情況不誤殺」，門檻本身的破壞驗證由
+    window_guard_threshold（#mutant）涵蓋。"""
+    if is_mutant:
+        return Result(True, "本項無破壞驗證，見 docstring 說明")
+    text = read_source("detect_changes")
+    all_ok = True
+    details = []
+    for source, d_old, d_new in (("mof_press", "2026-09-03", "2026-09-04"),
+                                  ("ey_press", "2026-09-02", "2026-09-03")):
+        sandbox = new_sandbox("dc_wg_nofp_%s" % source)
+        script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+        f_old = install_binary_copy(
+            os.path.join(SOURCE_REPO, "track-gov/data/%s/%s.json.gz" % (source, d_old)),
+            sandbox, "track-gov/data/%s/%s.json.gz" % (source, d_old))
+        f_new = install_binary_copy(
+            os.path.join(SOURCE_REPO, "track-gov/data/%s/%s.json.gz" % (source, d_new)),
+            sandbox, "track-gov/data/%s/%s.json.gz" % (source, d_new))
+        _copy_real_manifest_entry(sandbox, d_old, source)
+        _copy_real_manifest_entry(sandbox, d_new, source)
+        mod = load_module(script_path)
+        cfg = DC_CFG  # 三個真實來源欄位形狀與 DC_CFG 相同（id/title/body_text/body_sha256/url），
+                      # 不透過 TEXT_SOURCES／_discover() 查表——sandbox 內沒有 track-gov/adapters/，
+                      # 比照既有 real_replay 檢查（如 rolling_window_no_self_reference.real_replay）
+                      # 的既有做法，直接用固定 cfg。
+        base = mod.compare(source, cfg, f_old, f_new)
+        guarded = mod.compare_guarded(source, cfg, f_old, f_new)
+        ok = (guarded[7] is None and guarded[:7] == base)
+        all_ok = all_ok and ok
+        details.append("%s %s->%s: manifest n=%s->%s reason=%s%s"
+                        % (source, d_old, d_new, guarded[8], guarded[9], guarded[7],
+                           "" if ok else " <-- 不符預期（誤觸發或與 compare() 不一致）"))
+    return Result(all_ok, "; ".join(details))
+
+
+@check("detect_changes.window_guard_missing_manifest_no_skip", mutate_target="detect_changes",
+       mutate=mut_dc_window_guard_missing_data_skips)
+def chk_dc_window_guard_missing_manifest(is_mutant):
+    """Window Guard 邊界不變量：manifest 讀不到 n（例如 manifest 檔案不存在、或當日
+    該來源沒有紀錄）時，一律保守判定為「不觸發跳過」，沿用既有（v3）判定，不會因為
+    讀不到一個輔助欄位就意外擴大既有保護的跳過範圍（見 window_size_of() 說明）。
+    合成情境：刻意不建立任何 track-gov/data/_manifest 檔案（模擬 manifest 缺席），
+    同時放入一筆位置明顯非尾端（position=5）的真下架 Z5，驗證在「manifest 缺席」的
+    防禦性路徑下，Window Guard 不介入（n_old／n_new 皆 None、reason 為 None、
+    skip_removed 為 False），既有（v3）下架判定依然正常運作、真下架依然被抓到。"""
+    sandbox = new_sandbox("dc_wg_nomanifest_mut" if is_mutant else "dc_wg_nomanifest")
+    text = read_source("detect_changes")
+    if is_mutant:
+        text = mut_dc_window_guard_missing_data_skips(text)
+    script_path = install_text(sandbox, "scripts/detect_changes.py", text)
+    old_items = [gov_item("Z%d" % i, "T%d" % i, "body %d" % i) for i in range(30)]
+    new_items = ([gov_item("Z%d" % i, "T%d" % i, "body %d" % i) for i in range(30, 32)]
+                 + [it for it in old_items if it["id"] not in ("Z5", "Z28", "Z29")])
+    old = gov_snapshot(old_items, truncated=False)
+    new = gov_snapshot(new_items, truncated=False)
+    # 刻意不建立 track-gov/data/_manifest/ 底下任何檔案，模擬 manifest 缺席。
+    f_old = write_gz_json(os.path.join(sandbox, "track-gov/data/wgnm/2030-09-01.json.gz"), old)
+    f_new = write_gz_json(os.path.join(sandbox, "track-gov/data/wgnm/2030-09-02.json.gz"), new)
+    mod = load_module(script_path)
+    a, b, added, removed, changed, rolled, skip_removed, reason, n_old, n_new = \
+        mod.compare_guarded("wgnm", DC_CFG, f_old, f_new)
+    guard_inactive = (n_old is None and n_new is None and reason is None and skip_removed is False
+                       and "Z5" in removed and "Z5" not in rolled)
+    return Result(guard_inactive,
+                  "n_old=%r n_new=%r reason=%s skip_removed=%s removed=%r (期望 manifest 缺席時"
+                  "保守不觸發跳過，既有 v3 判定正常運作、Z5 正確進入 removed)"
+                  % (n_old, n_new, reason, skip_removed, removed))
+
+
 # track-crypto/scripts/detect_delistings.py — 17 條不變量（第一階段 4 條 + 第二階段新行為 5 條 + 覆蓋缺口補齊 2 條，SPEC-selftest-gap.md + gate-dedup 新增 1 條，SPEC-gate-dedup.md + 第三階段新增 5 條，SPEC-detect-phase3.md）
 # ==========================================================================
 
@@ -2238,6 +2632,75 @@ def chk_dr_notice_surfaced(is_mutant):
         rc_hc, rc_dr, (issues2 if issues2 is not None else None),
         ("全部通過" if not failed else "未通過：" + "、".join(failed)))
     return Result(guard_active, detail)
+
+
+@check("daily_report.window_guard_surfaced_in_change_detection_section",
+       mutate_target="daily_report", mutate=mut_dr_window_guard_block)
+def chk_dr_window_guard_surfaced(is_mutant):
+    """SPEC-window-guard.md 任務四驗收：detect_changes.py v4 對「視窗大小顯著變化」
+    印出的主控台行（下架欄位「視窗變動，不判定」＋行尾 marker，比照既有截斷格式），
+    必須經 daily_report.py 的 CHANGE_LINE_RE／parse_change_detection_rows() 解析後，
+    出現在 REPORT.md『## 變動偵測』區塊的一行彙總警語（比照既有 truncated_keys 的
+    既有寫法），且與正常改寫列、既有截斷列並存時三者互不干擾（同一批 detect.log
+    裡混合一般列、截斷列、視窗變動列，逐一驗證解析結果）。
+
+    評估後刻意不併入 render_notice_section() 的「暫不判定／基準重建中」資訊區塊
+    （daily_report.notice_surfaced_not_anomaly 涵蓋的機制）：那個區塊資料來源是
+    build_health_issues() 呼叫 healthcheck.check_source() 時擷取的 NOTICE 文字，
+    是體積檢查專用的既有機制；detect_changes.py 的視窗變動跳過是完全獨立的判定
+    （不同程式、不同資料），本檢查驗證的是延伸既有『## 變動偵測』區塊
+    （truncated_keys 那一套）的做法，理由詳見 scripts/daily_report.py 檔頭
+    「2026-09-04 改版」說明。
+
+    mutate（mut_dr_window_guard_block）把 window_changed_keys 永遠清空，模擬
+    『彙總提示接線被誤刪』的迴歸：應該從『彙總提示出現』翻盤成『沒有出現』，
+    其餘斷言（一般列、截斷列的解析與彙總）不受影響。"""
+    sandbox = new_sandbox("dr_wg_mut" if is_mutant else "dr_wg")
+    dr_text = read_source("daily_report")
+    if is_mutant:
+        dr_text = mut_dr_window_guard_block(dr_text)
+    dr_path = install_text(sandbox, "scripts/daily_report.py", dr_text)
+
+    # 直接用 detect_changes.py 目前（v4）版本的 _skip_reason_desc()，取得「視窗變動」
+    # 這個跳過原因對應的下架欄位文字與行尾 marker，避免本檢查自己手key一份文字、
+    # 跟正式程式碼各算各的（本檔案已因這類問題吃過虧，見 daily_report.py 檔頭
+    # 「2026-09-03 改版」引用的 docs/healthcheck-parserver-report.md 第 10 節）。
+    dc_mod = load_module(install_text(sandbox, "scripts/detect_changes.py", read_source("detect_changes")))
+    wc_desc, wc_marker = dc_mod._skip_reason_desc("window_change")
+    trunc_desc, trunc_marker = dc_mod._skip_reason_desc("truncated")
+    assert wc_desc == "視窗變動，不判定" and trunc_desc == "截斷，不判定"  # 前提假設，非本檢查主張
+
+    log_lines = [
+        "normal_src: 2030-10-01→2030-10-02 改寫1 下架2 新增3",
+        "trunc_src: 2030-10-01→2030-10-02 改寫0 下架%s 新增1%s" % (trunc_desc, trunc_marker),
+        "window_src: 2030-10-01→2030-10-02 改寫1 下架%s 新增3%s" % (wc_desc, wc_marker),
+        "SUMMARY changed=2 removed=2",
+    ]
+    install_text(sandbox, "logs/detect.log", "\n".join(log_lines) + "\n")
+
+    mod = load_module(dr_path)
+    block, _ = mod.parse_detect_log_last_round(os.path.join(sandbox, "logs/detect.log"))
+    rows, skipped, parser_skipped, summary = mod.parse_change_detection_rows(block)
+    row_by_key = {r["來源"]: r for r in rows}
+    parse_ok = (
+        len(rows) == 3
+        and row_by_key["normal_src"]["下架"] == 2 and not row_by_key["normal_src"]["視窗變動"]
+        and row_by_key["trunc_src"]["截斷"] and not row_by_key["trunc_src"]["視窗變動"]
+        and row_by_key["window_src"]["視窗變動"] and not row_by_key["window_src"]["截斷"]
+        and row_by_key["window_src"]["下架"] == "N/A（視窗變動）"
+    )
+
+    section_text = mod.build_change_detection_section()
+    surfaced = ("window_src" in section_text and "視窗大小顯著變化" in section_text)
+    # 截斷彙總（既有機制）與一般列不應受影響，同一次呼叫一併確認沒有被本次修改波及。
+    trunc_still_ok = ("trunc_src" in section_text and "快照截斷" in section_text)
+
+    guard_active = parse_ok and trunc_still_ok and surfaced
+    return Result(guard_active,
+                  "parse_ok=%s trunc_still_ok=%s window_surfaced=%s rows=%r (期望三類列都能正確解析、"
+                  "彙總提示三者互不干擾)"
+                  % (parse_ok, trunc_still_ok, surfaced,
+                     {k: (v["下架"], v["截斷"], v["視窗變動"]) for k, v in row_by_key.items()}))
 
 
 # ==========================================================================

@@ -50,6 +50,23 @@ daily_report.py
   機制（本檔透過 import healthcheck 直接讀 healthcheck.NOW_UTC / TODAY，
   確保回放時兩邊日期判斷完全同步，不會出現「report 用今天、healthcheck 用
   昨天」的錯位）。正式環境（cron）不會設定這兩個變數，行為與改動前一致。
+
+2026-09-04 改版（SPEC-window-guard.md）：
+  scripts/detect_changes.py v4 新增「視窗大小顯著變更 → 跳過下架判定」保護
+  （compare_guarded()，比照既有 parser_version 跳過比對的原則），主控台新增
+  「視窗變動，不判定」這種「下架」欄位值＋對應的行尾提示 marker（比照既有
+  「截斷，不判定」的既有格式）。本版 CHANGE_LINE_RE／parse_change_detection_rows()
+  新增對應解析，build_change_detection_section()（『## 變動偵測』區塊）新增一行
+  彙總提示，讓它跟既有的「快照截斷」彙總提示一樣被看見。**評估後刻意不併入
+  render_notice_section() 的「暫不判定／基準重建中」區塊**：那個區塊是
+  healthcheck.check_source() 體積檢查專用的既有機制（見上面 2026-09-03 改版
+  說明），資料來源是 build_health_issues() 呼叫 healthcheck.check_source() 時
+  擷取的 NOTICE 文字；detect_changes.py 的視窗變動跳過是完全獨立的判定（不同
+  程式、不同資料、不同用途），硬併入會需要另外接一條「呼叫 detect_changes.py
+  取得判定結果」的路徑，複製一份本來就已經在『## 變動偵測』區塊處理的邏輯
+  （該區塊本來就是解析 logs/detect.log 取得 detect_changes.py 的輸出，截斷
+  跳過訊息也是走這條路徑，不是走 NOTICE 機制），比照既有 truncated_keys 的
+  做法延伸即可達成「讓它被看見」，不需要新增跨檔案耦合或重複判定邏輯。
 """
 
 import os
@@ -514,9 +531,14 @@ def parse_detect_log_last_round(path):
 # 這裡改成兩種都能比對到。
 CHANGE_LINE_RE = re.compile(
     r"^(?P<key>[^:]+): (?P<d1>\d{4}-\d{2}-\d{2})→(?P<d2>\d{4}-\d{2}-\d{2}) "
-    r"改寫(?P<changed>\d+) 下架(?P<removed>截斷，不判定|\d+) 新增(?P<added>\d+)"
+    r"改寫(?P<changed>\d+) 下架(?P<removed>截斷，不判定|視窗變動，不判定|\d+) 新增(?P<added>\d+)"
     r"(?:（另有 (?P<rolled>\d+) 筆滾動移出視窗，不計為下架）)?"
-    r"(?P<trunc_marker>（⚠️ 本日快照截斷，下架判定已跳過）)?$"
+    r"(?P<trunc_marker>（⚠️ 本日快照截斷，下架判定已跳過）)?"
+    r"(?P<window_marker>（⚠️ 視窗大小顯著變化，下架判定已跳過）)?$"
+    # v4 新增（SPEC-window-guard.md）：「視窗變動，不判定」與 window_marker 是新增的
+    # 第二種跳過原因，比照既有「截斷，不判定」／trunc_marker 的既有格式風格，
+    # 兩者互斥（同一行只會出現其中之一，見 scripts/detect_changes.py 的
+    # _skip_reason_desc()）。
 )
 SKIP_LINE_RE = re.compile(r"^(?P<key>[^:]+): 快照不足 2 份，略過$")
 # 解析器改版時 detect_changes.py 會整批跳過比對（避免假警報），舊版沒有對應
@@ -539,15 +561,25 @@ def parse_change_detection_rows(block):
         m = CHANGE_LINE_RE.match(line)
         if m:
             truncated_line = m.group("removed") == "截斷，不判定"
+            # v4 新增（SPEC-window-guard.md）：第二種「下架」欄位跳過值，比照
+            # truncated_line 的既有寫法，互斥（同一行只會符合其中之一）。
+            window_changed_line = m.group("removed") == "視窗變動，不判定"
+            if truncated_line:
+                removed_cell = "N/A（截斷）"
+            elif window_changed_line:
+                removed_cell = "N/A（視窗變動）"
+            else:
+                removed_cell = int(m.group("removed"))
             rows.append({
                 "來源": m.group("key"),
                 "區間": f"{m.group('d1')}→{m.group('d2')}",
                 "改寫": int(m.group("changed")),
-                "下架": "N/A（截斷）" if truncated_line else int(m.group("removed")),
-                "下架數值": 0 if truncated_line else int(m.group("removed")),
+                "下架": removed_cell,
+                "下架數值": 0 if (truncated_line or window_changed_line) else int(m.group("removed")),
                 "新增": int(m.group("added")),
                 "滾動移出": int(m.group("rolled")) if m.group("rolled") else 0,
                 "截斷": truncated_line,
+                "視窗變動": window_changed_line,
             })
             continue
         m = SKIP_LINE_RE.match(line)
@@ -600,6 +632,20 @@ def build_change_detection_section():
                 lines.append(
                     "⚠️ 以下來源今日快照截斷（truncated=true），下架判定已跳過、"
                     "非「零下架」：" + "、".join(truncated_keys))
+            # v4 新增（SPEC-window-guard.md）：視窗大小顯著變化跳過下架判定的來源，
+            # 比照上面 truncated_keys 的既有寫法，讓它在『## 變動偵測』區塊被看見
+            # （評估後不併入下方「暫不判定／基準重建中」區塊，因為那個區塊是
+            # healthcheck.check_source() 體積檢查專用的既有機制，見
+            # render_notice_section() 說明；本行為 detect_changes.py 自己的
+            # 跳過狀態，延續它既有的『在變動偵測區塊裡用一行警語標註』做法，
+            # 與 truncated_keys 同一套邏輯、不新增跨檔案耦合）。
+            window_changed_keys = [r["來源"] for r in rows if r.get("視窗變動")]
+            if window_changed_keys:
+                lines.append("")
+                lines.append(
+                    "⚠️ 以下來源今日視窗大小顯著變化（比照 parser_version 原則自動跳過，"
+                    "視窗大小穩定後下一次比對即自動恢復判定），下架判定已跳過、"
+                    "非「零下架」：" + "、".join(window_changed_keys))
         if skipped:
             lines.append("")
             lines.append("略過（快照不足 2 份）：" + "、".join(skipped))
