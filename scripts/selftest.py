@@ -667,6 +667,32 @@ def mut_hc_delist_gate_fail_today_filter(text):
         "hc_delist_gate_fail_today_filter")
 
 
+def mut_hc_version_drift(text):
+    """目標：check_pinned_versions() 的核心漂移判定（比對目前版本 vs 基準檔）。
+    停用後即使目前版本與基準檔不同，也永遠不會被列進 issues——模擬「版本比對邏輯
+    被誤刪或改壞」的情境，證明 selftest 真的測得到這條保護機制本身有沒有在運作
+    （不是只測「資料設得對就會過」）。"""
+    return apply_mutation(
+        text,
+        '        drifted = [(name, baseline[name], cur) for name, cur in current.items()\n'
+        '                   if name in baseline and cur is not None and cur != baseline[name]]',
+        '        drifted = []  # [selftest mutant] version drift comparison disabled',
+        "hc_version_drift")
+
+
+def mut_hc_version_autocreate(text):
+    """目標：check_pinned_versions() 基準檔缺失時的自動建立動作。停用後第一次執行
+    （基準檔不存在）不會寫出 docs/pinned-versions.json，模擬「自動建立這道防線被
+    誤刪或改壞」的情境（例如漏寫回檔案、寫入路徑打錯）。"""
+    return apply_mutation(
+        text,
+        '        if not os.path.exists(PINNED_VERSIONS_PATH):\n'
+        '            _write_pinned_versions(current)',
+        '        if not os.path.exists(PINNED_VERSIONS_PATH):\n'
+        '            pass  # [selftest mutant] baseline auto-create disabled',
+        "hc_version_autocreate")
+
+
 # --------------------------------------------------------------------------
 # 第三階段新增（track-crypto/scripts/detect_delistings.py 的兩個新分支，
 # 見對應 chk_* 檢查與 GROUP_SOURCES 第三階段新增段落，specs/SPEC-detect-phase3.md）
@@ -1743,6 +1769,90 @@ def chk_hc_delist_gate_fail(is_mutant):
                   "事實紀錄檔未被動過=%s"
                   % (triggered, contains_today_source, contains_stale_source, contains_counts,
                      resolved, log_untouched))
+
+
+@check("healthcheck.pinned_version_drift", mutate_target="healthcheck", mutate=mut_hc_version_drift)
+def chk_hc_version_drift(is_mutant):
+    """POLICY.md D2／SPEC-version-drift.md 核心不變量：目前版本與基準檔（docs/
+    pinned-versions.json）比對，「不同」才告警、「相同」不告警。用
+    HEALTHCHECK_VERSIONS_OVERRIDE 讓「目前版本」在測試中完全可控（不受 VPS 當下
+    實際安裝版本影響，見 check_pinned_versions() 模組層級註解「可測試性」）——
+    4 個追蹤項目裡刻意只讓 1 個（python3-requests）跟基準不同，其餘 3 個相同，
+    證明這不是「整批誤判」，而是精準只揪出真的變動的那一個；訊息內容需同時含舊版本、
+    新版本、且提到 selftest.py／回滾兩個下一步動作（SPEC 明文要求告警要「可直接
+    行動：哪個套件、從哪版到哪版、下一步該做什麼」）。"""
+    sandbox = new_sandbox("hc_ver_mut" if is_mutant else "hc_ver")
+    text = read_source("healthcheck")
+    if is_mutant:
+        text = mut_hc_version_drift(text)
+    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
+
+    baseline = {
+        "python3": "3.12.3-0ubuntu2.1",
+        "python3-requests": "2.31.0+dfsg-1ubuntu1.1",
+        "python3-urllib3": "2.0.7-1ubuntu0.7",
+        "huggingface_hub (~/snap/venv)": "1.28.0",
+    }
+    install_text(sandbox, "docs/pinned-versions.json",
+                 json.dumps({"versions": baseline}, ensure_ascii=False))
+    current = dict(baseline)
+    current["python3-requests"] = "2.32.5-1ubuntu0.1"   # 唯一刻意製造漂移的套件
+
+    with temp_env(HEALTHCHECK_VERSIONS_OVERRIDE=json.dumps(current)):
+        mod = load_module(script_path)
+        issues = []
+        mod.check_pinned_versions(issues)
+
+    labels = [a for a, b in issues]
+    msgs = " | ".join(b for a, b in issues)
+    guard_active = (
+        len(issues) == 1
+        and labels == ["pinned-versions/python3-requests"]
+        and "2.31.0+dfsg-1ubuntu1.1" in msgs and "2.32.5-1ubuntu0.1" in msgs
+        and "selftest.py" in msgs
+        and ("回滾" in msgs or "disaster-recovery" in msgs))
+    return Result(guard_active,
+                  "issues=%r（期望恰好1筆，只認 python3-requests，內容含新舊版本與下一步動作）"
+                  % (issues,))
+
+
+@check("healthcheck.pinned_version_baseline_autocreate", mutate_target="healthcheck",
+       mutate=mut_hc_version_autocreate)
+def chk_hc_version_autocreate(is_mutant):
+    """SPEC-version-drift.md 任務 1／驗收第 3 點：基準檔缺失時（全新部署、第一次
+    執行）要能自動建立，且不誤報成漂移（第一次執行是建立基準，不是偵測到變動）。
+    斷言兩件事：(a) 呼叫後 docs/pinned-versions.json 確實存在且內容＝目前版本；
+    (b) issues 仍是空的（不誤報）。"""
+    sandbox = new_sandbox("hc_verac_mut" if is_mutant else "hc_verac")
+    text = read_source("healthcheck")
+    if is_mutant:
+        text = mut_hc_version_autocreate(text)
+    script_path = install_text(sandbox, "scripts/healthcheck.py", text)
+    # 刻意不建立 docs/pinned-versions.json，模擬第一次執行（全新部署）。
+    current = {
+        "python3": "3.12.3-0ubuntu2.1",
+        "python3-requests": "2.31.0+dfsg-1ubuntu1.1",
+        "python3-urllib3": "2.0.7-1ubuntu0.7",
+        "huggingface_hub (~/snap/venv)": "1.28.0",
+    }
+    baseline_path = os.path.join(sandbox, "docs", "pinned-versions.json")
+    with temp_env(HEALTHCHECK_VERSIONS_OVERRIDE=json.dumps(current)):
+        mod = load_module(script_path)
+        issues = []
+        mod.check_pinned_versions(issues)
+
+    created = os.path.exists(baseline_path)
+    content_ok = False
+    if created:
+        try:
+            doc = json.load(open(baseline_path, encoding="utf-8"))
+            content_ok = (doc.get("versions") == current)
+        except Exception:
+            content_ok = False
+    guard_active = created and content_ok and (len(issues) == 0)
+    return Result(guard_active,
+                  "baseline建立=%s 內容正確=%s issues=%r（期望皆為 True/True/[]）"
+                  % (created, content_ok, issues))
 
 
 # ==========================================================================

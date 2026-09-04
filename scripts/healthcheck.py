@@ -438,6 +438,171 @@ def check_disk(issues):
         issues.append(("disk", "根分割區使用率 %.1f%%，已達提醒門檻（%d%%）%s"
                                 % (pct, DISK_WARN_PCT, growth_desc)))
 
+# --- 套件版本漂移偵測（POLICY.md D2／SPEC-version-drift.md，2026-09-04 新增）---
+# 背景：POLICY.md D2（2026-08-31，使用者明確要求）「不隨意更新使用中的套件版本」，
+# 目前鎖定 python3 3.12.3、python3-requests 2.31.0、python3-urllib3 2.0.7（皆 apt 套件）。
+# 但主機啟用了 unattended-upgrades（Allowed-Origins 含 ${distro_id}:${distro_codename}
+# 與 -security），已知會在無人介入下自動升級套件（2026-09-04 曾自動升級 openssh-server
+# 並重啟 ssh.service，是當日 SSH 短暫中斷的可能原因之一，見 handover-0904 子代理查證）。
+# 目前 apt-get -s upgrade 的清單中沒有 requests／urllib3，但原則上任何一次安全更新都
+# 可能把它們一併升版，屆時沒有任何機制會發現——直到某天抓取行為改變。
+#
+# 設計原則（SPEC-version-drift.md「設計原則」一節）：不封鎖安全更新（那會製造更大的
+# 資安風險）。改成偵測 + 告警：版本一旦變動就明確告知，由人決定要不要跑回歸測試與回滾。
+#
+# 基準檔：docs/pinned-versions.json（隨 git 版控，可看歷史異動）。第一次執行（檔案不
+# 存在）：自動建立，寫入目前版本，不告警（這是建立基準，不是偵測到漂移）。之後每次
+# 執行：與基準比對，「不同」才告警；相同則完全沉默，不寫入、不列 issues。偵測到漂移後
+# 基準檔「不會」自動更新為新版本——沿用 POLICY.md D2「升級需要先報計畫、取得同意」的
+# 精神，是否接受新版本、何時把基準檔更新掉，是人的決定，不是程式自動決定（更新方式：
+# 確認新版本沒有回歸後，刪除 docs/pinned-versions.json 讓下次執行以目前版本重建，並用
+# git commit 留紀錄）。
+#
+# 告警檔案選擇：併入既有 ALERT.md 的 issues 清單（append 進 main() 已有的共用 issues
+# list），不新增第 8 種告警檔（本專案目前已有 7 種：ALERT.md／ALERT-DETECT.md／
+# ALERT-HEALTH.md／ALERT-DELIST.md／ALERT-BACKUP.md／ALERT-CEXGATE.md／
+# ALERT-DELISTGATE.md，見 scripts/daily_report.py 的 alert_files 清單與 scripts/push.sh
+# 收尾的存在性檢查）。理由：這條檢查與 check_timestamps()／check_disk()／
+# check_manifest() 屬於同一種語意——「檢查一項系統事實，異常時 append 進共用 issues、
+# 正常時什麼都不做」，每次執行都是全新判定（無跨執行的狀態機），不像 ALERT-CEXGATE.md／
+# ALERT-DELISTGATE.md 那樣必須用「只認 date==TODAY」過濾一份對完整歷史重新計算的追加式
+# 事實檔（見 check_cex_gate_skips() 模組層級註解）——版本漂移的「事實」本身就只有
+# 「現在」這一份，沒有「歷史上曾經觸發過」需要被過濾掉的問題，直接沿用本檔最多既有
+# 檢查採用的 issues-list 模式即可，不需要新的獨立檔案，也不會與 issues 清單內其他項目
+# 互相覆蓋：main() 對 ALERT.md 是整份 issues 一次性覆寫（見 main() 尾端），這裡只是在
+# 該清單被寫出之前，往同一個 list 多 append 幾筆，跟其他既有檢查完全同構。
+#
+# 可測試性：真正查詢版本要呼叫 dpkg-query／執行 venv 內的 python3，這是讀本機系統狀態
+# （不連外網），但為了讓 selftest.py 能不受「VPS 當下實際安裝了什麼版本」影響、完全
+# 可控地驗證「版本不同才告警／版本相同不告警」，比照本檔既有的 HEALTHCHECK_NOW／
+# HEALTHCHECK_TODAY 環境變數覆寫慣例：新增 HEALTHCHECK_VERSIONS_OVERRIDE（JSON 字串）。
+# 正式環境（cron）不會設定這個變數，行為與改動前完全相同。
+PINNED_VERSIONS_PATH = os.path.join(REPO, "docs", "pinned-versions.json")
+
+# 要追蹤的套件／環境（見 POLICY.md D2、docs/disaster-recovery.md 1.3 節、
+# SPEC-version-drift.md 任務 1）。key 是顯示用名稱，同時也是基準檔 JSON 內的鍵。
+TRACKED_APT_PACKAGES = ["python3", "python3-requests", "python3-urllib3"]
+HF_HUB_LABEL = "huggingface_hub (~/snap/venv)"
+
+def _dpkg_versions(pkgs):
+    """一次查詢多個 apt 套件版本（合併成單一 subprocess，省開銷；分開查 3 次實測約
+    45ms，合併查 1 次約 12ms，見 docs/version-drift-report.md 效能對照）。
+    回傳 {套件名: 版本字串 or None}；任何套件查不到（未安裝／指令整體失敗）都不中止，
+    該套件對應值維持 None，由呼叫端視為『查不到，略過比對』。"""
+    out = {p: None for p in pkgs}
+    try:
+        r = subprocess.run(["dpkg-query", "-W", "-f=${Package} ${Version}\n", *pkgs],
+                            capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            parts = line.strip().split(" ", 1)
+            if len(parts) == 2 and parts[0] in out:
+                out[parts[0]] = parts[1]
+    except Exception:
+        pass
+    return out
+
+def _hf_hub_version():
+    """~/snap/venv 內 huggingface_hub 的版本（scripts/hf_sync.py 依賴它，見
+    docs/disaster-recovery.md 4.4 節；push.sh 呼叫 hf_sync.py 時用的就是這個 venv 的
+    python3，不是系統 python3，見 push.sh 第 4d 步）。
+    快路徑：直接讀 pip 安裝時寫入的 *.dist-info/METADATA（PEP 566 標準格式，
+    'Version: ' 開頭那一行）——比另開一個 venv 內的 python3 子行程 import 整個套件
+    再印版本快非常多（實測：直接讀檔約 1ms，開子行程 import 約 37–42ms，見
+    docs/version-drift-report.md 效能對照），且不依賴 venv/bin/python3 這個符號連結
+    本身是否可執行。只有剛好比對到「唯一一個」符合的 .dist-info 才採信；找不到或
+    找到超過一個（例如升級中殘留舊版 dist-info 的極端情況）都不猜，退回慢路徑。
+    慢路徑：實際執行 venv 內的 python3 匯入套件印版本，較慢但較不依賴目錄結構假設。
+    兩條路徑都失敗則回傳 None，不中止（比照本檔其餘查詢函式的既有容錯風格）。"""
+    try:
+        matches = glob.glob(os.path.expanduser(
+            "~/snap/venv/lib/python3*/site-packages/huggingface_hub*.dist-info/METADATA"))
+        if len(matches) == 1:
+            with open(matches[0], encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("Version:"):
+                        return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    venv_py = os.path.expanduser("~/snap/venv/bin/python3")
+    if not os.path.exists(venv_py):
+        return None
+    try:
+        r = subprocess.run([venv_py, "-c",
+                            "import huggingface_hub; print(huggingface_hub.__version__)"],
+                            capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+def _current_versions():
+    """目前關鍵套件版本字典。HEALTHCHECK_VERSIONS_OVERRIDE 存在時直接採用（僅供
+    selftest.py 使用，見本節模組層級註解「可測試性」；正式環境不會設定這個變數）。"""
+    override = os.environ.get("HEALTHCHECK_VERSIONS_OVERRIDE")
+    if override:
+        return json.loads(override)
+    out = dict(_dpkg_versions(TRACKED_APT_PACKAGES))
+    out[HF_HUB_LABEL] = _hf_hub_version()
+    return out
+
+def _write_pinned_versions(versions):
+    os.makedirs(os.path.dirname(PINNED_VERSIONS_PATH), exist_ok=True)
+    doc = {
+        "_comment": ("由 scripts/healthcheck.py 的 check_pinned_versions() 自動建立／"
+                     "供比對（POLICY.md D2 版本漂移基準）。偵測到漂移只會告警，不會自動"
+                     "覆寫本檔；確認新版本沒有回歸後，刪除本檔讓下次執行以目前版本重建，"
+                     "並用 git commit 留下異動紀錄，不要略過複查直接手動覆蓋。"),
+        "pinned_at_utc": NOW_UTC.isoformat(timespec="seconds"),
+        "versions": versions,
+    }
+    with open(PINNED_VERSIONS_PATH, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=2, sort_keys=True)
+        f.write("\n")
+
+def check_pinned_versions(issues):
+    """核心比對：目前版本 vs 基準檔。基準檔缺失＝第一次執行，自動建立、不告警；
+    基準檔存在則逐項比對，任何一個不同就 append 一筆可直接行動的 issue（套件名、
+    從哪版到哪版、下一步）。基準檔內沒有紀錄的套件（例如未來新增追蹤項目但基準檔還
+    沒更新）視為『查不到基準可比』，略過、不告警——這是刻意的已知限制，見
+    docs/version-drift-report.md「設計理由」一節，不是遺漏。"""
+    try:
+        current = _current_versions()
+        if not os.path.exists(PINNED_VERSIONS_PATH):
+            _write_pinned_versions(current)
+            print("PINNED_VERSIONS 基準檔不存在，已建立 %s（%d 項）"
+                  % (PINNED_VERSIONS_PATH, len(current)))
+            return
+        try:
+            baseline = json.load(open(PINNED_VERSIONS_PATH, encoding="utf-8")).get("versions", {})
+        except Exception as e:
+            issues.append(("pinned-versions",
+                            "基準檔 %s 無法解析（%s: %s），本次略過版本漂移比對；"
+                            "請確認檔案格式是否遭誤改，或刪除後讓下次執行自動重建。"
+                            % (PINNED_VERSIONS_PATH, type(e).__name__, e)))
+            return
+        drifted = [(name, baseline[name], cur) for name, cur in current.items()
+                   if name in baseline and cur is not None and cur != baseline[name]]
+        if drifted:
+            for name, base, cur in drifted:
+                issues.append(("pinned-versions/%s" % name,
+                    "版本漂移：%s → %s（基準檔 docs/pinned-versions.json）。下一步："
+                    "1) 確認是否為 unattended-upgrades 自動安全更新（POLICY.md D2）；"
+                    "2) 執行 python3 scripts/selftest.py 確認全數 PASS；3) 如有回歸，"
+                    "回滾套件版本（見 docs/disaster-recovery.md「套件版本」一節）；"
+                    "4) 確認無礙後更新基準檔並 git commit（不要略過複查直接覆蓋）。"
+                    % (base, cur)))
+            print("PINNED_VERSIONS 偵測到 %d 項版本漂移：%s"
+                  % (len(drifted), "、".join(n for n, _, _ in drifted)))
+        else:
+            print("PINNED_VERSIONS 版本與基準一致（%d 項）" % len(current))
+    except Exception as e:
+        # 比照本檔既有風格（見 check_disk／parser_version 讀取的容錯說明）：檢查本身
+        # 故障時寧可略過、留一筆說明，也不能讓例外拖垮整支 healthcheck.py（main() 沒有
+        # 外層 try/except，見檔頭「容錯」說明）。
+        issues.append(("pinned-versions", "版本檢查本身發生例外，未完成比對：%s: %s"
+                        % (type(e).__name__, e)))
+
 # --- CEX 完整性守門告警（SPEC-gate-alert.md，2026-09-04 新增）---
 # 背景：cex_events.py（commit e6668b8，2026-09-01）新增交易所級完整性守門，觸發時寫
 # track-crypto/data/cex_events/gate_skips.jsonl，但原本沒有接任何告警——守門觸發時沒人
@@ -634,6 +799,7 @@ def main():
     pending = []
     check_timestamps(issues)
     check_disk(issues)
+    check_pinned_versions(issues)
     for track in ("track-crypto", "track-gov"):
         check_manifest(track, issues, pending)
         check_truncation_streak(track, issues)

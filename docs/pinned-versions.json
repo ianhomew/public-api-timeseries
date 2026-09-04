@@ -1,0 +1,10 @@
+{
+  "_comment": "由 scripts/healthcheck.py 的 check_pinned_versions() 自動建立／供比對（POLICY.md D2 版本漂移基準）。偵測到漂移只會告警，不會自動覆寫本檔；確認新版本沒有回歸後，刪除本檔讓下次執行以目前版本重建，並用 git commit 留下異動紀錄，不要略過複查直接手動覆蓋。",
+  "pinned_at_utc": "2026-09-04T12:02:41+00:00",
+  "versions": {
+    "huggingface_hub (~/snap/venv)": "1.28.0",
+    "python3": "3.12.3-0ubuntu2.1",
+    "python3-requests": "2.31.0+dfsg-1ubuntu1.1",
+    "python3-urllib3": "2.0.7-1ubuntu0.7"
+  }
+}
