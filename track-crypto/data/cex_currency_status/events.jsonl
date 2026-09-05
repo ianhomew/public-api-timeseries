@@ -118,3 +118,13 @@
 {"date": "2026-09-04", "source": "cex_currency_status", "group": "gate", "key": "PLTRX3S", "event": "STATUS_CHANGED", "from": {"trade_disabled": false}, "to": {"trade_disabled": true}}
 {"date": "2026-09-04", "source": "cex_currency_status", "group": "gate", "key": "SWAN", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
 {"date": "2026-09-04", "source": "cex_currency_status", "group": "gate", "key": "WAXP", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "GIGGLEMAX", "event": "LISTED", "from": null, "to": "Giggle Mascot"}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "MEMECOIN", "event": "LISTED", "from": null, "to": "A Meme Coin"}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "FONE", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "MANTRA", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "MINA", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "ONG", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "ONT", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "SWAN", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "TT", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-05", "source": "cex_currency_status", "group": "gate", "key": "WING", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}

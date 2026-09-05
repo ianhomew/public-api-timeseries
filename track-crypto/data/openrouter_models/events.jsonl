@@ -69,3 +69,10 @@
 {"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.7-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2026-09-10"}}
 {"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}
 {"date": "2026-09-04", "source": "openrouter_models", "group": "_models", "key": "~z-ai/glm-flash-latest", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "ibm-granite/granite-4.1-8b", "event": "DELISTED", "from": "IBM: Granite 4.1 8B", "to": null}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "inclusionai/ling-3.0-flash-sante:free", "event": "LISTED", "from": null, "to": "inclusionAI: Ling 3.0 Flash Sante (free)"}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-6-astra", "event": "LISTED", "from": null, "to": "OpenAI: GPT-6 Astra"}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-6-astra-pro", "event": "LISTED", "from": null, "to": "OpenAI: GPT-6 Astra Pro"}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-6-astra-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-6 Astra Pro (batch)"}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-6-astra:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-6 Astra (batch)"}
+{"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "x-ai/grok-4.3:batch", "event": "LISTED", "from": null, "to": "SpaceXAI: Grok 4.3 (batch)"}
