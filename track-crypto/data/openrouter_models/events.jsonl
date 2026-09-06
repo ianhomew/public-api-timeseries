@@ -76,3 +76,5 @@
 {"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-6-astra-pro:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-6 Astra Pro (batch)"}
 {"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-6-astra:batch", "event": "LISTED", "from": null, "to": "OpenAI: GPT-6 Astra (batch)"}
 {"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "x-ai/grok-4.3:batch", "event": "LISTED", "from": null, "to": "SpaceXAI: Grok 4.3 (batch)"}
+{"date": "2026-09-06", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-max", "event": "DELISTED", "from": "Qwen: Qwen3.8 Max", "to": null}
+{"date": "2026-09-06", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-max-0902", "event": "LISTED", "from": null, "to": "Qwen: Qwen3.8 Max (0902)"}

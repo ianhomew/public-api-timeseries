@@ -283,3 +283,16 @@
 {"date": "2026-09-05", "exchange": "mexc", "symbol": "PLUMBERUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-05", "exchange": "mexc", "symbol": "SENTISUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-05", "exchange": "mexc", "symbol": "USDMUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "kucoin", "symbol": "MARSCOIN-USDT", "event": "LISTED", "from": null, "to": "True"}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "SHROOMUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "SHROOMUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "DUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "EDGE1USDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "FARMUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "GORKUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "HIPPOUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "LOBOUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "MBOXUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "MLNUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "MYUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-06", "exchange": "mexc", "symbol": "SGTUSDT", "event": "DELISTED", "from": "1", "to": null}

@@ -14,3 +14,9 @@
 {"date": "2026-09-02", "source": "crypto_project_liveness", "group": "_hacks", "key": "aquifer\u001f1788134400", "event": "LISTED", "from": null, "to": "Aquifer"}
 {"date": "2026-09-03", "source": "crypto_project_liveness", "group": "_hacks", "key": "kiichain\u001f1787356800", "event": "LISTED", "from": null, "to": "KiiChain"}
 {"date": "2026-09-05", "source": "crypto_project_liveness", "group": "_hacks", "key": "notional v2\u001f1788480000", "event": "LISTED", "from": null, "to": "Notional V2"}
+{"date": "2026-09-06", "source": "crypto_project_liveness", "group": "_hacks", "key": "stake dao\u001f1773273600", "event": "DELISTED", "from": "Stake DAO", "to": null}
+{"date": "2026-09-06", "source": "crypto_project_liveness", "group": "_hacks", "key": "stake dao\u001f1779840000", "event": "DELISTED", "from": "Stake DAO", "to": null}
+{"date": "2026-09-06", "source": "crypto_project_liveness", "group": "_hacks", "key": "dream health chain\u001f1788566400", "event": "LISTED", "from": null, "to": "Dream Health Chain"}
+{"date": "2026-09-06", "source": "crypto_project_liveness", "group": "_hacks", "key": "reddio redsonic\u001f1788566400", "event": "LISTED", "from": null, "to": "Reddio RedSonic"}
+{"date": "2026-09-06", "source": "crypto_project_liveness", "group": "_hacks", "key": "stake dao yield\u001f1773273600", "event": "LISTED", "from": null, "to": "Stake DAO Yield"}
+{"date": "2026-09-06", "source": "crypto_project_liveness", "group": "_hacks", "key": "stake dao yield\u001f1779840000", "event": "LISTED", "from": null, "to": "Stake DAO Yield"}
