@@ -78,3 +78,4 @@
 {"date": "2026-09-05", "source": "openrouter_models", "group": "_models", "key": "x-ai/grok-4.3:batch", "event": "LISTED", "from": null, "to": "SpaceXAI: Grok 4.3 (batch)"}
 {"date": "2026-09-06", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-max", "event": "DELISTED", "from": "Qwen: Qwen3.8 Max", "to": null}
 {"date": "2026-09-06", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-max-0902", "event": "LISTED", "from": null, "to": "Qwen: Qwen3.8 Max (0902)"}
+{"date": "2026-09-07", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.2:free", "event": "DELISTED", "from": "Z.ai: GLM 5.2 (free)", "to": null}

@@ -4,6 +4,10 @@
 
 | 日期 | 來源 | 改寫 | 下架 | 新增 | 紀錄 |
 |---|---|---|---|---|---|
+| 2026-09-07 | `track-crypto/x402_bazaar` | — | 1399（熔斷） | 387（熔斷） | [紀錄](changes/x402_bazaar/2026-09-07.md) |
+| 2026-09-07 | `track-crypto/openrouter_models` | — | 1 | 0 | [紀錄](changes/openrouter_models/2026-09-07.md) |
+| 2026-09-07 | `track-crypto/cex_currency_status` | — | 0；狀態變化 171 | 3 | [紀錄](changes/cex_currency_status/2026-09-07.md) |
+| 2026-09-07 | `track-crypto/agent_virtuals` | — | 3 | 110 | [紀錄](changes/agent_virtuals/2026-09-07.md) |
 | 2026-09-06 | `track-crypto/x402_bazaar` | — | 302 | 735（含 86 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-06.md) |
 | 2026-09-06 | `track-crypto/openrouter_models` | — | 1 | 1 | [紀錄](changes/openrouter_models/2026-09-06.md) |
 | 2026-09-06 | `track-crypto/crypto_project_liveness` | — | 2 | 4 | [紀錄](changes/crypto_project_liveness/2026-09-06.md) |
