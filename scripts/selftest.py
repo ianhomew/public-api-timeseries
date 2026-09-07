@@ -273,10 +273,32 @@ def x402_item(resource, description, l30=5):
     }
 
 
-def x402_snapshot(items, total=None):
-    """比照 track-crypto/data/x402_bazaar 快照頂層 schema：{_meta, data:{x402Version,total,items}}。"""
-    return {"_meta": {"parser_version": 1, "fetched_at": "2030-01-01T00:00:00+00:00"},
-            "data": {"x402Version": 1, "total": total if total is not None else len(items), "items": items}}
+_AUTO = object()  # x402_snapshot() 的「未指定」哨兵值（None 是合法的 reported_total 值，不能拿來當預設）
+
+
+def x402_snapshot(items, total=None, reported_total=_AUTO, truncated=False, legacy=False):
+    """比照 track-crypto/data/x402_bazaar 快照頂層 schema。
+
+    2026-09-07 更新（恆真式守門修正，見 track-crypto/adapters/x402_bazaar.py 檔頭）：
+    adapter PARSER_VERSION 2 起，data 除既有的 x402Version／total／items 之外，
+    多了 reported_total（上游 pagination.total）與 truncated（本次分頁是否沒抓完）。
+
+      total          ：本次抓到幾筆（adapter 自己算的 len(items)；預設＝len(items)）。
+                       **注意：這個欄位不可以拿來當完整性守門的比對基準**（那就是本輪
+                       修掉的恆真式），它只是給 daily_report.py／explore.py 顯示用。
+      reported_total ：上游自報總數。預設沿用 total 的值（＝正常情況：上游總數與抓到的
+                       筆數相符）；要測守門就明確指定一個與 len(items) 不同的值。
+      truncated      ：預設 False（正常抓完）。
+      legacy=True    ：產生 2026-09-07 之前的**舊快照**（data 完全沒有 reported_total／
+                       truncated 兩個鍵），供 completeness() 的 legacy_range_check
+                       相容分支使用。
+    """
+    data = {"x402Version": 1, "total": total if total is not None else len(items)}
+    if not legacy:
+        data["reported_total"] = data["total"] if reported_total is _AUTO else reported_total
+        data["truncated"] = truncated
+    data["items"] = items
+    return {"_meta": {"parser_version": 1, "fetched_at": "2030-01-01T00:00:00+00:00"}, "data": data}
 
 
 def gs_item(key_field, key, desc_field=None, desc=None, **fields):
@@ -454,12 +476,45 @@ def mut_snap_gov_volatile(text):
 
 
 def mut_dd_integrity_gate(text):
+    """錨點更新（2026-09-07，恆真式守門修正）：completeness() 已改寫，原錨點
+    `if total != n:` 不再存在。改指向新版容忍度比較式——關掉它，守門就不會再因為
+    「上游自報總數與 len(items) 差太多」而擋下判定。"""
     return apply_mutation(
         text,
-        '    if total != n:\n        return False, total, n, "total(%r) != len(items)(%d)" % (total, n)',
-        '    if False:  # [selftest mutant] integrity gate disabled\n'
-        '        return False, total, n, "total(%r) != len(items)(%d)" % (total, n)',
+        '    if gap > limit:',
+        '    if False:  # [selftest mutant] integrity gate disabled',
         "dd_integrity_gate")
+
+
+def mut_dd_x402_tautological_gate(text):
+    """重現本輪修掉的那個 bug：讓完整性守門去比對「adapter 自己算出來的數字」而不是
+    上游自報總數 —— 也就是把守門變回**恆真式**（被檢查的數字＝自報的數字）。
+    對應檢查 detect_delistings.x402_gate_not_tautological。"""
+    return apply_mutation(
+        text,
+        '    reported_total = data.get(cfg["reported_total_field"])',
+        '    reported_total = n  # [selftest mutant] 恆真式守門重現：自報值改成 len(items) 本身',
+        "dd_x402_tautological_gate")
+
+
+def mut_dd_x402_truncated_gate(text):
+    """關掉 completeness() 對 data.truncated 的 fail-closed 檢查。
+    對應檢查 detect_delistings.x402_gate_truncated_flag。"""
+    return apply_mutation(
+        text,
+        '    if tr is not False:',
+        '    if False:  # [selftest mutant] x402 truncated-flag gate disabled',
+        "dd_x402_truncated_gate")
+
+
+def mut_dd_x402_legacy_range(text):
+    """關掉舊快照相容分支的區間檢查（legacy_range_check），讓任何筆數都算通過。
+    對應檢查 detect_delistings.x402_gate_legacy_range。"""
+    return apply_mutation(
+        text,
+        '        if n < lo or n > hi:',
+        '        if False:  # [selftest mutant] legacy range check disabled',
+        "dd_x402_legacy_range")
 
 
 def mut_dd_breaker(text):
@@ -584,6 +639,68 @@ def mut_dd_ppr_require_empty(text):
         '            if False:  # [selftest mutant] require_empty check disabled\n'
         '                return False, n_raw, "%s 非空（%r），視為部分抓取失敗" % (rf, rv)',
         "dd_ppr_require_empty")
+
+
+# --------------------------------------------------------------------------
+# 熔斷語意統一（2026-09-07，任務 C，見本機 docs/0907-C-breaker-semantics-report.md）
+# 新增的 4 支 mutation 函式，鎖住「熔斷＝標記但不否決」這條新語意的三個關鍵分支
+# 與 cex_events 的統一標記欄位。
+# --------------------------------------------------------------------------
+
+def mut_dd_breaker_not_veto(text):
+    """目標：process_pair() 的落地去向判定式。還原成 2026-09-07 之前的「熔斷否決整組」
+    行為（只有 NORMAL 才寫事件），模擬「統一後的語意被改回去／被重構掉」的迴歸。
+    這正是造成 x402_bazaar 09-06→09-07 那 1,399+387+31 筆事件永久遺失的那一行。
+    錨點必須往前延伸到上一行的 breaker_release_check(source, r["d_old"], r["d_new"], r)
+    ——process_group_source_pair() 內有一行**逐字相同、只是縮排多 4 個空白**的
+    to_events 指派，只用縮排區分是不夠的（8 空白版本包含 4 空白版本，屬子字串命中，
+    apply_mutation() 會丟 "anchor not unique"）。process_pair() 的呼叫用
+    r["d_old"]／r["d_new"]，group 版用區域變數 d_old／d_new，兩者字面不會互相匹配。
+    這是 docs/selftest-fix-report.md 教訓 3「錨點延伸優先於全部替換」的直接套用。"""
+    return apply_mutation(
+        text,
+        'breaker_release_check(source, r["d_old"], r["d_new"], r)\n'
+        '    to_events = (judged == "NORMAL") or (judged == "BREAKER" and release_ok)',
+        'breaker_release_check(source, r["d_old"], r["d_new"], r)\n'
+        '    to_events = (judged == "NORMAL")  # [selftest mutant] breaker reverted to veto',
+        "dd_breaker_not_veto")
+
+
+def mut_dd_breaker_fingerprint(text):
+    """目標：breaker_release_check() 的分頁截斷指紋門檻判斷。關掉之後，
+    「移除項目剛好是前一日清單連續尾端」這種截斷特徵也會被放行寫進 events.jsonl，
+    正是 SPEC 要求評估的反面風險（真截斷時寫入大量假 DELISTED）。"""
+    return apply_mutation(
+        text,
+        '    if cov >= BREAKER_TAIL_COVER_MAX:',
+        '    if False:  # [selftest mutant] truncation fingerprint disabled',
+        "dd_breaker_fingerprint")
+
+
+def mut_dd_breaker_manifest_failclosed(text):
+    """目標：breaker_release_check() 讀 manifest 側證時的 fail-closed 預設。
+    改成「讀不到就當作全部通過」，模擬「輔助資料讀取失敗時反而放寬保護」這種
+    典型迴歸（與 mut_dc_window_guard_missing_data_skips 是同一類錯誤，方向相反）。"""
+    return apply_mutation(
+        text,
+        '    e_old = _manifest_entry(d_old, source)\n'
+        '    e_new = _manifest_entry(d_new, source)',
+        '    _fake = {"ok": True, "truncated": False, "parser_version": 1}\n'
+        '    e_old = _manifest_entry(d_old, source) or _fake\n'
+        '    e_new = _manifest_entry(d_new, source) or _fake'
+        '  # [selftest mutant] manifest fail-closed defeated',
+        "dd_breaker_manifest_failclosed")
+
+
+def mut_ce_breaker_marks(text):
+    """目標：cex_events.py 熔斷時「把統一標記套用到整組轉換每一筆事件」的那一段。
+    關掉之後只剩既有的 DELISTED 兩欄位（note／removed_pct），LISTED／STATUS_CHANGED
+    不再帶標記、也不再有 breaker_tripped 布林旗標——就是 2026-09-07 統一前的狀態。"""
+    return apply_mutation(
+        text,
+        '                marks = breaker_marks(removed_pct, threshold)',
+        '                marks = {}  # [selftest mutant] unified breaker marks disabled',
+        "ce_breaker_marks")
 
 
 def mut_ce_daily_dedup(text):
@@ -774,6 +891,43 @@ crypto_project_liveness 專用）。拿掉 .lower()，模擬「複合鍵大小�
         '                parts.append(v.lower() if isinstance(v, str) else v)',
         '                parts.append(v)  # [selftest mutant] composite key case-fold disabled',
         'dd_group_composite_key_casefold')
+
+
+def mut_dd_rename_reconcile(text):
+    """目標：compare_group() 的上游改名抵銷層（第四階段新增，2026-09-07 任務 B）。
+整段停用 reconcile_renames() 呼叫，模擬「抵銷層被誤刪／被 revert」的迴歸——
+真實資料 2026-09-05→09-06 的 Stake DAO→Stake DAO Yield 改名
+（defillamaId 兩天都是 "249"）會因此重新被誤判為 2 筆消失＋2 筆新增，
+見 docs/0907-B-rename-key-report.md §2。
+
+錨點唯一性：`reconcile_renames(` 這個函式在 detect_delistings.py 裡只有
+compare_group() 一個呼叫端（定義處的 `def reconcile_renames(` 字面不同，
+不會被這個含前導縮排與換行的多行錨點匹配到），實測 count==1。
+比照 docs/selftest-fix-report.md §2.1 選項 A 的教訓：錨點必須精確命中
+「這條檢查實際會執行到的那一處」，不能只寫一個到處都可能出現的短句。"""
+    return apply_mutation(
+        text,
+        '    added_keys, removed_keys, renamed_pairs = reconcile_renames(\n'
+        '        gcfg, keyed_old, keyed_new, added_keys, removed_keys)',
+        '    renamed_pairs = []  # [selftest mutant] rename reconciliation disabled',
+        'dd_rename_reconcile')
+
+
+def mut_dd_rename_reconcile_added_guard(text):
+    """目標：reconcile_renames() 的第 3 個抵銷條件（`k_new not in added_set`，
+第四階段新增）。拿掉這個條件之後，抵銷層會把「消失的那筆」跟一筆**前日就已經
+存在、本次並非新增**的紀錄配對起來，於是一筆真實的消失被無聲吃掉——這是抵銷層
+最危險的失效模式（減少事實紀錄），必須有專屬破壞驗證鎖住。
+
+`matched_new` 這個條件保留不動，避免突變後改成一對多配對而丟出例外，
+讓破壞驗證停在「判定變寬鬆」這個要測的行為上，不是停在例外。"""
+    return apply_mutation(
+        text,
+        '        if k_new is None or k_new not in added_set or k_new in matched_new:\n'
+        '            continue',
+        '        if k_new is None or k_new in matched_new:  # [selftest mutant] added-set guard disabled\n'
+        '            continue',
+        'dd_rename_reconcile_added_guard')
 
 
 # ==========================================================================
@@ -1386,7 +1540,7 @@ def chk_dc_window_guard_missing_manifest(is_mutant):
                   % (n_old, n_new, reason, skip_removed, removed))
 
 
-# track-crypto/scripts/detect_delistings.py — 17 條不變量（第一階段 4 條 + 第二階段新行為 5 條 + 覆蓋缺口補齊 2 條，SPEC-selftest-gap.md + gate-dedup 新增 1 條，SPEC-gate-dedup.md + 第三階段新增 5 條，SPEC-detect-phase3.md）
+# track-crypto/scripts/detect_delistings.py — 20 條不變量（第一階段 4 條 + 第二階段新行為 5 條 + 覆蓋缺口補齊 2 條，SPEC-selftest-gap.md + gate-dedup 新增 1 條，SPEC-gate-dedup.md + 第三階段新增 5 條，SPEC-detect-phase3.md + 第四階段新增 3 條，2026-09-07 任務 B 上游改名抵銷，見 docs/0907-B-rename-key-report.md）
 # ==========================================================================
 
 def _install_dd(sandbox, text):
@@ -1404,9 +1558,13 @@ def chk_dd_integrity_gate(is_mutant):
     script_path = _install_dd(sandbox, text)
     mod = load_module(script_path)
     cfg = mod.SOURCES["x402_bazaar"]
-    old = x402_snapshot([x402_item("R%d" % i, "d%d" % i) for i in range(100)])  # total=100，正確
+    # 2026-09-07 更新（恆真式守門修正）：造假的對象從 data.total 改成
+    # data.reported_total（上游自報總數）——因為守門的比對基準已經換成後者。
+    # 這一組刻意讓 data.total 與 len(items) **完全自我一致**（都是 98），
+    # 證明守門攔下來靠的不是那個自我一致的數字。
+    old = x402_snapshot([x402_item("R%d" % i, "d%d" % i) for i in range(100)])
     new_items = [x402_item("R%d" % i, "d%d" % i) for i in range(98)]  # 只剩 98 筆（R98,R99 消失）
-    new = x402_snapshot(new_items, total=100)  # 刻意造假：total 仍宣稱 100，但 len(items)=98 → 不一致
+    new = x402_snapshot(new_items, reported_total=110)  # 上游說 110 筆，實際只抓到 98 筆 → 差 12 筆
     f_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-01.json.gz"), old)
     f_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-02.json.gz"), new)
     r = mod.compare_pair("x402_bazaar", cfg, f_old, f_new)
@@ -1415,14 +1573,39 @@ def chk_dd_integrity_gate(is_mutant):
     judged2, r2, fresh, entries, alert_written = mod.process_pair("x402_bazaar", cfg, f_old, f_new, seen, last_delisted)
     guard_active = (judged == "GATE_FAIL") and (fresh == [])
     return Result(guard_active,
-                  "total=100 vs len(items)=98（不一致）；judged=%s fresh_events=%d "
+                  "reported_total=110 vs len(items)=98（差 12 筆，容忍度 max(5, 0.1%%×110)=5）；"
+                  "judged=%s fresh_events=%d "
                   "(期望 judged=GATE_FAIL，不寫任何事件；removed_rate 若未被此守門攔截將只有 2%%，"
                   "刻意設計在熔斷門檻 5%% 之下，確保這條檢查只測完整性守門本身)"
                   % (judged, len(fresh)))
 
 
+def _dd_manifest(sandbox, dates, source="x402_bazaar", ok=True, truncated=False, parser_version=1):
+    """熔斷語意統一（2026-09-07）新增的輔助函式：在沙盒裡寫出 breaker_release_check()
+    要讀的 track-crypto/data/_manifest/<date>.json 側證檔（欄位名與正式
+    track-crypto/scripts/snap_crypto.py 產生的 manifest 逐一核對相同）。"""
+    for d in dates:
+        install_text(sandbox, "track-crypto/data/_manifest/%s.json" % d,
+                      json.dumps({"date": d, "sources": {source: {
+                          "ok": ok, "bytes": 1234, "secs": 1.0,
+                          "parser_version": parser_version, "n": 100,
+                          "complete": True, "completeness_check": "total_match",
+                          "reported_total": 100, "truncated": truncated, "dup_keys": 0}}},
+                                 ensure_ascii=False))
+
+
+def _dd_quarantine_rows(sandbox, source="x402_bazaar"):
+    """讀沙盒裡的隔離檔（events_quarantine.jsonl），不存在時回空清單。"""
+    return read_jsonl(os.path.join(sandbox, "track-crypto/data", source, "events_quarantine.jsonl"))
+
+
 @check("detect_delistings.breaker_threshold", mutate_target="detect_delistings", mutate=mut_dd_breaker)
 def chk_dd_breaker(is_mutant):
+    """熔斷門檻本身是否會觸發（2026-09-07 更新斷言：本檢查的合成資料是「消失的 30 筆
+    剛好是前一日清單的連續尾端」，在新語意下會同時命中分頁截斷指紋，因此走的是
+    『熔斷成立→指紋成立→隔離』這條路徑：events.jsonl 不寫、隔離檔完整保留、
+    ALERT-DELIST.md 照寫。事件事實沒有遺失是新語意的重點，所以斷言一併檢查隔離檔）。
+    熔斷關掉後（mutant）判定會變回 NORMAL、事件直接寫進 events.jsonl，本檢查翻盤成 FAIL。"""
     sandbox = new_sandbox("dd_breaker_mut" if is_mutant else "dd_breaker")
     text = read_source("detect_delistings")
     if is_mutant:
@@ -1435,14 +1618,218 @@ def chk_dd_breaker(is_mutant):
     new = x402_snapshot(new_items, total=70)  # total 與 len(items) 一致，完整性守門本身通過
     f_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-11.json.gz"), old)
     f_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-12.json.gz"), new)
+    _dd_manifest(sandbox, ["2030-02-11", "2030-02-12"])
     seen, last_delisted = {}, {}
     seen = set()
     judged, r, fresh, entries, alert_written = mod.process_pair("x402_bazaar", cfg, f_old, f_new, seen, last_delisted)
-    guard_active = (judged == "BREAKER") and (fresh == []) and alert_written
+    q = _dd_quarantine_rows(sandbox)
+    q_del = [e for e in q if e["event"] == "DELISTED"]
+    guard_active = (judged == "BREAKER") and (fresh == []) and alert_written and len(q_del) == 30
     return Result(guard_active,
                   "removed_rate=%.1f%% (門檻 %.1f%%)；judged=%s fresh_events=%d alert_written=%s "
-                  "(期望 judged=BREAKER，不寫事件，改寫 ALERT-DELIST.md)"
-                  % (r["removed_rate"], cfg["breaker_pct"], judged, len(fresh), alert_written))
+                  "隔離檔DELISTED=%d tail_cover=%.4f "
+                  "(期望 judged=BREAKER、events.jsonl 不寫、ALERT-DELIST.md 有寫、"
+                  "隔離檔保留 30 筆：合成資料的移除項目剛好是連續尾端，命中截斷指紋)"
+                  % (r["removed_rate"], cfg["breaker_pct"], judged, len(fresh), alert_written,
+                     len(q_del), r.get("tail_cover", -1)))
+
+
+def _dd_breaker_scatter_fixtures(sandbox, tag):
+    """熔斷語意統一（2026-09-07）新增：造一組「移除規模超過熔斷門檻，但移除項目**分散**
+    在整份清單裡（不是連續尾端）」的三日合成快照，用來測『熔斷→放行→標記寫入』這條路徑。
+
+    day1: R0..R99（100 筆）
+    day2: 只少 R5（1 筆＝1%，低於 5% 門檻）→ NORMAL，R5 被記為消失
+    day3: R5 回來，另外散布移除 30 筆（含 R0，但**不含 R99**，確保 tail_run=0）
+          → removed_rate 約 30%，遠超 5%，但 tail_cover=0.0 不會命中截斷指紋
+    回傳 (f1, f2, f3)。
+    """
+    day1 = [x402_item("R%d" % i, "d%d" % i) for i in range(100)]
+    day2 = [it for it in day1 if it["resource"] != "R5"]
+    # 散布移除：從 R0 開始每 3 筆挑 1 筆，挑滿 30 筆，且刻意跳過 R99（最後一筆必須留著）
+    victims = [i for i in range(0, 99, 3)][:30]
+    gone = {"R%d" % i for i in victims}
+    day3 = [it for it in day1 if it["resource"] not in gone]  # R5 已回到清單（day1 含 R5）
+    f1 = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-20.json.gz"),
+                        x402_snapshot(day1))
+    f2 = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-21.json.gz"),
+                        x402_snapshot(day2))
+    f3 = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-02-22.json.gz"),
+                        x402_snapshot(day3))
+    return f1, f2, f3
+
+
+@check("detect_delistings.breaker_marks_not_veto", mutate_target="detect_delistings",
+       mutate=mut_dd_breaker_not_veto)
+def chk_dd_breaker_marks_not_veto(is_mutant):
+    """熔斷語意統一（2026-09-07，任務 C）核心不變量：熔斷成立、且放行檢查通過時，
+    事件必須**照常寫入 events.jsonl**，而且該組轉換的**每一筆**事件
+    （DELISTED／LISTED／REAPPEARED）都要帶齊 4 個統一標記欄位。
+
+    這條檢查鎖的就是 x402_bazaar 2026-09-06→09-07 那次熔斷造成 1,399 DELISTED＋
+    387 LISTED＋31 REAPPEARED 永久遺失的根因（見 docs/0907-events-audit-0904-0907.md
+    §6.1）：舊行為是「否決整組」，REAPPEARED 尤其補不回來。
+    mutant 把落地去向改回「只有 NORMAL 才寫」，事件數立刻歸零，本檢查翻盤成 FAIL。"""
+    sandbox = new_sandbox("dd_bmark_mut" if is_mutant else "dd_bmark")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_breaker_not_veto(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+    f1, f2, f3 = _dd_breaker_scatter_fixtures(sandbox, "bmark")
+    _dd_manifest(sandbox, ["2030-02-20", "2030-02-21", "2030-02-22"])
+    seen, last_delisted = set(), {}
+    j12, r12, fresh12, e12, a12 = mod.process_pair("x402_bazaar", cfg, f1, f2, seen, last_delisted)
+    j23, r23, fresh23, e23, a23 = mod.process_pair("x402_bazaar", cfg, f2, f3, seen, last_delisted)
+    delisted = [e for e in fresh23 if e["event"] == "DELISTED"]
+    listed = [e for e in fresh23 if e["event"] == "LISTED"]
+    reappeared = [e for e in fresh23 if e["event"] == "REAPPEARED"]
+    need = ("note", "breaker_tripped", "removed_pct", "breaker_threshold")
+    fully_marked = [e for e in fresh23
+                    if all(k in e for k in need) and e["breaker_tripped"] is True
+                    and e["note"] == "anomalous_scale"]
+    guard_active = (j12 == "NORMAL" and j23 == "BREAKER"
+                    and len(delisted) == 30 and len(reappeared) == 1
+                    and len(fully_marked) == len(fresh23) and len(fresh23) > 0
+                    and a23 and r23.get("to_events") is True
+                    and _dd_quarantine_rows(sandbox) == [])
+    return Result(guard_active,
+                  "day2->day3 judged=%s（期望 BREAKER，removed_rate=%.1f%%>5%%，tail_cover=%.4f<0.50）"
+                  "；寫入 events.jsonl 的事件 DELISTED=%d(期望30) LISTED=%d REAPPEARED=%d(期望1) "
+                  "全部帶齊 4 個標記欄位=%d/%d；ALERT-DELIST.md 已寫=%s；隔離檔筆數=%d(期望0)"
+                  % (j23, r23["removed_rate"], r23.get("tail_cover", -1),
+                     len(delisted), len(listed), len(reappeared),
+                     len(fully_marked), len(fresh23), a23, len(_dd_quarantine_rows(sandbox))))
+
+
+@check("detect_delistings.breaker_truncation_fingerprint", mutate_target="detect_delistings",
+       mutate=mut_dd_breaker_fingerprint)
+def chk_dd_breaker_fingerprint(is_mutant):
+    """熔斷語意統一（2026-09-07）的反面風險防線：熔斷成立、但移除項目是「前一日清單的
+    連續尾端」（分頁提前中止的結構特徵）時，事件**不可以**寫進 events.jsonl，必須改進
+    隔離檔。這是 SPEC 明文要求評估的「若熔斷其實來自抓取截斷，標記不否決就會寫入大量
+    假 DELISTED」那個風險的實際擋板。
+
+    正控制（尾端連續移除 30 筆，tail_cover=1.0）：期望 events.jsonl 0 筆、隔離檔 30 筆。
+    負控制（同樣移除 30 筆但散布，tail_cover=0.0）：期望 events.jsonl 有寫。
+    mutant 關掉指紋判斷後正控制會被放行寫入，本檢查翻盤成 FAIL。"""
+    sandbox = new_sandbox("dd_bfp_mut" if is_mutant else "dd_bfp")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_breaker_fingerprint(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+    # 正控制：尾端連續移除
+    tail_old = x402_snapshot([x402_item("T%03d" % i, "d%d" % i) for i in range(100)])
+    tail_new = x402_snapshot([x402_item("T%03d" % i, "d%d" % i) for i in range(70)], total=70)
+    ft_o = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-03-11.json.gz"), tail_old)
+    ft_n = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-03-12.json.gz"), tail_new)
+    _dd_manifest(sandbox, ["2030-03-11", "2030-03-12", "2030-02-20", "2030-02-21", "2030-02-22"])
+    seen, last_delisted = set(), {}
+    j_tail, r_tail, fresh_tail, _e, a_tail = mod.process_pair("x402_bazaar", cfg, ft_o, ft_n, seen, last_delisted)
+    q_tail = _dd_quarantine_rows(sandbox)
+    # 負控制：同樣規模但散布（沿用 marks_not_veto 那組 fixture 的第 1、3 天）
+    f1, f2, f3 = _dd_breaker_scatter_fixtures(sandbox, "bfp")
+    seen2, last2 = set(), {}
+    j_sc, r_sc, fresh_sc, _e2, a_sc = mod.process_pair("x402_bazaar", cfg, f1, f3, seen2, last2)
+    guard_active = (j_tail == "BREAKER" and fresh_tail == [] and len(q_tail) == 30
+                    and all(e["quarantine_reason"] == "BREAKER_TRUNCATION_SUSPECT" for e in q_tail)
+                    and j_sc == "BREAKER" and len(fresh_sc) > 0)
+    return Result(guard_active,
+                  "正控制(尾端連續移除)：judged=%s tail_cover=%.4f events.jsonl=%d(期望0) "
+                  "隔離檔=%d(期望30，reason 全為 BREAKER_TRUNCATION_SUSPECT)；"
+                  "負控制(散布移除)：judged=%s tail_cover=%.4f events.jsonl=%d(期望>0)"
+                  % (j_tail, r_tail.get("tail_cover", -1), len(fresh_tail), len(q_tail),
+                     j_sc, r_sc.get("tail_cover", -1), len(fresh_sc)))
+
+
+@check("detect_delistings.breaker_release_manifest_fail_closed", mutate_target="detect_delistings",
+       mutate=mut_dd_breaker_manifest_failclosed)
+def chk_dd_breaker_manifest_fail_closed(is_mutant):
+    """熔斷放行檢查的第二道側證：manifest 讀不到／ok 不為 True／truncated 不為 False／
+    parser_version 兩日不同時，一律 fail-closed（不放行，改走隔離檔）。
+
+    三組情境同時驗：(a) 完全沒有 manifest、(b) manifest ok=False、
+    (c) manifest truncated=True。三組的移除型態都是「散布」（tail_cover=0），
+    所以擋下它們的一定是 manifest 側證，不是截斷指紋。
+    mutant 把「讀不到就當通過」放回去，(a) 會被放行，本檢查翻盤成 FAIL。"""
+    sandbox = new_sandbox("dd_bmf_mut" if is_mutant else "dd_bmf")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_breaker_manifest_failclosed(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+    f1, f2, f3 = _dd_breaker_scatter_fixtures(sandbox, "bmf")
+    # (a) 完全不寫 manifest
+    seen_a, last_a = set(), {}
+    j_a, r_a, fresh_a, _ea, _aa = mod.process_pair("x402_bazaar", cfg, f1, f3, seen_a, last_a)
+    ok_a = (j_a == "BREAKER" and fresh_a == [])
+    # (b) manifest ok=False
+    _dd_manifest(sandbox, ["2030-02-20", "2030-02-22"], ok=False)
+    seen_b, last_b = set(), {}
+    j_b, r_b, fresh_b, _eb, _ab = mod.process_pair("x402_bazaar", cfg, f1, f3, seen_b, last_b)
+    ok_b = (j_b == "BREAKER" and fresh_b == [])
+    # (c) manifest truncated=True
+    _dd_manifest(sandbox, ["2030-02-20", "2030-02-22"], ok=True, truncated=True)
+    seen_c, last_c = set(), {}
+    j_c, r_c, fresh_c, _ec, _ac = mod.process_pair("x402_bazaar", cfg, f1, f3, seen_c, last_c)
+    ok_c = (j_c == "BREAKER" and fresh_c == [])
+    guard_active = ok_a and ok_b and ok_c
+    return Result(guard_active,
+                  "(a)無 manifest：judged=%s events=%d 放行=%s；(b)ok=False：events=%d 放行=%s；"
+                  "(c)truncated=True：events=%d 放行=%s（三者都期望 judged=BREAKER、events=0，"
+                  "即 fail-closed 不放行；三組的 tail_cover 皆為 %.4f，確保擋下它們的是 manifest 側證）"
+                  % (j_a, len(fresh_a), r_a.get("breaker_release_ok"),
+                     len(fresh_b), r_b.get("breaker_release_ok"),
+                     len(fresh_c), r_c.get("breaker_release_ok"), r_a.get("tail_cover", -1)))
+
+
+@check("detect_delistings.breaker_semantics.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_breaker_not_veto)
+def chk_dd_breaker_real_replay(is_mutant):
+    """用**真實**的 x402_bazaar 2026-09-06／09-07 快照與真實 manifest 重放那一次熔斷，
+    鎖住本輪修復的實際結果：judged=BREAKER、放行、events.jsonl 寫入 1,399 DELISTED＋
+    387 LISTED（本檢查用空的 last_delisted 起跑，所以不驗 REAPPEARED；31 筆 REAPPEARED
+    需要完整歷史狀態，已在 docs/0907-C-breaker-semantics-report.md §5 用全量重放驗證）。
+    快照不存在時（例如未來歷史被輪替）本檢查自動略過並回報 PASS 附註，不製造假失敗。"""
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/x402_bazaar")
+    man_dir = os.path.join(SOURCE_REPO, "track-crypto/data/_manifest")
+    need = [os.path.join(src_dir, "2026-09-06.json.gz"), os.path.join(src_dir, "2026-09-07.json.gz"),
+            os.path.join(man_dir, "2026-09-06.json"), os.path.join(man_dir, "2026-09-07.json")]
+    if not all(os.path.exists(p) for p in need):
+        return Result(not is_mutant, "略過：找不到 2026-09-06／09-07 的真實快照或 manifest（%r）"
+                                      % [p for p in need if not os.path.exists(p)])
+    sandbox = new_sandbox("dd_brr_mut" if is_mutant else "dd_brr")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_breaker_not_veto(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+    dst = os.path.join(sandbox, "track-crypto/data/x402_bazaar")
+    os.makedirs(dst, exist_ok=True)
+    os.makedirs(os.path.join(sandbox, "track-crypto/data/_manifest"), exist_ok=True)
+    for p in need:
+        shutil.copy(p, os.path.join(sandbox, os.path.relpath(p, SOURCE_REPO)))
+    f_old = os.path.join(dst, "2026-09-06.json.gz")
+    f_new = os.path.join(dst, "2026-09-07.json.gz")
+    seen, last_delisted = set(), {}
+    judged, r, fresh, _e, alert_written = mod.process_pair("x402_bazaar", cfg, f_old, f_new, seen, last_delisted)
+    n_del = sum(1 for e in fresh if e["event"] == "DELISTED")
+    n_lis = sum(1 for e in fresh if e["event"] == "LISTED")
+    marked = sum(1 for e in fresh if e.get("breaker_tripped") is True)
+    guard_active = (judged == "BREAKER" and r.get("to_events") is True
+                    and n_del == 1399 and n_lis == 387 and marked == len(fresh)
+                    and abs(r["removed_rate"] - 8.4328) < 0.001 and r["tail_cover"] == 0.0)
+    return Result(guard_active,
+                  "真實 2026-09-06->09-07：judged=%s removed_rate=%.4f%%(期望8.4328) "
+                  "tail_cover=%.4f(期望0.0) 放行=%s DELISTED=%d(期望1399) LISTED=%d(期望387) "
+                  "帶標記=%d/%d ALERT=%s"
+                  % (judged, r["removed_rate"], r.get("tail_cover", -1), r.get("to_events"),
+                     n_del, n_lis, marked, len(fresh), alert_written))
 
 
 @check("detect_delistings.reappeared_detection", mutate_target="detect_delistings", mutate=mut_dd_reappeared)
@@ -1777,9 +2164,10 @@ def chk_dd_gate_fail_recorded(is_mutant):
 
     # --- x402_bazaar（process_pair() 路徑）---
     cfg = mod.SOURCES["x402_bazaar"]
-    old = x402_snapshot([x402_item("R%d" % i, "d%d" % i) for i in range(100)])  # total=100，正確
+    old = x402_snapshot([x402_item("R%d" % i, "d%d" % i) for i in range(100)])
     new_items = [x402_item("R%d" % i, "d%d" % i) for i in range(98)]
-    new = x402_snapshot(new_items, total=100)  # total 造假，觸發 GATE_FAIL（比照既有 integrity_gate_skips 檢查手法）
+    # 2026-09-07 更新：改造假 reported_total（上游自報總數），與 integrity_gate_skips 同一手法
+    new = x402_snapshot(new_items, reported_total=110)  # 觸發 GATE_FAIL
     f_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-09-01.json.gz"), old)
     f_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-09-02.json.gz"), new)
     seen, last_delisted = set(), {}
@@ -1972,6 +2360,56 @@ def chk_ce_anomaly(is_mutant):
                   "(期望 mexc 50/50 全加註；bybit 1/0 完全不加註，因低於門檻)"
                   % (len(mexc_delisted), len(mexc_annotated), len(bybit_delisted), len(bybit_annotated)))
 
+
+
+@check("cex_events.breaker_marks_unified", mutate_target="cex_events", mutate=mut_ce_breaker_marks)
+def chk_ce_breaker_marks(is_mutant):
+    """熔斷語意統一（2026-09-07，任務 C）：cex_events.py 的熔斷標記由 2 個欄位擴充為
+    4 個，而且要套用到**該組轉換的每一筆事件**（LISTED／DELISTED／STATUS_CHANGED），
+    不再只標記 DELISTED——熔斷是「這一組轉換整體異常」的性質，下游要排除一次異常轉換
+    時必須能一致地排除全部事件。欄位名與
+    track-crypto/scripts/detect_delistings.py 的 breaker_marks() 完全相同。
+
+    正控制 mexc：200→150（25% 移除，超過門檻 max(10, 2)），同時有 1 筆新增與 1 筆狀態
+    變化 → 三種事件型別全部要帶齊 4 欄位。
+    負控制 bybit：50→49（2% 移除，低於門檻 10）→ 一個欄位都不能帶。
+    mutant 把整組標記關掉後，LISTED／STATUS_CHANGED 不再帶標記、DELISTED 也失去
+    breaker_tripped 布林旗標，本檢查翻盤成 FAIL。"""
+    sandbox = new_sandbox("ce_bmark_mut" if is_mutant else "ce_bmark")
+    text = read_source("cex_events")
+    if is_mutant:
+        text = mut_ce_breaker_marks(text)
+    script_path = _install_ce(sandbox, text)
+    stable = {ex: [("STABLE1", "ok")] for ex in ALL_EXCHANGES if ex not in ("mexc", "bybit")}
+    mexc_old = [("M%d" % i, "1") for i in range(200)]
+    mexc_new = ([("M%d" % i, "1") for i in range(149)] + [("M149", "2")]  # M149 狀態變化
+                 + [("MNEW", "1")])                                        # 1 筆新增
+    bybit_old = [("B%d" % i, "Trading") for i in range(50)]
+    bybit_new = [("B%d" % i, "Trading") for i in range(49)]
+    old = cex_snapshot(dict(stable, mexc=mexc_old, bybit=bybit_old))
+    new = cex_snapshot(dict(stable, mexc=mexc_new, bybit=bybit_new))
+    write_gz_json(os.path.join(sandbox, "track-crypto/data/cex_symbols/2030-09-01.json.gz"), old)
+    write_gz_json(os.path.join(sandbox, "track-crypto/data/cex_symbols/2030-09-02.json.gz"), new)
+    rc, out, err, events, gate_skips = _run_ce(sandbox, script_path)
+    need = ("note", "breaker_tripped", "removed_pct", "breaker_threshold")
+    mexc_ev = [e for e in events if e["exchange"] == "mexc"]
+    mexc_marked = [e for e in mexc_ev
+                   if all(k in e for k in need) and e["breaker_tripped"] is True
+                   and e["note"] == "anomalous_scale"]
+    by_type = {}
+    for e in mexc_marked:  # 本檔案沒有 import collections，用字典手動累計（比照既有慣例）
+        by_type[e["event"]] = by_type.get(e["event"], 0) + 1
+    bybit_ev = [e for e in events if e["exchange"] == "bybit"]
+    bybit_marked = [e for e in bybit_ev if any(k in e for k in need)]
+    guard_active = (rc == 0 and len(mexc_ev) > 0 and len(mexc_marked) == len(mexc_ev)
+                    and by_type.get("DELISTED", 0) == 50 and by_type.get("LISTED", 0) == 1
+                    and by_type.get("STATUS_CHANGED", 0) == 1
+                    and len(bybit_ev) == 1 and len(bybit_marked) == 0)
+    return Result(guard_active,
+                  "rc=%d；mexc 事件=%d 全部帶齊4欄位=%d（型別分布=%r，期望 DELISTED=50/"
+                  "LISTED=1/STATUS_CHANGED=1）；bybit 事件=%d 帶任一標記=%d（期望 1／0）"
+                  % (rc, len(mexc_ev), len(mexc_marked), by_type,
+                     len(bybit_ev), len(bybit_marked)))
 
 
 @check("cex_events.gate_skips_idempotent", mutate_target="cex_events", mutate=mut_ce_gate_dedup)
@@ -2868,6 +3306,162 @@ def chk_dd_group_composite_key_casefold_real_replay(is_mutant):
                      len(r["removed_keys"]), len(r["added_keys"])))
 
 
+@check("detect_delistings.rename_reconcile", mutate_target="detect_delistings",
+       mutate=mut_dd_rename_reconcile)
+def chk_dd_rename_reconcile(is_mutant):
+    """第四階段新增（2026-09-07 任務 B，docs/0907-B-rename-key-report.md §2、§5）：
+    compare_group() 的上游改名抵銷層。用真實案例的合成版本驗證：同一個專案
+    （defillamaId="249"）的兩筆歷史事件（date 不同）被上游同時改名
+    "Stake DAO"->"Stake DAO Yield"，複合主鍵 (name,date) 會整組換掉，
+    若沒有抵銷層就是 2 筆假消失＋2 筆假新增。
+
+    同時驗證抵銷層沒有把不該抵銷的東西一起吃掉：
+      - 完全沒變的 Other（沒有 defillamaId，走 stable_identity()->None 的
+        fail-closed 路徑）不受影響；
+      - 真正新增的 New（全新 defillamaId）仍然正確出現在 added_keys。"""
+    sandbox = new_sandbox("dd_rename_mut" if is_mutant else "dd_rename")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_rename_reconcile(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("hacks",), "shape": "list", "key_field": ("name", "date"), "desc_field": "name",
+            "completeness": "total_match", "total_fields": ("count",),
+            "status_fields": (), "breaker_pct": 50.0, "abs_floor": 1000,
+            "stable_id_fields": ("defillamaId", "date")}
+    day1 = [
+        {"name": "Stake DAO", "date": 1773273600, "defillamaId": "249"},
+        {"name": "Stake DAO", "date": 1779840000, "defillamaId": "249"},
+        {"name": "Other", "date": 1600000000, "defillamaId": None},
+    ]
+    day2 = [
+        {"name": "Stake DAO Yield", "date": 1773273600, "defillamaId": "249"},
+        {"name": "Stake DAO Yield", "date": 1779840000, "defillamaId": "249"},
+        {"name": "Other", "date": 1600000000, "defillamaId": None},
+        {"name": "New", "date": 1700000000, "defillamaId": "999"},
+    ]
+    data1 = {"hacks": day1, "count": len(day1)}
+    data2 = {"hacks": day2, "count": len(day2)}
+    r = mod.compare_group("selftest_liveness_src", "grp", gcfg, data1, data2)
+    judged = mod.judge(r, gcfg)
+    new_only = [k for k in r["added_keys"] if isinstance(k, str) and k.startswith("new\x1f")]
+    guard_active = (judged == "NORMAL" and len(r["removed_keys"]) == 0
+                     and len(r["added_keys"]) == 1 and len(new_only) == 1
+                     and len(r["renamed_pairs"]) == 2)
+    return Result(guard_active,
+                  "Stake DAO->Stake DAO Yield(同 defillamaId=249，兩筆不同 date)＋Other不變＋New新增；"
+                  "removed=%d(期望0) added=%d(期望1，僅New) renamed=%d(期望2) judged=%s(期望NORMAL；"
+                  "若抵銷層失效，removed/added 應各多出 2 筆 stake dao)"
+                  % (len(r["removed_keys"]), len(r["added_keys"]), len(r["renamed_pairs"]), judged))
+
+
+@check("detect_delistings.rename_reconcile_added_guard", mutate_target="detect_delistings",
+       mutate=mut_dd_rename_reconcile_added_guard)
+def chk_dd_rename_reconcile_added_guard(is_mutant):
+    """第四階段新增（2026-09-07 任務 B）：鎖住抵銷層最危險的失效模式——
+    把一筆**真實的消失**跟一筆「前日就已經在清單裡、本次並非新增」的紀錄
+    配對而無聲吃掉。
+
+    情境（合成）：前日有 Alpha 與 Beta 兩筆，兩者共用同一個穩定識別
+    （defillamaId="9"、同 date，真實資料裡對應 Gamma／OcelotDex／Merlin 那種
+    「同專案同日期兩起不同攻擊」的既有重複型態）；當日 Alpha 真的消失、Beta
+    原樣留著。Beta 不在 added_keys 裡，所以**不可以**拿來抵銷 Alpha 的消失，
+    Alpha 必須照常寫 DELISTED。"""
+    sandbox = new_sandbox("dd_rename_guard_mut" if is_mutant else "dd_rename_guard")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_rename_reconcile_added_guard(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = {"path": ("hacks",), "shape": "list", "key_field": ("name", "date"), "desc_field": "name",
+            "completeness": "total_match", "total_fields": ("count",),
+            "status_fields": (), "breaker_pct": 50.0, "abs_floor": 1000,
+            "stable_id_fields": ("defillamaId", "date")}
+    day1 = [
+        {"name": "Alpha", "date": 1600000000, "defillamaId": "9"},
+        {"name": "Beta", "date": 1600000000, "defillamaId": "9"},
+    ]
+    day2 = [
+        {"name": "Beta", "date": 1600000000, "defillamaId": "9"},
+    ]
+    data1 = {"hacks": day1, "count": len(day1)}
+    data2 = {"hacks": day2, "count": len(day2)}
+    r = mod.compare_group("selftest_liveness_src", "grp", gcfg, data1, data2)
+    judged = mod.judge(r, gcfg)
+    alpha_removed = any(isinstance(k, str) and k.startswith("alpha\x1f") for k in r["removed_keys"])
+    guard_active = (judged == "NORMAL" and alpha_removed and len(r["removed_keys"]) == 1
+                     and len(r["added_keys"]) == 0 and len(r["renamed_pairs"]) == 0)
+    return Result(guard_active,
+                  "Alpha 真消失、Beta(同 defillamaId=9 同 date，前日就存在、本次非新增)留著；"
+                  "removed=%d(期望1) removed含alpha=%r(期望True) added=%d(期望0) renamed=%d(期望0) "
+                  "judged=%s(期望NORMAL；若 added-set 條件失效，Alpha 的真實消失會被 Beta 抵銷掉)"
+                  % (len(r["removed_keys"]), alpha_removed, len(r["added_keys"]),
+                     len(r["renamed_pairs"]), judged))
+
+
+@check("detect_delistings.rename_reconcile.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_rename_reconcile)
+def chk_dd_rename_reconcile_real_replay(is_mutant):
+    """real-replay：crypto_project_liveness 真實歷史快照（VPS 正式資料，唯讀複製）
+    用真實 GROUP_SOURCES 設定（非另建合成 gcfg）同時驗證兩件事：
+
+    (a) 2026-09-05→09-06：真實發生過的 Stake DAO -> Stake DAO Yield 改名
+        （defillamaId 兩天都是 "249"，date 1773273600／1779840000 兩筆）不再出現在
+        removed_keys／added_keys，改記在 renamed_pairs；同一天真正新增的
+        2 筆（Dream Health Chain／Reddio RedSonic）仍正確留在 added_keys。
+        這正是本輪要修的 4 筆假事件（docs/0907-events-audit-0904-0907.md §5.5）。
+
+    (b) 2026-09-01→09-02：真實發生過的**唯一一次真實消失**（MORE Markets，
+        defillamaId="5320"，見 docs/detect-phase3-report.md §2.2）**必須原樣保留**
+        為 1 筆 removed——抵銷層不可以把真實消失一起吃掉。這一半在突變後仍會通過，
+        刻意與 (a) 綁在同一條檢查裡，讓「修好假事件」與「不吃掉真事件」是同一個
+        驗收單位，不會日後被人各自放寬。"""
+    sandbox = new_sandbox("dd_rename_real_mut" if is_mutant else "dd_rename_real")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_rename_reconcile(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["crypto_project_liveness"]["groups"]["_hacks"]
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/crypto_project_liveness")
+    need = ["2026-09-05.json.gz", "2026-09-06.json.gz", "2026-09-01.json.gz", "2026-09-02.json.gz"]
+    if not all(os.path.exists(os.path.join(src_dir, n)) for n in need):
+        return Result(False, "找不到真實 crypto_project_liveness 歷史快照，無法做 real-replay 驗證")
+    paths = [install_binary_copy(os.path.join(src_dir, n), sandbox, n) for n in need]
+    j05, j06, j01, j02 = [mod.load(p) for p in paths]
+
+    r_rename = mod.compare_group("crypto_project_liveness", "_hacks", gcfg, j05["data"], j06["data"])
+    judged_rename = mod.judge(r_rename, gcfg)
+    sd_removed = any(isinstance(k, str) and k.split("\x1f")[0].startswith("stake dao")
+                      for k in r_rename["removed_keys"])
+    sd_added = any(isinstance(k, str) and k.split("\x1f")[0].startswith("stake dao")
+                    for k in r_rename["added_keys"])
+    renamed_sids = sorted(sid for _o, _n, sid in r_rename["renamed_pairs"])
+    sids_ok = renamed_sids == ["249\x1f1773273600", "249\x1f1779840000"]
+
+    r_true = mod.compare_group("crypto_project_liveness", "_hacks", gcfg, j01["data"], j02["data"])
+    judged_true = mod.judge(r_true, gcfg)
+    mm_removed = any(isinstance(k, str) and k.split("\x1f")[0] == "more markets"
+                      for k in r_true["removed_keys"])
+
+    guard_active = (judged_rename == "NORMAL" and not sd_removed and not sd_added
+                     and sids_ok and len(r_rename["removed_keys"]) == 0
+                     and len(r_rename["added_keys"]) == 2
+                     and judged_true == "NORMAL" and mm_removed
+                     and len(r_true["removed_keys"]) == 1
+                     and len(r_true["renamed_pairs"]) == 0)
+    return Result(guard_active,
+                  "(a)09-05->09-06：judged=%s(期望NORMAL) removed=%d(期望0) added=%d(期望2) "
+                  "removed含stake dao=%r(期望False) added含stake dao=%r(期望False) "
+                  "renamed穩定識別=%r(期望249+兩個date)；"
+                  "(b)09-01->09-02：judged=%s(期望NORMAL) removed=%d(期望1) "
+                  "removed含more markets=%r(期望True) renamed=%d(期望0)"
+                  % (judged_rename, len(r_rename["removed_keys"]), len(r_rename["added_keys"]),
+                     sd_removed, sd_added, renamed_sids,
+                     judged_true, len(r_true["removed_keys"]), mm_removed,
+                     len(r_true["renamed_pairs"])))
+
+
 @check("detect_delistings.oracle_pyth_range_check_real_replay", mutate_target="detect_delistings",
        mutate=mut_dd_group_integrity_gate)
 def chk_dd_oracle_pyth_range_check_real_replay(is_mutant):
@@ -2912,6 +3506,259 @@ def chk_dd_oracle_pyth_range_check_real_replay(is_mutant):
                   % (len(real_pyth), gcfg["range"], judged_full, lo, judged_bad))
 
 
+
+
+# ==========================================================================
+# 第四階段新增（2026-09-07，任務 E：抑制 cex_currency_status/gate 的 withdraw_disabled
+# 一日抖動）。派工與證據：docs/0907-events-audit-0904-0907.md §5.8／§9.3 第 4 項，
+# 使用者裁示「做法 2（抖動標記）＋做法 4（語意過濾），不做做法 3（不直接抑制寫入）」。
+# 設計、實測數字、歷史全量重放驗證見本機 docs/0907-E-gate-flap-report.md。
+#
+# 本區塊 4 條檢查各自鎖住一條新行為，每條都有 #mutant 破壞驗證：
+#   1. status_semantic_filter             做法 4：規則命中就不產生事件；前提欄位自己在變的
+#                                          那一天不得被誤濾；被抑制的每筆都要進事實紀錄檔
+#   2. status_semantic_filter.real_replay 做法 4：對真實 09-06／09-07 快照重放，
+#                                          121／122 筆被抑制、49／49 筆保留
+#   3. flap_window                        做法 2：回翻視窗 N=FLAP_WINDOW_DAYS 的邊界
+#                                          （gap<=N 標記、gap>N 不標記），兩筆都要標記
+#   4. flap_annotate_convergence          做法 2：回寫既有事件行時「該加的加、該拿掉的拿掉」，
+#                                          標記狀態有唯一不動點 → 重跑零變化（冪等）
+#
+# 錨點唯一性：本區塊 3 個 mut_* 的錨點都在本輪新增的程式碼裡（status_filter_hit()、
+# flap_marks()、annotate_flaps()），且已逐一用 text.count(anchor)==1 驗證，
+# 不與既有 19 條錨點重疊（教訓來源：docs/selftest-fix-report.md 的 mut_dd_reappeared
+# 錨點不唯一事件——平行函式可能逐字元寫出同一行）。
+# 這 3 個 mut_* 刻意與檢查放在同一段落尾端，而不是插進上方既有的 mutation 區塊，
+# 是為了讓本輪對 selftest.py 的改動是「檔尾單一連續新增區塊」，方便與同期其他任務合併。
+# ==========================================================================
+
+
+def mut_dd_status_filter(text):
+    # 目標：status_filter_hit() 的規則命中判斷式（做法 4 語意過濾的唯一判定點）。
+    # 破壞後所有規則都不會命中 → 被抑制的欄位變化會重新產生 STATUS_CHANGED 事件。
+    return apply_mutation(
+        text,
+        '        if all(old_item.get(cf) == cv and new_item.get(cf) == cv for cf, cv in cond.items()):',
+        '        if False:  # [selftest mutant] status semantic filter disabled',
+        "dd_status_filter")
+
+
+def mut_dd_flap_window(text):
+    # 目標：flap_marks() 的回翻視窗上界。破壞後視窗形同無限大 → 間隔超過
+    # FLAP_WINDOW_DAYS 的「翻回原值」也會被誤標成抖動。
+    return apply_mutation(
+        text,
+        '                if gap > window_days:\n                    break',
+        '                if False:  # [selftest mutant] flap window bound disabled\n'
+        '                    break',
+        "dd_flap_window")
+
+
+def mut_dd_flap_stale_removal(text):
+    # 目標：annotate_flaps() 移除「不該存在的舊標記」那一步。破壞後標記只會被加上、
+    # 不會被拿掉，標記狀態失去唯一不動點 → 每次重跑都判定為需要改寫（冪等性破功）。
+    return apply_mutation(
+        text,
+        '        for kk in FLAP_MARK_FIELDS:\n            e.pop(kk, None)',
+        '        for kk in ():  # [selftest mutant] stale flap-mark removal disabled\n'
+        '            e.pop(kk, None)',
+        "dd_flap_stale_removal")
+
+
+_FLAP_GCFG = {"path": ("gate",), "shape": "list", "key_field": "currency", "desc_field": "name",
+              "completeness": "total_match", "total_fields": ("count",),
+              "status_fields": ("delisted", "trade_disabled", "withdraw_disabled"),
+              "status_filters": ({"field": "withdraw_disabled", "when_both": {"delisted": True},
+                                  "reason": "delisted_dominates_withdraw_disabled"},),
+              "breaker_pct": 50.0, "abs_floor": 5}
+
+
+def _gate_day(rows):
+    """rows: [(currency, delisted, trade_disabled, withdraw_disabled), ...] -> 合成快照 data 區塊。"""
+    items = [gs_item("currency", c, "name", c, delisted=d, trade_disabled=t, withdraw_disabled=w)
+             for c, d, t, w in rows]
+    return {"gate": items, "count": len(items)}
+
+
+@check("detect_delistings.status_semantic_filter", mutate_target="detect_delistings",
+       mutate=mut_dd_status_filter)
+def chk_dd_status_semantic_filter(is_mutant):
+    """做法 4【語意過濾】：status_filters 命中的欄位變化不得產生 STATUS_CHANGED，
+    但**前提欄位自己正在變化的那一天**必須完整保留（when_both 要求新舊兩側都成立）。
+    合成資料四種情境同時驗證：
+      KEEP_NOTDEL  delisted 兩側皆 False、withdraw_disabled 翻轉 → 保留（規則不命中）
+      DROP_DEL     delisted 兩側皆 True、withdraw_disabled 翻轉  → 抑制（規則命中）
+      KEEP_ONDEL   當天才變成 delisted，同時 withdraw_disabled 也翻 → 保留，且
+                   from/to 必須同時含 delisted 與 withdraw_disabled 兩個欄位（不得只濾掉一半）
+      KEEP_TRADE   delisted 兩側皆 True、但變的是 trade_disabled → 保留（規則只管 withdraw_disabled）
+    另外驗證被抑制的那一筆確實寫進 STATUS_FILTER_LOG（抑制 != 資料消失）。"""
+    sandbox = new_sandbox("dd_semfilter_mut" if is_mutant else "dd_semfilter")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_status_filter(text)
+    mod = load_module(_install_dd(sandbox, text))
+    d1 = _gate_day([("KEEP_NOTDEL", False, False, False), ("DROP_DEL", True, True, True),
+                    ("KEEP_ONDEL", False, False, False), ("KEEP_TRADE", True, True, True),
+                    ("PAD1", False, False, False), ("PAD2", False, False, False)])
+    d2 = _gate_day([("KEEP_NOTDEL", False, False, True), ("DROP_DEL", True, True, False),
+                    ("KEEP_ONDEL", True, False, True), ("KEEP_TRADE", True, False, True),
+                    ("PAD1", False, False, False), ("PAD2", False, False, False)])
+    r = mod.compare_group("cex_currency_status", "gate", _FLAP_GCFG, d1, d2)
+    judged = mod.judge(r, _FLAP_GCFG)
+    events, _ = mod.build_group_events("cex_currency_status", "gate", _FLAP_GCFG, r, judged,
+                                        "2030-06-02", {})
+    sc = {e["key"]: e for e in events if e["event"] == "STATUS_CHANGED"}
+    log = read_jsonl(os.path.join(sandbox, "track-crypto/data/_status_filter/suppressed.jsonl"))
+    logged = {(g["key"], g["field"]) for g in log}
+    ok = (judged == "NORMAL"
+          and set(sc) == {"KEEP_NOTDEL", "KEEP_ONDEL", "KEEP_TRADE"}
+          and sc.get("KEEP_ONDEL", {}).get("from") == {"delisted": False, "withdraw_disabled": False}
+          and sc.get("KEEP_ONDEL", {}).get("to") == {"delisted": True, "withdraw_disabled": True}
+          and sc.get("KEEP_TRADE", {}).get("from") == {"trade_disabled": True}
+          and logged == {("DROP_DEL", "withdraw_disabled")})
+    return Result(ok, "judged=%s 產生的 STATUS_CHANGED key=%s（期望剛好 KEEP_NOTDEL/KEEP_ONDEL/"
+                      "KEEP_TRADE 三筆、DROP_DEL 被抑制）；KEEP_ONDEL.from=%r（期望同時含 delisted 與 "
+                      "withdraw_disabled）；抑制紀錄=%s（期望 {('DROP_DEL','withdraw_disabled')}）"
+                  % (judged, sorted(sc), sc.get("KEEP_ONDEL", {}).get("from"), sorted(logged)))
+
+
+@check("detect_delistings.status_semantic_filter.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_status_filter)
+def chk_dd_status_semantic_filter_real_replay(is_mutant):
+    """real-replay：對 VPS 正式歷史快照（唯讀複製）2026-09-05→09-06→09-07 三份
+    cex_currency_status 快照重放 cex_currency_status/gate。
+    實測基準（docs/0907-events-audit-0904-0907.md §5.8 與本輪重算一致）：
+      09-05→09-06：170 筆 withdraw_disabled 變化，其中 delisted 兩側皆 True 者 121 筆
+      09-06→09-07：171 筆，其中 delisted 兩側皆 True 者 122 筆
+    套用語意過濾後 STATUS_CHANGED 應各剩 49／49 筆，且剩下的每一筆都不得是
+    「delisted 兩側皆 True 且只變 withdraw_disabled」。"""
+    sandbox = new_sandbox("dd_semfilter_real_mut" if is_mutant else "dd_semfilter_real")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_status_filter(text)
+    mod = load_module(_install_dd(sandbox, text))
+    gcfg = mod.GROUP_SOURCES["cex_currency_status"]["groups"]["gate"]
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/cex_currency_status")
+    days = {}
+    for d in ("2026-09-05", "2026-09-06", "2026-09-07"):
+        p = os.path.join(src_dir, "%s.json.gz" % d)
+        if not os.path.exists(p):
+            return Result(False, "找不到真實歷史快照 %s，無法做 real-replay 驗證" % p)
+        days[d] = mod.load(install_binary_copy(p, sandbox, "real_%s.json.gz" % d))["data"]
+    got = {}
+    for d_old, d_new in (("2026-09-05", "2026-09-06"), ("2026-09-06", "2026-09-07")):
+        r = mod.compare_group("cex_currency_status", "gate", gcfg, days[d_old], days[d_new])
+        judged = mod.judge(r, gcfg)
+        ev, _ = mod.build_group_events("cex_currency_status", "gate", gcfg, r, judged, d_new, {})
+        sc = [e for e in ev if e["event"] == "STATUS_CHANGED"]
+        leak = [e for e in sc
+                if set(e["from"]) == {"withdraw_disabled"}
+                and r["keyed_old"][e["key"]].get("delisted") is True
+                and r["keyed_new"][e["key"]].get("delisted") is True]
+        got[d_new] = (judged, len(sc), len(leak))
+    log = read_jsonl(os.path.join(sandbox, "track-crypto/data/_status_filter/suppressed.jsonl"))
+    n_log = {d: sum(1 for g in log if g["date"] == d) for d in ("2026-09-06", "2026-09-07")}
+    ok = (got.get("2026-09-06") == ("NORMAL", 49, 0) and got.get("2026-09-07") == ("NORMAL", 49, 0)
+          and n_log == {"2026-09-06": 121, "2026-09-07": 122})
+    return Result(ok, "09-06=(judged,STATUS_CHANGED,漏網)=%r 09-07=%r（各期望 ('NORMAL',49,0)）；"
+                      "抑制紀錄筆數=%r（期望 09-06:121、09-07:122）" % (got.get("2026-09-06"),
+                                                                     got.get("2026-09-07"), n_log))
+
+
+@check("detect_delistings.flap_window", mutate_target="detect_delistings", mutate=mut_dd_flap_window)
+def chk_dd_flap_window(is_mutant):
+    """做法 2【抖動標記】的回翻視窗邊界：間隔 <= FLAP_WINDOW_DAYS 天翻回原值要標記、
+    超過就不標記，而且**配對的兩筆都要標記**、彼此互相記下對方的日期。
+    合成 3 組（都用同一支 flap_marks() 純函式判定，不必跑整支程式）：
+      G1  01-01 F->T、01-02 T->F     間隔 1 天  → 兩筆都標記
+      G2  01-01 F->T、01-03 T->F     間隔 2 天  → 兩筆都標記（N=2 的上界，剛好在界內）
+      G3  01-01 F->T、01-05 T->F     間隔 4 天  → 都不標記（超過視窗，可能是真的維護窗）
+      G4  01-01 F->T、01-02 T->None  間隔 1 天但沒翻回原值 → 都不標記（值不相等）
+    視窗取值 N=2 的實測推導見 detect_delistings.py 的 FLAP_WINDOW_DAYS 註解。"""
+    sandbox = new_sandbox("dd_flapwin_mut" if is_mutant else "dd_flapwin")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_flap_window(text)
+    mod = load_module(_install_dd(sandbox, text))
+
+    def ev(date, key, ov, nv):
+        return {"date": date, "source": "s", "group": "gate", "key": key,
+                "event": "STATUS_CHANGED", "from": {"withdraw_disabled": ov},
+                "to": {"withdraw_disabled": nv}}
+    events = [ev("2030-01-01", "G1", False, True), ev("2030-01-02", "G1", True, False),
+              ev("2030-01-01", "G2", False, True), ev("2030-01-03", "G2", True, False),
+              ev("2030-01-01", "G3", False, True), ev("2030-01-05", "G3", True, False),
+              ev("2030-01-01", "G4", False, True), ev("2030-01-02", "G4", True, None)]
+    marks = mod.flap_marks(events)
+    keys = sorted((d, k) for (d, g, k) in marks)
+    ok = (keys == [("2030-01-01", "G1"), ("2030-01-01", "G2"),
+                   ("2030-01-02", "G1"), ("2030-01-03", "G2")]
+          and marks.get(("2030-01-01", "gate", "G1"), {}).get("with") == ["2030-01-02"]
+          and marks.get(("2030-01-02", "gate", "G1"), {}).get("with") == ["2030-01-01"]
+          and marks.get(("2030-01-01", "gate", "G1"), {}).get("fields") == ["withdraw_disabled"]
+          and mod.FLAP_WINDOW_DAYS == 2)
+    return Result(ok, "FLAP_WINDOW_DAYS=%r 被標記的(日期,key)=%r（期望 G1 兩筆＋G2 兩筆，"
+                      "G3 間隔 4 天與 G4 未翻回原值都不得被標記）；G1 互指=%r/%r"
+                  % (getattr(mod, "FLAP_WINDOW_DAYS", None), keys,
+                     marks.get(("2030-01-01", "gate", "G1"), {}).get("with"),
+                     marks.get(("2030-01-02", "gate", "G1"), {}).get("with")))
+
+
+@check("detect_delistings.flap_annotate_convergence", mutate_target="detect_delistings",
+       mutate=mut_dd_flap_stale_removal)
+def chk_dd_flap_annotate_convergence(is_mutant):
+    """做法 2【抖動標記】回寫既有事件行的三項不變量（合起來就是 verify_prod.py 第 6 項
+    「detect_delistings 冪等（重跑零變化）」在本輪新機制上的對應保護）：
+      (a) 該加的加：真正抖動的兩筆事件都被補上 flapped／flap_fields／flap_with；
+      (b) 該拿掉的拿掉：檔案裡原本就有、但依現行資料不該存在的舊標記必須被移除
+          —— 這是「標記狀態有唯一不動點」的關鍵，否則重跑會一直判定需要改寫；
+      (c) 因此第二次呼叫 annotate_flaps() 的改寫行數必須是 0，檔案位元組完全不變。
+    另外驗證既有 7 個核心欄位（date/source/group/key/event/from/to）一個都沒被動到，
+    以及非 STATUS_CHANGED 的行原樣保留。"""
+    sandbox = new_sandbox("dd_flapconv_mut" if is_mutant else "dd_flapconv")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_flap_stale_removal(text)
+    mod = load_module(_install_dd(sandbox, text))
+    jl = os.path.join(sandbox, "track-crypto/data/selftest_flap/events.jsonl")
+    os.makedirs(os.path.dirname(jl), exist_ok=True)
+    rows = [
+        {"date": "2030-02-01", "source": "s", "group": "gate", "key": "FLAP",
+         "event": "STATUS_CHANGED", "from": {"w": False}, "to": {"w": True}},
+        {"date": "2030-02-02", "source": "s", "group": "gate", "key": "FLAP",
+         "event": "STATUS_CHANGED", "from": {"w": True}, "to": {"w": False}},
+        # 不該有標記卻已經帶著標記的一筆（模擬規則調整後的殘留），必須被移除
+        {"date": "2030-02-01", "source": "s", "group": "gate", "key": "SOLO",
+         "event": "STATUS_CHANGED", "from": {"w": False}, "to": {"w": True},
+         "flapped": True, "flap_fields": ["w"], "flap_with": ["2030-02-09"]},
+        {"date": "2030-02-01", "source": "s", "group": "gate", "key": "X1", "event": "LISTED",
+         "from": None, "to": "x"},
+    ]
+    with open(jl, "w", encoding="utf-8") as f:
+        for e in rows:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    n1, c1 = mod.annotate_flaps(jl)
+    b1 = open(jl, "rb").read()
+    after1 = read_jsonl(jl)
+    n2, c2 = mod.annotate_flaps(jl)
+    b2 = open(jl, "rb").read()
+    got = {(e["date"], e["key"]): e for e in after1}
+    core_ok = all(got[(o["date"], o["key"])].get(c) == o.get(c)
+                  for o in rows for c in ("date", "source", "group", "key", "event", "from", "to"))
+    ok = (n1 == 2 and c1 == 3 and core_ok
+          and got[("2030-02-01", "FLAP")].get("flapped") is True
+          and got[("2030-02-01", "FLAP")].get("flap_with") == ["2030-02-02"]
+          and got[("2030-02-02", "FLAP")].get("flap_with") == ["2030-02-01"]
+          and "flapped" not in got[("2030-02-01", "SOLO")]
+          and "flapped" not in got[("2030-02-01", "X1")]
+          and c2 == 0 and b1 == b2 and len(after1) == 4)
+    return Result(ok, "第1次(標記數,改寫行數)=(%r,%r)（期望 (2,3)）；SOLO 殘留標記已移除=%s"
+                      "（期望 True）；第2次改寫行數=%r（期望 0）；兩次位元組相同=%s（期望 True）；"
+                      "核心7欄未被動到=%s 行數=%d（期望 4）"
+                  % (n1, c1, "flapped" not in got[("2030-02-01", "SOLO")], c2, b1 == b2,
+                     core_ok, len(after1)))
+
+
 # ==========================================================================
 # 執行器
 # ==========================================================================
@@ -2947,6 +3794,157 @@ def run_all(filter_substr=None):
     elapsed = time.time() - t0
     return results, any_fail, elapsed
 
+
+
+# ==========================================================================
+# x402_bazaar 完整性守門：不可以是恆真式（2026-09-07 新增，
+# 見 track-crypto/scripts/detect_delistings.py 第四階段修正區塊、
+# 本機 docs/0907-D-x402-gate-report.md）
+#
+# 背景：舊版守門比對的是 data.total，而 data.total 是 adapter 自己寫的 len(items)
+# ——自報的數字與被檢查的數字是同一個，判斷式恆為假、守門恆為真，對分頁截斷
+# 零防護力。以下三條檢查把「守門必須拿**上游自報總數**來比」這件事鎖住。
+# ==========================================================================
+
+@check("detect_delistings.x402_gate_not_tautological",
+       mutate_target="detect_delistings", mutate=mut_dd_x402_tautological_gate)
+def chk_dd_x402_gate_not_tautological(is_mutant):
+    """核心不變量：x402_bazaar 的完整性守門**不可以**是恆真式。
+
+    用一組互為反例的資料，同時從兩個方向把守門釘在「上游自報總數」上：
+
+      甲、data.total 與 len(items) 完全自我一致（都是 98），但上游說有 598 筆
+          -> **必須** GATE_FAIL。恆真式守門（比對自我一致的數字）在這裡會放行。
+      乙、data.total 故意說謊（宣稱 598，實際 len(items)=98），但上游自報總數
+          與 len(items) 相符（都是 98）-> **必須** NORMAL。恆真式守門
+          （比對 data.total 與 len(items)）在這裡會誤擋。
+
+    兩個方向都對，才能證明守門讀的是 reported_total、不是 adapter 自己算的 total。
+    #mutant 把 reported_total 換成 len(items) 本身（＝重現本輪修掉的那個 bug），
+    甲案會變成放行，本檢查隨即翻盤成 FAIL。
+
+    兩組的 removed_rate 都是 2%（100 -> 98），刻意壓在熔斷門檻 5% 之下，
+    確保這條檢查只測完整性守門本身，不會被熔斷搶先攔截（比照既有
+    detect_delistings.integrity_gate_skips 的設計）。
+    """
+    sandbox = new_sandbox("dd_x402_taut_mut" if is_mutant else "dd_x402_taut")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_x402_tautological_gate(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+
+    base100 = [x402_item("R%d" % i, "d%d" % i) for i in range(100)]
+    items98 = [x402_item("R%d" % i, "d%d" % i) for i in range(98)]
+
+    # 甲：自我一致但上游說更多（模擬「掉了一整頁」）
+    a_old = x402_snapshot(base100)
+    a_new = x402_snapshot(items98, reported_total=598)
+    fa_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-07-01.json.gz"), a_old)
+    fa_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-07-02.json.gz"), a_new)
+    judged_a = mod.judge(mod.compare_pair("x402_bazaar", cfg, fa_old, fa_new), cfg)
+
+    # 乙：adapter 自算欄位說謊，但上游自報總數與實得筆數相符
+    b_old = x402_snapshot(base100)
+    b_new = x402_snapshot(items98, total=598, reported_total=98)
+    fb_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-08-01.json.gz"), b_old)
+    fb_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-08-02.json.gz"), b_new)
+    judged_b = mod.judge(mod.compare_pair("x402_bazaar", cfg, fb_old, fb_new), cfg)
+
+    # 設定表本身也一併釘住：不可以再出現舊的 total_field 鍵，
+    # 且守門欄位不可以指回 adapter 自己算的 "total"。
+    cfg_clean = ("total_field" not in cfg) and (cfg.get("reported_total_field") != "total")
+
+    guard_active = (judged_a == "GATE_FAIL") and (judged_b == "NORMAL") and cfg_clean
+    return Result(guard_active,
+                  "甲(total=98==len(items)=98 但 reported_total=598)judged=%s(期望 GATE_FAIL)；"
+                  "乙(total=598 說謊 但 reported_total=98==len(items))judged=%s(期望 NORMAL)；"
+                  "SOURCES 無 total_field 且 reported_total_field=%r 不等於 'total' -> %s"
+                  % (judged_a, judged_b, cfg.get("reported_total_field"), cfg_clean))
+
+
+@check("detect_delistings.x402_gate_truncated_flag",
+       mutate_target="detect_delistings", mutate=mut_dd_x402_truncated_gate)
+def chk_dd_x402_gate_truncated_flag(is_mutant):
+    """x402_bazaar 守門的 fail-closed 第一道防線：adapter 自報 data.truncated
+    只要不是布林 False（True／缺失／None／任何其他值），一律視為不完整。
+
+    刻意讓 reported_total 與 len(items) **完全相符**（筆數這條線索通過），
+    只有 truncated=True 這一個訊號說「沒抓完」——守門仍必須擋下來。
+    #mutant 關掉這個檢查後即放行，本檢查翻盤成 FAIL。
+    （比照既有 detect_delistings.group_tolerant_total_match 對 agent_virtuals
+      truncated 旗標的同一設計原則。）
+    """
+    sandbox = new_sandbox("dd_x402_trunc_mut" if is_mutant else "dd_x402_trunc")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_x402_truncated_gate(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+
+    old = x402_snapshot([x402_item("R%d" % i, "d%d" % i) for i in range(100)])
+    new_items = [x402_item("R%d" % i, "d%d" % i) for i in range(98)]
+    new = x402_snapshot(new_items, truncated=True)  # 筆數對得上，但來源自報「沒抓完」
+    f_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-07-11.json.gz"), old)
+    f_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-07-12.json.gz"), new)
+    judged_true = mod.judge(mod.compare_pair("x402_bazaar", cfg, f_old, f_new), cfg)
+
+    # 對照組：同一組資料、truncated=False -> 必須 NORMAL（證明擋下來的原因就是這個旗標）
+    new_ok = x402_snapshot(new_items, truncated=False)
+    f_new_ok = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-07-13.json.gz"), new_ok)
+    judged_false = mod.judge(mod.compare_pair("x402_bazaar", cfg, f_old, f_new_ok), cfg)
+
+    guard_active = (judged_true == "GATE_FAIL") and (judged_false == "NORMAL")
+    return Result(guard_active,
+                  "truncated=True judged=%s(期望 GATE_FAIL)；同資料 truncated=False judged=%s(期望 NORMAL)"
+                  % (judged_true, judged_false))
+
+
+@check("detect_delistings.x402_gate_legacy_range",
+       mutate_target="detect_delistings", mutate=mut_dd_x402_legacy_range)
+def chk_dd_x402_gate_legacy_range(is_mutant):
+    """舊快照相容分支：2026-09-07 之前的快照沒有 reported_total 欄位，
+    守門退回 legacy_range_check（筆數是否落在實測歷史區間 SOURCES.legacy_range）。
+
+    兩個方向都驗：
+      甲、區間內（13,000 筆，區間 [12829,18252]）-> 必須通過守門（NORMAL）。
+          這一條同時保證「歷史重放不會整批變成 GATE_FAIL」這個相容性要求。
+      乙、區間外（100 筆）-> 必須 GATE_FAIL。這一條保證相容分支**不是**放行一切
+          的空殼（否則就只是把恆真式換個地方留下來）。
+    #mutant 關掉區間比較後乙案會放行，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("dd_x402_legacy_mut" if is_mutant else "dd_x402_legacy")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_x402_legacy_range(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    cfg = mod.SOURCES["x402_bazaar"]
+    lo, hi = cfg["legacy_range"]
+
+    n_in = 13000  # 落在 [12829, 18252] 內
+    big_old = [x402_item("R%d" % i, "d%d" % i) for i in range(n_in)]
+    big_new = big_old[:n_in - 20]  # 移除 20 筆＝0.15%，遠低於熔斷門檻 5%
+    a_old = x402_snapshot(big_old, legacy=True)
+    a_new = x402_snapshot(big_new, legacy=True)
+    fa_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-06-01.json.gz"), a_old)
+    fa_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-06-02.json.gz"), a_new)
+    judged_in = mod.judge(mod.compare_pair("x402_bazaar", cfg, fa_old, fa_new), cfg)
+
+    small = [x402_item("R%d" % i, "d%d" % i) for i in range(100)]
+    b_old = x402_snapshot(small, legacy=True)
+    b_new = x402_snapshot(small[:98], legacy=True)
+    fb_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-06-11.json.gz"), b_old)
+    fb_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/x402_bazaar/2030-06-12.json.gz"), b_new)
+    judged_out = mod.judge(mod.compare_pair("x402_bazaar", cfg, fb_old, fb_new), cfg)
+
+    guard_active = (judged_in == "NORMAL") and (judged_out == "GATE_FAIL")
+    return Result(guard_active,
+                  "legacy_range=[%d,%d]；區間內 n=%d judged=%s(期望 NORMAL)；"
+                  "區間外 n=100 judged=%s(期望 GATE_FAIL)"
+                  % (lo, hi, n_in, judged_in, judged_out))
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="離線回歸自測（見 docs/selftest.md）")

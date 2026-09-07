@@ -283,6 +283,177 @@ changes/*.md／CHANGES.md 四個既有輸出管道的邏輯與格式完全不變
   本輪同樣硬性限制：只在 VPS /tmp/detect-phase3/ 驗證，正式目錄一個字元都沒有改，
   未 git commit、未安裝套件。
 ============================================================================
+
+第四階段（本輪，2026-09-07，任務 C「統一兩支程式的熔斷語意」，
+依 docs/0907-events-audit-0904-0907.md §6.1 揭露的資料缺口）：
+
+  問題（實測，不是推論）：
+    1. 同一個「熔斷」概念，本檔案與 scripts/cex_events.py 兩種行為——
+       cex_events.py 是「標記但不否決」（事件照寫，加註 note:"anomalous_scale"），
+       本檔案是「否決整組」（judged=="BREAKER" 時完全不寫事件）。
+    2. 「否決整組」造成不可逆的資料遺失：x402_bazaar 2026-09-06→09-07 熔斷
+       （removed 率 8.43%，門檻 5%）讓 1,399 筆 DELISTED、387 筆 LISTED、
+       21 筆 REAPPEARED 完全沒有寫入。其中 REAPPEARED 尤其補不回來——那 21 個
+       key 在 09-07 快照裡已經回到清單，之後任何一次 09-07→09-08 比對都不會再把
+       它們放進 added_keys，判定機會永久消失。
+    3. 「否決整組」還有第二層副作用：judged!="NORMAL" 時 last_delisted 不更新，
+       那 1,399 個 key 之後若重新出現，也不會被判為 REAPPEARED（會被記成單純的
+       LISTED），污染範圍不只熔斷當天。
+
+  本輪統一後的語意（兩支程式共用同一條規則、同一組欄位名、同一個門檻常數語意）：
+    - 完整性守門（GATE_FAIL）：**唯一**會讓事件不進 events.jsonl 的「資料不可信」判定。
+    - 異常規模熔斷（BREAKER）：**標記但不否決**——事件照常寫入 events.jsonl，
+      每一筆額外帶 note:"anomalous_scale"（沿用 cex_events.py 既有欄位）、
+      breaker_tripped:true、removed_pct、breaker_threshold 四個欄位，
+      並照舊寫 ALERT-DELIST.md 永久告警要求人工複核。
+    - 例外（本輪新增的第五道閘門）：熔斷成立時先跑「分頁截斷指紋」檢查
+      （removal_tail_metrics() + breaker_release_check()）。指紋成立 → 不寫入
+      events.jsonl，改寫入 **隔離檔** data/<source>/events_quarantine.jsonl。
+      「隔離」不是「丟棄」：事實仍然完整落地、可被人工複核後以
+      tools/promote_quarantine.py 之類的程序提升，**不再有不可逆遺失**。
+    - GATE_FAIL 也一併改寫隔離檔（同一機制、同一格式，多 4 行程式碼）：
+      agent_virtuals 2026-08-29～09-01 四天 GATE_FAIL 造成的事件遺失
+      （見 track-crypto/data/_gate_fail/gate_skips.jsonl）屬於同一類問題，
+      本輪一併止血。events.jsonl 的內容與格式不受影響（GATE_FAIL 本來就不寫）。
+
+  為什麼「標記」優於「否決」（不對稱性論證，這是本輪的核心理由）：
+    否決造成的遺失**不可逆**（REAPPEARED 判定機會永久消失，沒有任何後續程序補得回來）；
+    標記造成的污染**可逆**（每筆都帶標記，下游可過濾，也可用 scripts/apply_correction.py
+    更正）。兩種錯誤的代價不對稱，所以預設值應該倒向「保留資料」。
+
+  為什麼還是保留一道「截斷指紋 → 隔離」的閘門（反面風險，SPEC 明文要求評估）：
+    若熔斷真的是抓取截斷造成的，「標記不否決」會寫入大量假 DELISTED。
+    **注意：規格書建議的「只有 complete=true 才標記不否決」在本檔案是空條件**——
+    compare_pair()/compare_group() 的 breaker 一開始就寫成
+    `breaker = gate_ok and ...`，judge() 又先回傳 GATE_FAIL，所以 BREAKER 本來就
+    蘊含 gate_ok==True，加這個條件等於沒加。真正的破口是
+    **x402_bazaar 的 total_match 守門是恆真式**：
+    track-crypto/adapters/x402_bazaar.py 的 collect() 最後一行寫
+    `return {..., "total": len(items), "items": items}`，自報欄位與被檢查對象是
+    同一個數字，對分頁截斷零防護力（docs/0907-events-audit-0904-0907.md §8.1 已獨立
+    證實）。manifest 的 truncated 欄位對這個來源同樣無效：
+    track-crypto/scripts/snap_crypto.py 的 _find_truncated_flag() 讀不到旗標時一律
+    預設 False，而 x402_bazaar 的 data 只有 x402Version/total/items 三個鍵。
+    因此本輪改用**與快照內容無關的結構性指紋**：分頁截斷會砍掉「連續尾端區塊」，
+    真實下架不會。實測校準見 BREAKER_TAIL_COVER_MAX 常數註解。
+
+  誠實揭露（本輪未解決的殘餘風險）：截斷指紋對「排序不穩定的來源發生中度截斷」無效。
+  實測：把 2026-09-07 的 x402_bazaar 快照截到前 15 頁（移除率 11.9%，遠超 5% 門檻），
+  tail_cover 仍是 0.0，指紋不會觸發，事件會被標記後寫入。根本解法是修 adapter 保存
+  API 自報的 pagination.total（本輪未做，屬 adapter 變更、會動到 PARSER_VERSION，
+  超出本任務授權範圍），已列入報告待辦。在那之前，這類事件仍然是「有標記、有永久告警、
+  可更正」，比「靜默遺失」好。
+
+  本輪修改範圍（供整合代理合併用，逐一列出）：
+    新增常數 QUARANTINE_BASENAME／BREAKER_TAIL_COVER_MAX；
+    新增函式 removal_tail_metrics()／_manifest_entry()／breaker_release_check()／
+    load_quarantine_seen()／write_quarantine()／breaker_marks()（一整段連續新增）；
+    修改 compare_pair()（新增 2 個回傳欄位）、compare_group()（新增 2 個回傳欄位）、
+    build_group_events()（允許 BREAKER 建事件並標記）、
+    process_pair()／process_group_source_pair()（事件落地去向分流、告警措辭）、
+    main()（summary 多印隔離筆數）。
+    **未修改**：judge()（仍然只回傳 NORMAL／GATE_FAIL／BREAKER 三個值，公開介面不變）、
+    completeness()／completeness_group()／dedup()／snapshots()／load()／
+    status_changes_for_group()／render_report()／render_group_source_report()／
+    write_alert_block()／write_alert_block_group()／record_gate_fail()／
+    load_gate_fail_seen()／update_index()／load_seen()／write_events()。
+
+第四階段修正（本輪，2026-09-07，任務 B「上游改名被誤判成下架」，
+依 docs/0907-events-audit-0904-0907.md §5.5 的實測證據）：
+
+  問題：crypto_project_liveness 於 2026-09-06 產生 2 筆假 DELISTED
+  （`stake dao\x1f1773273600`／`stake dao\x1f1779840000`）與 2 筆對應的假 LISTED
+  （`stake dao yield\x1f...`）。實測逐欄位比對確認：DefiLlama 端把同兩筆歷史事件的
+  name 從 "Stake DAO" 改成 "Stake DAO Yield"，date／classification／technique／amount／
+  chain／bridgeHack／targetType／language 與 defillamaId（兩天都是 "249"）**逐一相同**。
+  第三階段已對 (name, date) 複合鍵做大小寫正規化，但「實質改名」（多一個單字）不在
+  該修法的防護範圍內。
+
+  本輪修法（混合式辨識，hybrid identity）：**主鍵字串本身不動**（仍是 (name, date)
+  複合鍵，見 dedup()），改在集合差算完之後多一道「穩定 id 對位」抵銷層：
+  若同一組相鄰快照裡，某個「消失」的項目與某個「新增」的項目擁有**相同的穩定識別**
+  （gcfg["stable_id_fields"]，crypto_project_liveness 為 ("defillamaId", "date")），
+  就判定為「同一個東西被上游改名」，兩者同時從 removed_keys／added_keys 移除，
+  不寫入 DELISTED／LISTED，只在人類可讀日報與 CHANGES.md 索引列記錄改名事實。
+
+  為什麼不直接把主鍵換成「有 defillamaId 就用它、沒有才退回 (name,date)」的混合主鍵
+  （本輪實測後否決，數字見本機 docs/0907-B-rename-key-report.md §3）：
+    1. 該做法**修不好問題本身**，只是把假事件換一批。實測 11 天全歷史重放：
+       純混合主鍵確實消掉 09-05→09-06 的 2 筆假消失，但同時**新製造 2 筆假消失**——
+       2026-08-28→08-29 的 Saturn（defillamaId 由 "7646" 變 null）與
+       2026-09-02→09-03 的 Ankr（defillamaId 由 null 變 "278"）。上游的
+       defillamaId 本身會出現與消失（實測 58.4% 缺失、且逐日會變動），
+       「有值用 id、沒值用 name」等於讓主鍵跟著這個不穩定欄位一起跳動。
+    2. 該做法會讓 crypto_project_liveness 已公開的 events.jsonl 主鍵語意斷成兩段
+       （同一個歷史事件在舊資料是 name 鍵、新資料是 id 鍵），而 main() 每次執行都會
+       重放全部相鄰快照配對、以 (date,source,group,key,event) 做冪等判斷——換主鍵會
+       讓既有 22 筆歷史事件的 key 全部對不上 seen，導致一次性大量重複事件被追加。
+    3. 本輪採用的抵銷層對主鍵零改動，因此上述兩個風險都不存在（實測：除了
+       09-05→09-06 那 2 組改名被抵銷之外，其餘 9 組相鄰配對的 removed／added
+       集合逐筆完全相同）。
+
+  本輪只動 4 處（其餘一律未修改）：
+    1. GROUP_SOURCES["crypto_project_liveness"]["groups"]["_hacks"] 新增
+       stable_id_fields 設定（其他來源沒有這個鍵，行為完全不變）。
+    2. 新增 stable_identity()／build_stable_id_index()／reconcile_renames()
+       三個純函式（新程式碼，不被既有路徑呼叫）。
+    3. compare_group() 在回傳前呼叫 reconcile_renames()，並在回傳 dict 多一個
+       renamed_pairs 欄位（未設定 stable_id_fields 的子集合恆為空 list，
+       removed_keys／added_keys 一個位元都不變）。
+    4. render_group_source_report()／process_group_source_pair() 各新增一段
+       「只有 renamed_pairs 非空時才會產生輸出」的分支。
+
+  本輪不修改：dedup()／judge()／build_group_events()／status_changes_for_group()／
+  completeness()／completeness_group()／extract_group_items()／compare_pair()／
+  process_pair()／render_report()／write_events()／load_seen()／update_index()／
+  record_gate_fail()／write_alert_block()／write_alert_block_group()／main()
+  一個字元都沒有改；events.jsonl 的 schema 與事件型別集合
+  （LISTED／DELISTED／REAPPEARED／STATUS_CHANGED）完全不變，本輪**沒有**新增
+  第 5 種事件型別（是否要新增 RENAMED，列為待裁示事項，見報告 §7）。
+
+  本輪同樣硬性限制：只在 VPS /tmp/0907-B-rename-key/ 驗證，正式目錄一個字元都沒有改，
+  未 git commit、未安裝套件。
+
+第四階段修正（本輪，2026-09-07）：修掉 x402_bazaar 的「恆真式」完整性守門。
+完整推導、上游親驗證據、沙盒驗證輸出見本機 docs/0907-D-x402-gate-report.md。
+
+【被修正的既有錯誤敘述】上方第二階段區塊寫「完整性守門新增 range_check 方式
+（第一階段只有 total_match，**因為 x402_bazaar 有 data.total 自報欄位**）」——
+這句話的括號內容**是錯的**，本輪推翻：data.total 不是來源自報欄位，是
+track-crypto/adapters/x402_bazaar.py 自己寫的 len(items)。因此舊 completeness()
+的 `total != n` 判斷式恆為假，守門恆為真，對分頁截斷零防護力
+（實證：13 份歷史快照全部 total == len(items)，見 docs/0907-events-audit-0904-0907.md §8.1；
+本機 docs/gate-alert-and-reaudit.md §4.6.1 的同一錯誤敘述已一併更正）。
+上方第二階段區塊的歷史敘述保留原樣不改寫（那是當時的紀錄），以本段為準。
+
+【本輪查證】2026-09-07 親打上游 Coinbase CDP API：回應頂層確實有
+pagination:{limit,offset,total}，total 是真正的上游自報目錄總數。原 adapter 讀了
+它只當迴圈終止條件、沒有保存。已改為保存成 data.reported_total 並加上
+data.truncated 自報旗標（adapter PARSER_VERSION 1 -> 2）。
+
+【本輪修改範圍】只動三處，且都在 x402_bazaar（SOURCES）這條路徑上：
+  1. SOURCES["x402_bazaar"]：刪除 total_field，新增 completeness／
+     reported_total_field／truncated_field／tolerance_pct／tolerance_abs_floor／
+     legacy_range 六個鍵。
+  2. completeness()：整支改寫（新增 reported_total_match 與舊快照相容的
+     legacy_range_check 兩條路徑），舊的 "total_match" reason 字串一併移除。
+  3. compare_pair() 回傳字典新增 ok_old／ok_new 兩個鍵（純加法），
+     render_report()／write_alert_block() 內原本用
+     `reason == "total_match"` 字串字面值回推守門結果的 4 處改讀這兩個布林值
+     （不改任何判定邏輯，只修正一個會在 reason 措辭改變後誤印的顯示瑕疵）。
+
+【本輪不修改】completeness_group()／compare_group()／compare_pair() 的判定邏輯／
+judge()／dedup()／build_group_events()／render_group_source_report()／
+write_alert_block_group()／process_pair()／process_group_source_pair()／
+record_gate_fail()／load_gate_fail_seen()／snapshots()／load()／update_index()／
+write_events()／main() 一個字元都沒有改；GROUP_SOURCES 全部 22 個子集合的設定
+一個字元都沒有改（本輪只動 SOURCES 這一個表）。
+
+【相容性】2026-09-07 之前的 13 份既有快照沒有 reported_total 欄位，會走
+legacy_range_check 分支並全部通過（實測 len(items) 落在 [14255,16592]，區間為
+[12829,18252]），events.jsonl 對歷史資料重放後**逐位元組不變**（沙盒實測，
+見報告 §7）。changes/x402_bazaar/*.md 的「完整性守門」兩列文字會改變
+（reason 字串換了），這是預期中的顯示差異，不影響任何事件判定。
 """
 import os
 import sys
@@ -322,6 +493,55 @@ GATE_FAIL_LOG = os.path.join(TRACK_CRYPTO, "data", "_gate_fail", "gate_skips.jso
 # 最多一行」，正常運作下極罕見觸發）。
 GATE_FAIL_LOG_SIZE_HINT_LINES = 500
 
+# --------------------------------------------------------------------------
+# 第四階段（2026-09-07，熔斷語意統一）新增的兩個模組層級常數。
+# --------------------------------------------------------------------------
+# 隔離檔檔名（與 events.jsonl 同目錄，逐來源一份）。語意：「這一組轉換算出來的事件
+# 事實，因為資料可信度不足（GATE_FAIL）或疑似分頁截斷（BREAKER 且截斷指紋成立）
+# 而不進 events.jsonl，但**完整保留**，供人工複核後決定是否提升」。
+# 只追加、不覆寫、不刪減，去重鍵與 events.jsonl 相同的五元組
+# (date, source, group, key, event)，見 write_quarantine()。
+QUARANTINE_BASENAME = "events_quarantine.jsonl"
+
+# 分頁截斷指紋門檻：removal_tail_metrics() 算出的 tail_cover
+# （＝「前一日清單順序中，結尾連續且全部被移除的區塊長度」÷「本次移除總筆數」）
+# 大於等於本值時，判定為「疑似分頁截斷」，該組轉換的事件改寫入隔離檔而不進 events.jsonl。
+#
+# 實測校準（2026-09-07，全部是本機真實歷史快照重算，非估計；完整輸出見本機
+# docs/0907-C-breaker-semantics-report.md §4.2）：
+#   正類（真實截斷）agent_virtuals 兩個已知的時間預算截斷日：
+#       2026-08-28→08-29 移除 4500/37500，tail_cover = 1.0000
+#       2026-08-30→08-31 移除 5978/41978，tail_cover = 1.0000
+#   負類（真實變動）x402_bazaar 全部 12 組相鄰日轉換：tail_cover 介於 0.0000～0.0114
+#       （含本次要處理的 09-06→09-07 熔斷日，tail_cover = 0.0000）
+#   合成正類 x402_bazaar 把 09-07 快照截到前 1／2 頁：0.7366／0.7867
+# 門檻取 0.50，落在實測正類最小值（0.7366）與負類最大值（0.0114）中間，
+# 兩側各留一個數量級以上的餘裕。樣本數少（正類 2 真實 + 2 合成），
+# 應隨資料累積重新校準，沿用 cex_events.py 熔斷門檻註解的同一立場。
+#
+# 已知盲點（誠實揭露，不是設計目標）：本指紋只抓得到「移除項目確實排在前一日清單尾端」
+# 的截斷。x402_bazaar 的 API 排序逐日不穩定，把 09-07 快照截到前 15 頁
+# （移除率 11.9%）時 tail_cover 仍是 0.0，指紋不會觸發。見檔頭第四階段「誠實揭露」。
+BREAKER_TAIL_COVER_MAX = 0.50
+
+# GATE_FAIL（完整性守門不通過）要不要也寫進隔離檔。**預設 False（不寫）**。
+#
+# 為什麼預設關閉（實測數字，不是推論）：2026-09-07 對全部歷史快照重放，若開啟這個
+# 選項，光是 agent_virtuals 2026-08-29～09-01 那 4 個已知的時間預算截斷日就會產生
+# **65,788 筆**隔離紀錄（08-29 DELISTED 4,500／08-30 LISTED 8,978／08-31 DELISTED
+# 5,978／09-01 LISTED 46,332），約 13 MB，而且會進 git（agent_virtuals 不在
+# .gitignore 排除的 4 個大型來源之列）。
+#
+# 為什麼這些紀錄的價值低（語意論證）：完整性守門不通過＝**這份快照本身已知不可信**
+# （agent_virtuals 那 4 天的 truncated 旗標明確是 True），由它推出來的「消失／新增」
+# 幾乎必然是截斷假象，不是待複核的事實。相對地，熔斷放行檢查沒過的情況是
+# 「守門通過（資料可信）但規模可疑」，那才是真正需要保留待複核的灰色地帶。
+# 兩者不同性質，所以預設值不同：BREAKER 一律隔離保存，GATE_FAIL 預設只留
+# _gate_fail/gate_skips.jsonl 的守門紀錄（既有行為，未改變）。
+#
+# 需要時把這個值改成 True 即可，程式路徑完全相同、冪等、可重跑。
+QUARANTINE_GATE_FAIL = False
+
 EMDASH = "\u2014"  # 「改寫」欄固定值，SPEC 指定用 em dash，不是連字號
 
 # --------------------------------------------------------------------------
@@ -333,11 +553,51 @@ EMDASH = "\u2014"  # 「改寫」欄固定值，SPEC 指定用 em dash，不是�
 #                 第一階段只有這一個來源，且其規模（萬筆級）遠大於 20，加上下限
 #                 對行為沒有任何實際影響，SPEC 也只要求單純的百分比門檻。
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# 2026-09-07 修正（恆真式守門，見本機 docs/0907-D-x402-gate-report.md）：
+# 原設定 "total_field": "total" 搭配 completeness() 的 total_match，被
+# docs/0907-events-audit-0904-0907.md §8.1 查出是**恆真式**——adapter 直接寫
+# "total": len(items)，自報欄位與被檢查對象是同一個數字，對分頁截斷零防護力。
+# 本輪親打上游 API 確認回應含 pagination.total（真正的自報總數），adapter 已改為
+# 保存為 data.reported_total 並自報 data.truncated，本表改為指向這兩個新欄位，
+# **並刪除 total_field**（不留一個假的保護感）。
+#   completeness ： "reported_total_match"（見 completeness() 新實作）
+#   tolerance_pct／tolerance_abs_floor：容忍度門檻 = max(abs_floor, pct% × reported_total)。
+#     為什麼需要容忍度而不是嚴格相等：上游目錄是活的，一次全量分頁約 45 秒，
+#     期間清單本身會變動。2026-09-07 兩次全量實測：第一次 reported_total=14698、
+#     len(items)=14698（差 0）；第二次 reported_total=14699、len(items)=14698（差 1）。
+#     **嚴格相等在第二次就會誤判 GATE_FAIL**，所以必須留容忍度。
+#     pct=0.1%（現行規模 n≈15,000 時約 15 筆）的推導：
+#       上界（不可誤殺）：實測最大落差 1 筆 -> 約 15 倍安全邊界；
+#         另以歷史最劇烈單日異動量推估理論上界（09-06→09-07 移除 1399＋新增 387
+#         ＝1786 筆/日，換算 60 秒視窗約 1.24 筆）-> 約 12 倍安全邊界。
+#       下界（要抓得到）：單一分頁遺漏 = LIMIT = 1000 筆 = 現行規模的 6.8%，
+#         是門檻的 68 倍，兩者相差近兩個數量級，不是精確調校依賴症。
+#       對照：5% 熔斷門檻比本門檻鬆 50 倍，所以真的發生截斷時本守門會先攔下來。
+#     abs_floor=5：比照本檔 GROUP_SOURCES 既有的 max(abs_floor, pct×n) 房規，
+#       避免 n 極小時百分比門檻退化成 0。
+#     樣本數揭露：容忍度目前只有 **2 次**全量實測可校準（本輪親抓），樣本很薄；
+#       reported_total 隨每日快照累積後應重新校準（沿用第二階段 range_check
+#       註解的同一立場）。
+#   legacy_range：2026-09-07 之前的既有快照沒有 reported_total 欄位（adapter 當時
+#     沒保存），若直接判 fail 會讓全部歷史相鄰配對變成 GATE_FAIL、等於毀掉重放。
+#     舊快照改走 range_check（本檔 GROUP_SOURCES 既有方法論：實測 min／max 各加
+#     10% 邊界）。13 份既有快照 len(items) 實測 min=14255（2026-08-30）、
+#     max=16592（2026-09-06），floor(14255×0.9)=12829、ceil(16592×1.1)=18252。
+#     **誠實揭露**：range_check 對本來源的鑑別力比 reported_total_match 弱得多
+#     （單一分頁遺漏 1000 筆後 n 仍落在區間內），它只是「比恆真式好」的舊資料
+#     相容分支，不是等價替代；go-forward 的真正防線是 reported_total_match。
+# --------------------------------------------------------------------------
 SOURCES = {
     "x402_bazaar": {
         "label": "x402 Bazaar 全量掛牌（Coinbase CDP x402 discovery API）",
         "key_field": "resource",
-        "total_field": "total",
+        "completeness": "reported_total_match",
+        "reported_total_field": "reported_total",
+        "truncated_field": "truncated",
+        "tolerance_pct": 0.1,
+        "tolerance_abs_floor": 5,
+        "legacy_range": (12829, 18252),
         "window": "full",
         "breaker_pct": 5.0,
     },
@@ -410,6 +670,15 @@ GROUP_SOURCES = {
                 "desc_field": "name",
                 "completeness": "range_check", "range": (4938, 6057),
                 "status_fields": ("delisted", "trade_disabled", "withdraw_disabled"),
+                # 語意過濾規則（2026-09-07 新增；規則語意、值域盤點、逐條證據見下方
+                # 「狀態欄位語意過濾（做法 4）」區塊與本機 docs/0907-E-gate-flap-report.md §3）：
+                # 已下架（delisted=True，且兩側都是 True）的幣種，withdraw_disabled 只是
+                # 下架的下游結果（下架幣提幣本來就該是關閉狀態），不具獨立資訊價值，
+                # 不產生 STATUS_CHANGED；被抑制的每一筆都寫進 STATUS_FILTER_LOG 供稽核。
+                "status_filters": (
+                    {"field": "withdraw_disabled", "when_both": {"delisted": True},
+                     "reason": "delisted_dominates_withdraw_disabled"},
+                ),
                 "breaker_pct": 1.0, "abs_floor": 5,
             },
             "coinbase": {
@@ -650,6 +919,25 @@ GROUP_SOURCES = {
                 "completeness": "total_match", "total_fields": ("count",),
                 "status_fields": (),
                 "breaker_pct": 1.0, "abs_floor": 5,
+                # 第四階段新增（2026-09-07，任務 B）：穩定識別欄位，供 reconcile_renames()
+                # 判斷「消失的那筆」與「新增的那筆」是不是同一個東西被上游改了名字。
+                # 只有設定了這個鍵的子集合才會啟用抵銷層；其餘 12 個子集合沒有這個鍵，
+                # compare_group() 走 stable_id_fields 為 None 的路徑，行為與本輪之前
+                # 逐位元組相同（已用 11 天全歷史重放驗證，見報告 §4）。
+                #
+                # 為什麼是 ("defillamaId", "date") 而不是單獨的 "defillamaId"：
+                #   defillamaId 是 DefiLlama 的**專案** id，不是**單一駭客事件** id。
+                #   同一個專案被攻擊多次時，多筆事件共用同一個 defillamaId——本案的
+                #   Stake DAO 就是 defillamaId="249" 同時對應 date=1773273600 與
+                #   date=1779840000 兩筆不同事件。單用 defillamaId 會把它們壓成一筆，
+                #   製造出比原問題更嚴重的假消失。加上 date 之後，11 天全歷史實測
+                #   (defillamaId, date) 只有 3 組重複，且與既有 (name, date) 的 3 組重複
+                #   完全是同一批（Gamma／OcelotDex／Merlin，同專案同日期發生兩起不同攻擊，
+                #   見 docs/detect-phase3-report.md §2.2），去重後不留任何歧義
+                #   （實測 11 天 ambiguous 恆為 0，見報告 §4.2）。
+                #
+                # 為什麼不改主鍵：見檔頭「第四階段修正」段落第 1～3 點的實測數字。
+                "stable_id_fields": ("defillamaId", "date"),
             },
         },
     },
@@ -666,6 +954,83 @@ GROUP_SOURCES = {
         },
     },
 }
+
+
+# ============================================================================
+# 第四階段新增（2026-09-07，本輪任務 E；派工來源 docs/0907-events-audit-0904-0907.md
+# §5.8 與 §9.3 第 4 項，使用者裁示「做法 2＋做法 4，不做做法 3」。完整推導、實測數字、
+# 歷史全量重放驗證見本機 docs/0907-E-gate-flap-report.md）：
+#
+# 背景（實測，非推測）：`cex_currency_status/gate` 在 2026-09-06 出現 170 筆
+# `withdraw_disabled: true→false`、09-07 出現 171 筆 `false→true`，兩批鍵集合交集 170 筆
+# ——同一批幣種翻過去又翻回來。同期 `delisted`／`trade_disabled` 兩個旗標完全沒動。
+# 這 341 筆佔 2026-09-04～09-07 期間 STATUS_CHANGED 總數 370 筆的 92.2%。
+# 現行設計對 STATUS_CHANGED 沒有任何抖動抑制（熔斷只看 removed_pct），這是設計缺口。
+#
+# 本輪加兩層互相獨立的機制，兩層都「不刪除任何既有事件行」：
+#
+#   做法 2【抖動標記 flap detection】—— 見 FLAP_WINDOW_DAYS／flap_marks()／annotate_flaps()。
+#     某個 (group, key, 欄位) 的值在 N 天內翻回原值時，把相關的兩筆 STATUS_CHANGED
+#     事件都補上 `flapped`／`flap_fields`／`flap_with` 三個欄位。**事件照寫、不阻擋、
+#     不刪除**——兩天的事件各自都如實描述了「快照之間欄位值確實不同」這個事實，
+#     刪掉會損失保真度（這是使用者明確裁示不採「做法 3」的理由）。
+#     因為第 2 筆事件出現時第 1 筆早已寫進 events.jsonl，標記必須「回頭更新既有事件行」，
+#     所以 annotate_flaps() 是整檔改寫（原子寫入），不是附加。冪等性見該函式 docstring。
+#
+#   做法 4【語意過濾 semantic filter】—— 見 status_filter_hit()／status_changes_for_group()。
+#     某些欄位在特定前提下沒有資訊價值（例如已下架幣種的提幣旗標），這類欄位變化
+#     一開始就不該產生 STATUS_CHANGED。規則寫在 GROUP_SOURCES 各子集合的
+#     "status_filters"（與它管的 "status_fields" 放在一起，方便下一輪的人找到），
+#     schema 見下方；被抑制的每一筆都會寫進 STATUS_FILTER_LOG 這份事實紀錄檔，
+#     「不產生事件」不等於「資料消失」，稽核時仍可完整還原。
+#
+# 「哪些欄位在哪些前提下沒有資訊價值」的逐欄位盤點表見報告 §3.2。本輪**只**啟用
+# cex_currency_status/gate 的一條規則（withdraw_disabled 在 delisted 兩側皆 True 時）。
+# 其餘 6 個帶 status_fields 的子集合（cex_currency_status/coinbase、cex_earn_apr/bybit、
+# cex_symbols_ext/coinbase、cex_symbols_ext/kraken、openrouter_models/_models、
+# payment_protocol_repos/_repos）都只有單一狀態欄位，沒有「另一個欄位可以當前提」的
+# 結構，本輪一律不設規則（預設 deny：沒寫規則＝不過濾，行為與本輪之前完全相同）。
+#
+# ---------------------------------------------------------------------------
+# status_filters schema（放在 GROUP_SOURCES[<source>]["groups"][<group>] 裡）：
+#
+#   "status_filters": (
+#       {"field": <欄位名>,                 # 只抑制這一個欄位的變化
+#        "when_both": {<前提欄位>: <值>, ...},  # 前提：**新舊兩側**都必須符合全部條件
+#        "reason": <字串代碼>},             # 寫進 STATUS_FILTER_LOG 的理由碼
+#       ...
+#   )
+#
+# 「when_both＝新舊兩側都要成立」是刻意的設計，不是實作細節：
+#   - 它保證「前提欄位本身正在變化的那一天」不會被過濾掉。例如 2026-09-03 有 26 個幣種
+#     同時發生 delisted:False→True 與 trade_disabled:False→True（下架事件本身），
+#     那一天 delisted 舊值是 False，when_both 不成立，整筆事件完整保留。
+#   - 實測全歷史 251 筆命中本規則的欄位變化，其中「同一 (key, date) 的 delisted 欄位
+#     也同時變化」的筆數是 0，與上述設計預期一致（見報告 §3.3）。
+# ---------------------------------------------------------------------------
+
+# 抖動回翻視窗（天）。用實測資料訂，不是拍腦袋——完整推導見報告 §2.2：
+#   全歷史 gate 448 筆欄位級轉換，配對出的「翻回原值」間隔分佈是
+#   gap=1 天 176 組、gap=2 天 **0 組**、gap=3 天 1 組、gap=4 天 4 組、gap=6 天 1 組、
+#   gap=8 天 1 組。gap=1 與 gap>=3 之間存在一個**實測為空**的天然斷層（gap=2）。
+#   取 N=2 的理由：
+#     (a) 對現有資料，N=2 與 N=1 的結果**完全相同**（176 組、352 筆），不多標記任何一筆；
+#     (b) 但 N=2 可以吸收「中間缺一天快照」的情況——快照缺 1 天時，相鄰快照配對會跨 2 個
+#         日曆日，事件日期間隔會從 1 天變成 2 天，N=1 會漏掉這種真實抖動；
+#     (c) N 太大的副作用是**讓異常日回頭污染更早的正常事件**：實測 N=3 會把 PRIMAL
+#         09-03 的一筆正常變化與 09-06 異常日配成對；N=4 會把 ONT／WING／TT／ONG
+#         09-01→09-05 的四天期提幣暫停（看起來像真實的維護窗，有資訊價值）標成抖動。
+#   結論：N=2 是「涵蓋全部已觀測抖動 + 容忍一天快照缺漏 + 不碰到任何 gap>=3 案例」的取值。
+#   樣本僅 11 天，應隨資料累積重新校準（沿用本檔案 range_check／熔斷門檻註解的同一立場）。
+FLAP_WINDOW_DAYS = 2
+
+# 語意過濾事實紀錄檔：被 status_filters 抑制掉、因此不會出現在 events.jsonl 的每一筆
+# 欄位變化，都在這裡留下完整紀錄（含新舊值與理由碼）。設計理由與 GATE_FAIL_LOG 完全同構
+# （見該常數註解）：放在 track-crypto/data/_status_filter/（底線開頭＝跨來源共用、
+# 非單一 <source> 專屬），只用附加模式寫檔，去重鍵 (date, source, group, key, field)。
+# 「不產生事件」必須可稽核——沒有這份紀錄，語意過濾就變成把資料悄悄丟掉。
+STATUS_FILTER_LOG = os.path.join(TRACK_CRYPTO, "data", "_status_filter", "suppressed.jsonl")
+STATUS_FILTER_LOG_SIZE_HINT_LINES = 5000
 
 
 
@@ -787,6 +1152,106 @@ def short_desc_generic(item, desc_field, n=120):
     return (s[:n] + "\u2026") if len(s) > n else s
 
 
+def stable_identity(item, fields):
+    """第四階段新增（2026-09-07，任務 B）：回傳這一筆項目的「穩定識別字串」，
+    無法構成時回傳 None。
+
+    fields 是欄位名稱的 tuple（例如 crypto_project_liveness 的
+    ("defillamaId", "date")）。任一欄位缺失、為 None 或為空字串，整筆就沒有穩定
+    識別（回傳 None）——這是刻意的 fail-closed：**寧可不抵銷（維持現狀，可能留下
+    一組假事件），也不要用殘缺的識別亂配對而抵銷掉真實的消失事件**。
+
+    組字串的規則刻意與 dedup() 的複合鍵完全一致（字串成分轉小寫、其餘型別原樣
+    轉字串、用 "\x1f" 連接），這樣兩種鍵在日誌／報告裡看起來是同一種格式，
+    也避免將來有人以為兩者可以互換卻踩到大小寫差異。
+    """
+    if not isinstance(item, dict) or not fields:
+        return None
+    parts = []
+    for f in fields:
+        v = item.get(f)
+        if v is None or v == "":
+            return None
+        parts.append(v.lower() if isinstance(v, str) else v)
+    return "\x1f".join(str(p) for p in parts)
+
+
+def build_stable_id_index(keyed, fields):
+    """第四階段新增（2026-09-07，任務 B）：回傳 (index, ambiguous)。
+
+    index：{穩定識別字串 -> 主鍵}，只收「在這份快照裡穩定識別唯一對應一個主鍵」的項目。
+    ambiguous：被排除的穩定識別集合（同一份快照裡有兩個以上主鍵共用它）。
+
+    為什麼要排除歧義而不是取第一個／最後一個：抵銷層會直接讓一筆 DELISTED 不寫入
+    事件流，是「減少事實紀錄」的動作，必須比一般判定更保守。歧義代表我們無法確定
+    「消失的那筆」對應到「新增的哪一筆」，此時**不抵銷**（維持現行行為，照常寫
+    DELISTED／LISTED），把判斷留給人。11 天全歷史實測 ambiguous 恆為 0
+    （見報告 §4.2），這條路徑目前不會被觸發，是純粹的防禦性設計。
+    """
+    index = {}
+    ambiguous = set()
+    for k, it in keyed.items():
+        sid = stable_identity(it, fields)
+        if sid is None:
+            continue
+        if sid in index or sid in ambiguous:
+            index.pop(sid, None)
+            ambiguous.add(sid)
+        else:
+            index[sid] = k
+    return index, ambiguous
+
+
+def reconcile_renames(gcfg, keyed_old, keyed_new, added_keys, removed_keys):
+    """第四階段新增（2026-09-07，任務 B）：把「同一個東西被上游改名」造成的
+    一筆假消失＋一筆假新增配對起來抵銷。
+
+    回傳 (added_keys, removed_keys, renamed_pairs)：
+      - renamed_pairs：[(old_key, new_key, 穩定識別字串), ...]，依 old_key 排序。
+      - added_keys／removed_keys：已扣掉配對成功者的新清單（保持原本的排序規則）。
+
+    未設定 gcfg["stable_id_fields"] 的子集合（本輪除 crypto_project_liveness/_hacks
+    以外全部 12 個子集合）在第一行就原樣回傳，**連一次迴圈都不會跑**，因此
+    removed_keys／added_keys 逐位元組不變。
+
+    抵銷條件（三個條件都成立才算改名，任何一個不成立就維持現行行為）：
+      1. 消失的那筆有完整的穩定識別（stable_identity() 非 None）。
+      2. 同一個穩定識別在**當日**快照裡唯一對應到某個主鍵（不在 ambiguous 裡）。
+      3. 那個主鍵**確實出現在本次的 added_keys 裡**——這一條是關鍵：若該主鍵在前日
+         快照就已存在（不是新增），代表這是「兩筆本來就各自存在的紀錄」，
+         不是改名，不可抵銷。
+
+    刻意不做的事：不比對 name 以外的其他欄位（例如 amount／chain）是否也相同。
+    理由是穩定識別已經包含上游自己的專案 id 與事件日期，再加欄位比對只會讓
+    「上游同時修正了名稱與金額」這種情形無法抵銷，反而回到假事件；欄位層級的
+    變化本來就有 status_fields／STATUS_CHANGED 這條既有管道負責（本來源
+    status_fields 為空，屬設計選擇，不在本輪範圍）。
+    """
+    fields = gcfg.get("stable_id_fields") or ()
+    if not fields:
+        return added_keys, removed_keys, []
+    idx_new, _amb_new = build_stable_id_index(keyed_new, fields)
+    added_set = set(added_keys)
+    renamed_pairs = []
+    matched_old, matched_new = set(), set()
+    for k_old in removed_keys:
+        sid = stable_identity(keyed_old.get(k_old), fields)
+        if sid is None:
+            continue
+        k_new = idx_new.get(sid)
+        if k_new is None or k_new not in added_set or k_new in matched_new:
+            continue
+        renamed_pairs.append((k_old, k_new, sid))
+        matched_old.add(k_old)
+        matched_new.add(k_new)
+    if not renamed_pairs:
+        return added_keys, removed_keys, []
+    added_keys = [k for k in added_keys if k not in matched_new]
+    removed_keys = [k for k in removed_keys if k not in matched_old]
+    renamed_pairs.sort(key=lambda t: repr(t[0]))
+    return added_keys, removed_keys, renamed_pairs
+
+
 def compare_group(source, gname, gcfg, data_old, data_new):
     """單一子集合、單一相鄰日配對的完整比對結果。比照 compare_pair() 但泛化到支援
     range_check／total_match 兩種完整性檢查與 list／dict 兩種資料形狀。"""
@@ -801,9 +1266,20 @@ def compare_group(source, gname, gcfg, data_old, data_new):
 
     added_keys = sorted(set(keyed_new) - set(keyed_old), key=repr)
     removed_keys = sorted(set(keyed_old) - set(keyed_new), key=repr)
+
+    # 第四階段新增（2026-09-07，任務 B）：上游改名抵銷層。刻意放在「集合差算完」
+    # 之後、「移除率／熔斷門檻算出來」之前——改名本來就不是消失，讓它繼續留在
+    # removed_keys 裡去墊高 removed_rate，等於用假事件去逼近熔斷門檻，是錯的。
+    # 未設定 stable_id_fields 的子集合，reconcile_renames() 第一行就原樣回傳，
+    # 下面三行的計算結果與本輪之前逐位元組相同。
+    added_keys, removed_keys, renamed_pairs = reconcile_renames(
+        gcfg, keyed_old, keyed_new, added_keys, removed_keys)
+
     removed_rate = (len(removed_keys) / len(keyed_old) * 100.0) if keyed_old else 0.0
     threshold_count = max(gcfg["abs_floor"], gcfg["breaker_pct"] / 100.0 * len(keyed_old))
     breaker = gate_ok and (len(removed_keys) > threshold_count)
+    # 第四階段（熔斷語意統一）新增的純加法欄位，見 compare_pair() 同一段註解。
+    tail_run, tail_cover = removal_tail_metrics(keyed_old, removed_keys)
 
     return {
         "source": source, "group": gname,
@@ -815,17 +1291,53 @@ def compare_group(source, gname, gcfg, data_old, data_new):
         "keyed_old": keyed_old, "keyed_new": keyed_new,
         "added_keys": added_keys, "removed_keys": removed_keys,
         "removed_rate": removed_rate, "threshold_count": threshold_count, "breaker": breaker,
+        "tail_run": tail_run, "tail_cover": tail_cover,
+        # 第四階段新增：本次配對抵銷掉的「上游改名」清單，[(舊主鍵, 新主鍵, 穩定識別), ...]。
+        # 未啟用抵銷層的子集合恆為空 list，既有讀取端（judge()／build_group_events()／
+        # status_changes_for_group()）完全不讀這個欄位，多一個鍵不影響任何既有邏輯。
+        "renamed_pairs": renamed_pairs,
     }
 
 
-def status_changes_for_group(gcfg, keyed_old, keyed_new):
+def status_filter_hit(filters, field, old_item, new_item):
+    """做法 4【語意過濾】的單筆判定（純函式，無副作用）：回傳命中的規則 dict，沒命中回傳 None。
+
+    規則 schema 見檔案上方「第四階段新增」區塊。命中條件（全部成立才算命中）：
+      1. rule["field"] == field（規則只管指定的那一個欄位）；
+      2. rule["when_both"] 裡的每一組 (前提欄位, 期望值)，在 **old_item 與 new_item 兩側**
+         都必須相等（用 == 比對，不是 truthy 判定——withdraw_disabled 這類旗標的 True/1、
+         False/0/None 語意不同，必須嚴格比對）。
+
+    「兩側都要成立」是刻意的：前提欄位本身正在變化的那一天（例如幣種當天才剛被標成
+    delisted），when_both 不會成立，那筆事件就會完整保留，不會被誤濾。"""
+    for rule in (filters or ()):
+        if rule.get("field") != field:
+            continue
+        cond = rule.get("when_both") or {}
+        if all(old_item.get(cf) == cv and new_item.get(cf) == cv for cf, cv in cond.items()):
+            return rule
+    return None
+
+
+def status_changes_for_group(gcfg, keyed_old, keyed_new, suppressed_out=None):
     """回傳 {key: (delta_from_dict, delta_to_dict)}，只含實際有變化的欄位。
     只比對兩側都存在（key 未消失）的項目——key 本身的存在/消失由 DELISTED/LISTED
     處理，這裡只處理「還在清單裡、但欄位值變了」的情況（旗標優先，見檔案上方
-    第二階段設計原則第 6 點）。"""
+    第二階段設計原則第 6 點）。
+
+    本輪（2026-09-07，做法 4）新增語意過濾：gcfg["status_filters"] 命中的欄位變化直接
+    從 delta 拿掉；一筆 (key) 的全部變化欄位都被拿掉時，該 key 不會出現在回傳值裡，
+    也就不會產生 STATUS_CHANGED 事件。**沒有設定 status_filters 的子集合行為與本輪之前
+    逐位元組相同**（預設 deny：沒寫規則＝不過濾），selftest 既有的合成 gcfg 也不受影響。
+
+    suppressed_out：可選的 list，呼叫端傳入後會被原地附加每一筆被抑制的欄位變化
+    （{key, field, from, to, reason}），供呼叫端寫進 STATUS_FILTER_LOG 稽核。不傳
+    （None）時純粹不記錄，過濾行為完全相同——process_group_source_pair() 為了統計
+    報表筆數會再呼叫本函式一次，那一次刻意不傳，避免同一筆被記錄兩次。"""
     fields = gcfg.get("status_fields") or ()
     if not fields:
         return {}
+    filters = gcfg.get("status_filters") or ()
     changes = {}
     for k in sorted(set(keyed_old) & set(keyed_new), key=repr):
         old_item, new_item = keyed_old[k], keyed_new[k]
@@ -835,6 +1347,12 @@ def status_changes_for_group(gcfg, keyed_old, keyed_new):
         for f in fields:
             ov, nv = old_item.get(f), new_item.get(f)
             if ov != nv:
+                rule = status_filter_hit(filters, f, old_item, new_item)
+                if rule is not None:
+                    if suppressed_out is not None:
+                        suppressed_out.append({"key": k, "field": f, "from": ov, "to": nv,
+                                               "reason": rule.get("reason") or "unspecified"})
+                    continue
                 delta_from[f] = ov
                 delta_to[f] = nv
         if delta_from:
@@ -842,14 +1360,33 @@ def status_changes_for_group(gcfg, keyed_old, keyed_new):
     return changes
 
 
-def build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted):
+def build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted,
+                       to_events=None, marks=None):
     """比照 process_pair() 內的事件建構邏輯，泛化到支援 STATUS_CHANGED。
-    只在 judged=="NORMAL" 時計算與寫入，與既有 LISTED／DELISTED／REAPPEARED 的
-    閘門條件完全一致。回傳 (new_events, reappeared_from)。"""
+    回傳 (new_events, reappeared_from)。
+
+    第四階段（2026-09-07，熔斷語意統一）新增兩個**有預設值**的關鍵字引數，
+    純加法、不改變任何既有呼叫端的行為：
+
+      to_events  這組事件要不要進 events.jsonl（True）還是進隔離檔（False）。
+                 **未傳入（None）時完全沿用舊行為**：只有 judged=="NORMAL" 才建事件，
+                 其餘直接回傳空清單——scripts/selftest.py 既有三處 7 個位置引數的
+                 呼叫方式（chk_dd_status_changed／chk_dd_group_reappeared）因此不受
+                 影響。process_group_source_pair() 一律明確傳入，走新語意。
+      marks      熔斷標記欄位字典（見 breaker_marks()），會 update 進每一筆事件。
+                 未傳入時為空字典，事件欄位與本輪之前逐位元組相同。
+
+    last_delisted 只在 to_events 為真時更新，理由與 process_pair() 內同一段註解相同
+    （讓 last_delisted 恆等於 events.jsonl 的內容，避免 REAPPEARED 指向只存在於
+    隔離檔的 DELISTED）。
+    """
     new_events = []
     reappeared_from = {}
-    if judged != "NORMAL":
-        return new_events, reappeared_from
+    if to_events is None:
+        to_events = (judged == "NORMAL")
+        if not to_events:
+            return new_events, reappeared_from
+    marks = marks or {}
     desc_field = gcfg.get("desc_field")
     for k in r["removed_keys"]:
         new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
@@ -864,14 +1401,29 @@ def build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted):
             new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
                                 "event": "REAPPEARED", "from": last_delisted[k],
                                 "to": short_desc_generic(r["keyed_new"].get(k), desc_field)})
-    for k in r["removed_keys"]:
-        last_delisted[k] = d_new
+    if to_events:
+        for k in r["removed_keys"]:
+            last_delisted[k] = d_new
 
-    status_changes = status_changes_for_group(gcfg, r["keyed_old"], r["keyed_new"])
+    # 做法 4【語意過濾】：suppressed 收集被規則抑制、因此不產生 STATUS_CHANGED 的欄位變化，
+    # 逐筆寫進 STATUS_FILTER_LOG 事實紀錄檔（見 record_status_filtered()）。
+    # process_group_source_pair() 為了統計報表筆數會再呼叫一次 status_changes_for_group()，
+    # 那一次不傳 suppressed_out，所以同一筆只會被記錄一次（見該函式 docstring）。
+    suppressed = []
+    status_changes = status_changes_for_group(gcfg, r["keyed_old"], r["keyed_new"],
+                                              suppressed_out=suppressed)
+    for s in suppressed:
+        record_status_filtered(source, gname, d_new, s)
     for k in sorted(status_changes, key=repr):
         delta_from, delta_to = status_changes[k]
         new_events.append({"date": d_new, "source": source, "group": gname, "key": k,
                             "event": "STATUS_CHANGED", "from": delta_from, "to": delta_to})
+
+    # 熔斷標記統一在最後一次套用，理由同 process_pair()：保住既有事件建構程式碼的
+    # 逐字元原貌（scripts/selftest.py 的 mut_dd_group_reappeared 錨點落在其中）。
+    if marks:
+        for e in new_events:
+            e.update(marks)
 
     return new_events, reappeared_from
 
@@ -906,17 +1458,28 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
         L.append("")
         L.append("| 項目 | 值 |")
         L.append("|---|---|")
-        tag = "" if judged == "NORMAL" else ("（%s，未寫入事件流）" % ("不判定" if judged == "GATE_FAIL" else "熔斷"))
+        # 第四階段（熔斷語意統一）：與 render_report() 同一條措辭規則，依「事件有沒有
+        # 寫進 events.jsonl」決定，不再只看 judged=="NORMAL"。
+        _g_to_events = gr.get("to_events", judged == "NORMAL")
+        if _g_to_events:
+            tag = "" if judged == "NORMAL" else "（熔斷已標記，仍寫入事件流）"
+        else:
+            tag = "（%s，未寫入事件流%s）" % ("不判定" if judged == "GATE_FAIL" else "熔斷",
+                                              "，已隔離" if gr.get("quarantined") else "")
         L.append("| **自清單消失**（實際差集筆數，%s） | **%d**%s |" %
-                  ("已寫入事件流為 `DELISTED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
+                  ("已寫入事件流為 `DELISTED`" if _g_to_events else "僅供人工參考，非正式事件",
                    len(r["removed_keys"]), tag))
         L.append("| 新增（實際差集筆數，%s） | %d%s |" %
-                  ("已寫入事件流為 `LISTED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
+                  ("已寫入事件流為 `LISTED`" if _g_to_events else "僅供人工參考，非正式事件",
                    len(r["added_keys"]), tag))
         L.append("| \u2514\u2500 其中重新出現 | %d%s |" % (n_reappeared, tag))
+        if r.get("renamed_pairs"):
+            # 第四階段新增（2026-09-07，任務 B）：只有真的抵銷到東西才多這一列，
+            # 其餘情況表格逐位元組不變。
+            L.append("| 上游改名抵銷（未寫入事件流） | %d |" % len(r["renamed_pairs"]))
         if gcfg.get("status_fields"):
             L.append("| 狀態變化（%s） | %d%s |" %
-                      ("已寫入 STATUS_CHANGED" if judged == "NORMAL" else "僅供人工參考", len(status_changes), tag))
+                      ("已寫入 STATUS_CHANGED" if _g_to_events else "僅供人工參考", len(status_changes), tag))
         L.append("| 去重 dup_keys（前日／當日） | %d / %d |" % (r["dup_old"], r["dup_new"]))
         if r["miss_old"] or r["miss_new"]:
             L.append("| 主鍵缺失 missing_key（前日／當日） | %d / %d |" % (r["miss_old"], r["miss_new"]))
@@ -933,15 +1496,23 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
             L.append("")
         if judged == "BREAKER":
             L.append("> \U0001f534 **熔斷觸發：子集合 `%s` 的 removed 筆數 %d 超過門檻"
-                      "（max(%d, %.1f%%×前日筆數)＝%.2f），本日「自清單消失」判定已暫停，"
-                      "改寫入 `ALERT-DELIST.md`，等待人工確認。** 完整性守門本身通過"
+                      "（max(%d, %.1f%%×前日筆數)＝%.2f）。%s** 完整性守門本身通過"
                       "（前後兩側 n 皆在合理範圍內），移除比例超出實測日常區間，"
                       "可能是抓取異常，也可能是真的有大量項目同時自清單消失，"
                       "本程式不自動判斷成因，僅陳述數字。"
-                      % (gname, len(r["removed_keys"]), gcfg["abs_floor"], gcfg["breaker_pct"], r["threshold_count"]))
+                      % (gname, len(r["removed_keys"]), gcfg["abs_floor"], gcfg["breaker_pct"],
+                         r["threshold_count"],
+                         ("本日事件**照常寫入** `events.jsonl`，每一筆都帶 "
+                          "`note`／`breaker_tripped`／`removed_pct`／`breaker_threshold` 標記，"
+                          "並已寫 `ALERT-DELIST.md` 要求人工複核。")
+                         if _g_to_events else
+                         ("同時命中「疑似分頁截斷」結構性指紋，本日事件未寫入 `events.jsonl`，"
+                          "改寫入隔離檔 `data/%s/%s` 並寫 `ALERT-DELIST.md` 等待人工確認"
+                          "（事實沒有遺失，可人工複核後提升）。" % (source, QUARANTINE_BASENAME))))
             L.append("")
         if r["removed_keys"]:
-            L.append("### \u26a0\ufe0f 自清單消失（%d）%s" % (len(r["removed_keys"]), "" if judged == "NORMAL" else "（未經完整性驗證）"))
+            L.append("### \u26a0\ufe0f 自清單消失（%d）%s" % (len(r["removed_keys"]),
+                      "" if judged != "GATE_FAIL" else "（未經完整性驗證）"))
             L.append("")
             for k in r["removed_keys"]:
                 desc = short_desc_generic(r["keyed_old"].get(k), gcfg.get("desc_field"))
@@ -949,7 +1520,8 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
             L.append("")
         if r["added_keys"]:
             extra = "（含 %d 筆重新出現，詳見下一節）" % n_reappeared if n_reappeared else ""
-            L.append("### 新增（%d）%s%s" % (len(r["added_keys"]), extra, "" if judged == "NORMAL" else "（未經完整性驗證）"))
+            L.append("### 新增（%d）%s%s" % (len(r["added_keys"]), extra,
+                      "" if judged != "GATE_FAIL" else "（未經完整性驗證）"))
             L.append("")
             for k in r["added_keys"]:
                 desc = short_desc_generic(r["keyed_new"].get(k), gcfg.get("desc_field"))
@@ -961,6 +1533,25 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
             for k in sorted(reappeared_from, key=repr):
                 desc = short_desc_generic(r["keyed_new"].get(k), gcfg.get("desc_field"))
                 L.append("- `%s`（先前於 `%s` 記為自清單消失）%s" % (k, reappeared_from[k], (" \u2014 " + desc) if desc else ""))
+            L.append("")
+        if r.get("renamed_pairs"):
+            # 第四階段新增（2026-09-07，任務 B）：只有抵銷層真的配對到東西時才輸出這一節，
+            # 其餘任何情況（含未啟用抵銷層的 12 個子集合）連這個 if 都不會成立，
+            # 日報內容與本輪之前逐位元組相同。
+            L.append("### \U0001f504 上游改名（%d，**未寫入事件流**）" % len(r["renamed_pairs"]))
+            L.append("")
+            L.append("以下項目的主鍵字串在兩份快照之間變了，但來源端的穩定識別"
+                      "（`%s`）完全相同，判定為**同一個東西被上游改了名字**，"
+                      "不是「消失」也不是「新增」，因此**不寫入 `DELISTED`／`LISTED`**。"
+                      "只陳述兩個主鍵字串與該穩定識別，不推測上游為什麼改名。"
+                      % "＋".join(gcfg.get("stable_id_fields") or ()))
+            L.append("")
+            for k_old, k_new, sid in r["renamed_pairs"]:
+                d_from = short_desc_generic(r["keyed_old"].get(k_old), gcfg.get("desc_field"))
+                d_to = short_desc_generic(r["keyed_new"].get(k_new), gcfg.get("desc_field"))
+                L.append("- `%s`%s \u2192 `%s`%s（穩定識別 `%s`）"
+                          % (k_old, (" \u2014 " + d_from) if d_from else "",
+                             k_new, (" \u2014 " + d_to) if d_to else "", sid))
             L.append("")
         if status_changes:
             L.append("### \U0001f501 狀態變化（%d，事件型別 `STATUS_CHANGED`）" % len(status_changes))
@@ -1030,25 +1621,69 @@ def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by
 
     group_results = {}
     all_new_events = []
+    quarantine_batches = []  # 第四階段新增：[(gname, judged, reason_text, r, events)]
     for gname, gcfg in scfg["groups"].items():
         r = compare_group(source, gname, gcfg, data_old, data_new)
         judged = judge(r, gcfg)
         last_delisted = last_delisted_by_group.setdefault(gname, {})
-        new_events, reappeared_from = build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted)
-        status_changes = status_changes_for_group(gcfg, r["keyed_old"], r["keyed_new"]) if judged == "NORMAL" else {}
+        # 第四階段（2026-09-07，熔斷語意統一）：逐子集合各自決定事件的落地去向，
+        # 與 process_pair() 同一條規則（NORMAL→events.jsonl；BREAKER 放行→events.jsonl
+        # 並標記；BREAKER 未放行／GATE_FAIL→隔離檔）。子集合之間互不影響的既有不變量
+        # 不變：release_ok／to_events／marks 全部是這個子集合自己的 r 算出來的。
+        release_ok, release_reason = True, ""
+        if judged == "BREAKER":
+            release_ok, release_reason = breaker_release_check(source, d_old, d_new, r)
+        to_events = (judged == "NORMAL") or (judged == "BREAKER" and release_ok)
+        marks = breaker_marks(r["removed_rate"], r["threshold_count"]) if judged == "BREAKER" else {}
+        r["breaker_release_ok"] = release_ok
+        r["breaker_release_reason"] = release_reason
+        r["to_events"] = to_events
+        new_events, reappeared_from = build_group_events(
+            source, gname, gcfg, r, judged, d_new, last_delisted,
+            to_events=to_events, marks=marks)
+        status_changes = status_changes_for_group(gcfg, r["keyed_old"], r["keyed_new"]) if to_events else {}
         group_results[gname] = {"r": r, "judged": judged, "gcfg": gcfg,
-                                 "reappeared_from": reappeared_from, "status_changes": status_changes}
-        all_new_events.extend(new_events)
+                                 "reappeared_from": reappeared_from if to_events else {},
+                                 "quarantined_reappeared_from": {} if to_events else reappeared_from,
+                                 "status_changes": status_changes,
+                                 "to_events": to_events, "release_reason": release_reason,
+                                 "quarantined": (not to_events) and (judged == "BREAKER" or QUARANTINE_GATE_FAIL)}
+        if to_events:
+            all_new_events.extend(new_events)
+        elif new_events and (judged == "BREAKER" or QUARANTINE_GATE_FAIL):
+            # GATE_FAIL 是否落隔離檔由 QUARANTINE_GATE_FAIL 控制（預設 False）。
+            quarantine_batches.append((gname, judged, release_reason, r, new_events))
 
     jsonl_path = os.path.join(TRACK_CRYPTO, "data", source, "events.jsonl")
     fresh = write_events(jsonl_path, all_new_events, seen)
     seen.update((e["date"], e["source"], e["group"], e["key"], e["event"]) for e in fresh)
 
+    # 第四階段：不進 events.jsonl 的子集合事件一律寫入隔離檔（同一份檔案、逐來源一份），
+    # 事實完整保留、可冪等重跑，理由見 write_quarantine() docstring。
+    quarantined_total = 0
+    if quarantine_batches:
+        q_path = os.path.join(TRACK_CRYPTO, "data", source, QUARANTINE_BASENAME)
+        q_seen = load_quarantine_seen(q_path)
+        for gname, judged_g, reason_text, rg, evs in quarantine_batches:
+            reason_code = "GATE_FAIL" if judged_g == "GATE_FAIL" else "BREAKER_TRUNCATION_SUSPECT"
+            txt = reason_text or ("完整性守門不通過：前日(%s)=%s／當日(%s)=%s"
+                                  % (d_old, rg["reason_old"], d_new, rg["reason_new"]))
+            q = write_quarantine(source, d_new, evs, reason_code, txt, q_seen)
+            quarantined_total += len(q)
+            if q:
+                print("   [QUARANTINE] %s/%s @ %s->%s：%d 筆事件寫入 %s（%s：%s）"
+                      % (source, gname, d_old, d_new, len(q), QUARANTINE_BASENAME, reason_code, txt))
+
     need_report = False
     for gr in group_results.values():
         if gr["judged"] != "NORMAL":
             need_report = True
-        elif gr["r"]["removed_keys"] or gr["r"]["added_keys"] or gr["reappeared_from"] or gr["status_changes"]:
+        elif (gr["r"]["removed_keys"] or gr["r"]["added_keys"] or gr["reappeared_from"]
+              or gr["status_changes"] or gr["r"].get("renamed_pairs")):
+            # 第四階段新增（2026-09-07，任務 B）：renamed_pairs 也算「今天有事發生」。
+            # 只有改名、其餘皆無變動的日子仍要產生日報，否則抵銷層會讓那一天完全沒有
+            # 任何可稽核的落地紀錄（事件流本來就不會寫，日報是唯一的痕跡）。
+            # 未啟用抵銷層的子集合 renamed_pairs 恆為空，判斷結果與本輪之前相同。
             need_report = True
 
     entries_for_index = []
@@ -1060,19 +1695,35 @@ def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by
         with open(out, "w", encoding="utf-8") as f:
             f.write(render_group_source_report(source, scfg, d_old, d_new, group_results))
 
-        total_removed = sum(len(gr["r"]["removed_keys"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
-        total_added = sum(len(gr["r"]["added_keys"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
-        total_reappeared = sum(len(gr["reappeared_from"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
-        total_status = sum(len(gr["status_changes"]) for gr in group_results.values() if gr["judged"] == "NORMAL")
+        # 第四階段：統計口徑由「judged == NORMAL」改為「事件真的有進 events.jsonl」
+        # （to_events），因為熔斷放行後事件是有寫的，索引列不能再把它算成 0。
+        total_removed = sum(len(gr["r"]["removed_keys"]) for gr in group_results.values() if gr["to_events"])
+        total_added = sum(len(gr["r"]["added_keys"]) for gr in group_results.values() if gr["to_events"])
+        total_reappeared = sum(len(gr["reappeared_from"]) for gr in group_results.values() if gr["to_events"])
+        total_status = sum(len(gr["status_changes"]) for gr in group_results.values() if gr["to_events"])
         non_normal = [g for g, gr in group_results.items() if gr["judged"] != "NORMAL"]
+        total_renamed = sum(len(gr["r"].get("renamed_pairs") or ())
+                            for gr in group_results.values() if gr["judged"] == "NORMAL")
         removed_cell = str(total_removed)
         added_cell = str(total_added)
         if total_reappeared:
             added_cell += "（含 %d 筆重新出現）" % total_reappeared
         if total_status:
             removed_cell += "；狀態變化 %d" % total_status
+        if total_renamed:
+            # 第四階段新增（2026-09-07，任務 B）：比照上一行「；狀態變化 %d」的既有慣例，
+            # 只有真的抵銷到東西才附註，其餘日期的索引列逐位元組不變。
+            removed_cell += "；上游改名抵銷 %d" % total_renamed
         if non_normal:
-            tag = "；".join("%s:%s" % (g, group_results[g]["judged"]) for g in non_normal)
+            # 後綴語意（與 process_pair() 同一條規則）：事件有寫進 events.jsonl → 「已標記」；
+            # 有寫進隔離檔 → 「已隔離」；兩者都沒有（GATE_FAIL 且 QUARANTINE_GATE_FAIL=False，
+            # 即預設情況）→ 不加後綴，索引列維持本輪之前的原樣。
+            def _suffix(gr_):
+                if gr_["to_events"]:
+                    return "，已標記"
+                return "，已隔離" if gr_.get("quarantined") else ""
+            tag = "；".join("%s:%s%s" % (g, group_results[g]["judged"], _suffix(group_results[g]))
+                            for g in non_normal)
             removed_cell += "（%s）" % tag
         entries_for_index.append(
             "| %s | `track-crypto/%s` | %s | %s | %s | [紀錄](changes/%s/%s.md) |"
@@ -1103,13 +1754,34 @@ def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by
                     "| removed 筆數 | %d（門檻 max(%d, %.1f%%\u00d7前日筆數)\uff1d%.2f） |"
                     % (len(r["removed_keys"]), gcfg["abs_floor"], gcfg["breaker_pct"], r["threshold_count"]),
                     "| 前日筆數（去重後） | %d |" % len(r["keyed_old"]),
-                    "",
-                    ("本日 `%s`／子集合 `%s` 的「自清單消失」判定已**暫停**，未寫入 "
-                     "`data/%s/events.jsonl`。移除比例超出實測日常區間，可能是抓取異常，"
-                     "也可能是真的有大量項目同時自清單消失，詳見 `changes/%s/%s.md`。"
-                     "人工確認後可手動處理（本程式不會自動重放此區間）。"
-                     % (source, gname, source, source, d_new)),
                 ]
+                if gr["to_events"]:
+                    lines += [
+                        "| 處置 | **標記但不否決**：事件已寫入 `data/%s/events.jsonl` |" % source,
+                        "| 放行依據 | %s |" % gr["release_reason"],
+                        "",
+                        ("本日 `%s`／子集合 `%s` 的「自清單消失」判定**照常寫入** "
+                         "`data/%s/events.jsonl`，但該組轉換產生的每一筆事件都額外帶 "
+                         "`note:\"anomalous_scale\"`、`breaker_tripped:true`、`removed_pct`、"
+                         "`breaker_threshold` 四個欄位，**需要人工複核**。移除比例超出實測日常"
+                         "區間，可能是抓取異常，也可能是真的有大量項目同時自清單消失，"
+                         "本程式不對成因下判斷（零觀點鐵律）。詳見 `changes/%s/%s.md`。"
+                         "若複核後判定為假事件，請用 `scripts/apply_correction.py` 更正。"
+                         % (source, gname, source, source, d_new)),
+                    ]
+                else:
+                    lines += [
+                        "| 處置 | **隔離**：事件已寫入 `data/%s/%s`，未進 events.jsonl |"
+                        % (source, QUARANTINE_BASENAME),
+                        "| 隔離原因 | %s |" % gr["release_reason"],
+                        "",
+                        ("本日 `%s`／子集合 `%s` 的「自清單消失」判定**未寫入** "
+                         "`data/%s/events.jsonl`，因為除了移除規模超過熔斷門檻之外，"
+                         "還同時命中「疑似分頁截斷」的結構性指紋（見上表）。事件事實"
+                         "**沒有遺失**，已完整寫入隔離檔 `data/%s/%s`，人工複核確認不是"
+                         "抓取問題後可提升回事件流。詳見 `changes/%s/%s.md`。"
+                         % (source, gname, source, source, QUARANTINE_BASENAME, source, d_new)),
+                    ]
                 if write_alert_block_group(source, gname, d_new, lines):
                     alert_written = True
 
@@ -1136,18 +1808,69 @@ def load(p):
 
 
 def completeness(data, cfg):
-    """total_match 完整性守門：data.total 必須存在且等於 len(items)（去重前，原始筆數）。
-    回傳 (ok, total, n_items, reason)。"""
+    """完整性守門（2026-09-07 改寫，見 SOURCES 設定表上方的完整推導）。
+    回傳 (ok, reported_total, n_items, reason)。
+
+    【為什麼改寫】舊版做的是 `data.total != len(items)` -> fail。但 adapter 寫進
+    data.total 的值**就是** len(items)，被檢查的數字與自報的數字是同一個，
+    這個判斷式永遠為假、永遠不會 return False —— 是一個**恆真式守門**，
+    對分頁截斷零防護力（實證：13 份歷史快照全部 total == len(items)，
+    見 docs/0907-events-audit-0904-0907.md §8.1）。舊版的 "total_match" 這個
+    名字與 reason 字串一併**移除**，不留假的保護感。
+
+    【新版兩條路徑】
+      A. 新快照（adapter PARSER_VERSION>=2，data 有 reported_total 欄位）：
+         走 reported_total_match —— 拿**上游 pagination.total** 跟 len(items) 比，
+         兩者來源互相獨立，才有鑑別力。三道檢查依序：
+           A1. reported_total 必須是正整數（缺失/型別錯/<=0 一律 fail-closed）。
+           A2. data.truncated 必須明確是布林 False（缺失/True 一律 fail-closed，
+               比照 completeness_group() 的 tolerant_total_match 既有寫法）。
+           A3. |reported_total - len(items)| 不得超過
+               max(tolerance_abs_floor, tolerance_pct% × reported_total)。
+      B. 舊快照（2026-09-07 之前，沒有 reported_total 欄位）：
+         走 legacy_range_check —— 只能退回「筆數是否落在實測歷史區間」。
+         這是**相容分支**，鑑別力明確較弱（見 SOURCES 設定表註解的誠實揭露），
+         目的是不讓歷史重放整批變成 GATE_FAIL。
+
+    回傳值第二格語意也跟著變了：舊版是 data.total（＝len(items)，沒有資訊量），
+    新版是 reported_total（上游自報總數；走 B 路徑時為 None，代表這份舊快照
+    根本沒有上游總數可比）。呼叫端 compare_pair() 已同步把它改名為
+    total_old／total_new 的來源，render_report()／write_alert_block() 的顯示
+    文字也已同步改成「上游自報總數」。
+    """
     items = data.get("items")
     if not isinstance(items, list):
         return False, None, None, "items 缺失或非清單"
-    total = data.get(cfg["total_field"])
     n = len(items)
-    if total is None:
-        return False, total, n, "缺 total 欄位"
-    if total != n:
-        return False, total, n, "total(%r) != len(items)(%d)" % (total, n)
-    return True, total, n, "total_match"
+
+    reported_total = data.get(cfg["reported_total_field"])
+
+    # --- 路徑 B：舊快照相容（沒有上游自報總數可用）---
+    if reported_total is None:
+        lo, hi = cfg["legacy_range"]
+        if n < lo or n > hi:
+            return False, None, n, ("legacy_range_check[%d,%d] 未通過：len(items)=%d 超出實測合理區間"
+                                     % (lo, hi, n))
+        return True, None, n, "legacy_range_check[%d,%d]" % (lo, hi)
+
+    # --- 路徑 A：新快照，拿上游自報總數比對 ---
+    if not isinstance(reported_total, int) or isinstance(reported_total, bool) or reported_total <= 0:
+        return False, reported_total, n, ("%s 非正整數（%r），fail-closed"
+                                           % (cfg["reported_total_field"], reported_total))
+    tr_field = cfg["truncated_field"]
+    tr = data.get(tr_field)
+    if tr is not False:
+        return False, reported_total, n, ("%s(%r) 非布林 False（缺失/True 一律 fail-closed 視為不完整）"
+                                           % (tr_field, tr))
+    gap = abs(reported_total - n)
+    limit = max(cfg["tolerance_abs_floor"], cfg["tolerance_pct"] / 100.0 * reported_total)
+    if gap > limit:
+        return False, reported_total, n, ("%s(%d) 與 len(items)(%d) 相差 %d 筆，超過容忍度 %.1f 筆"
+                                           "（max(%d, %.2f%%×%d)）"
+                                           % (cfg["reported_total_field"], reported_total, n, gap,
+                                              limit, cfg["tolerance_abs_floor"],
+                                              cfg["tolerance_pct"], reported_total))
+    return True, reported_total, n, ("reported_total_match(gap=%d,limit=%.1f)" % (gap, limit))
 
 
 def dedup(items, key_field):
@@ -1226,15 +1949,28 @@ def compare_pair(source, cfg, f_old, f_new):
     removed_keys = sorted(set(keyed_old) - set(keyed_new))
     removed_rate = (len(removed_keys) / len(keyed_old) * 100.0) if keyed_old else 0.0
     breaker = gate_ok and (removed_rate > cfg["breaker_pct"])
+    # 第四階段（熔斷語意統一）新增的兩個純加法欄位，不參與上面任何既有判定：
+    #   tail_run／tail_cover：分頁截斷指紋，見 removal_tail_metrics()。
+    #   threshold_count：把第一階段的「百分比門檻」換算成筆數，讓事件標記欄位
+    #                    breaker_threshold 與第二階段、與 cex_events.py 同單位。
+    tail_run, tail_cover = removal_tail_metrics(keyed_old, removed_keys)
+    threshold_count = cfg["breaker_pct"] / 100.0 * len(keyed_old)
 
     return {
         "source": source, "d_old": d_old, "d_new": d_new, "f_old": f_old, "f_new": f_new,
-        "gate_ok": gate_ok, "reason_old": reason_old, "reason_new": reason_new,
+        # ok_old／ok_new 為 2026-09-07 新增（純加法，比照 compare_group() 既有做法）：
+        # 原本 render_report()／write_alert_block() 是用 `reason == "total_match"` 這個
+        # **字串字面值**回推有沒有通過守門；完整性守門改寫後 reason 文字不再只有一種，
+        # 用字串比對會把「通過」誤印成「未通過」。改成直接帶出布林結果，語意正確且不再
+        # 依賴 reason 的措辭。
+        "gate_ok": gate_ok, "ok_old": ok_old, "ok_new": ok_new,
+        "reason_old": reason_old, "reason_new": reason_new,
         "total_old": total_old, "total_new": total_new, "n_old": n_old, "n_new": n_new,
         "dup_old": dup_old, "dup_new": dup_new, "miss_old": miss_old, "miss_new": miss_new,
         "keyed_old": keyed_old, "keyed_new": keyed_new,
         "added_keys": added_keys, "removed_keys": removed_keys,
         "removed_rate": removed_rate, "breaker": breaker,
+        "tail_run": tail_run, "tail_cover": tail_cover, "threshold_count": threshold_count,
     }
 
 
@@ -1266,24 +2002,31 @@ def render_report(source, cfg, r, judged):
     L.append("| 來源 | `track-crypto/%s` |" % source)
     L.append("| 比對區間 | `%s` %s `%s` |" % (r["d_old"], "→", r["d_new"]))
     L.append("| 改寫 | %s |" % EMDASH)
-    removed_note = "" if judged == "NORMAL" else ("（%s，未寫入事件流）" % ("不判定" if judged == "GATE_FAIL" else "熔斷"))
+    # 第四階段（熔斷語意統一）：措辭一律依「事件到底有沒有寫進 events.jsonl」決定，
+    # 不再只看 judged=="NORMAL"——熔斷放行後事件是有寫的，舊措辭會變成假話。
+    _to_events = r.get("to_events", judged == "NORMAL")
+    if _to_events:
+        removed_note = "" if judged == "NORMAL" else "（熔斷已標記，仍寫入事件流）"
+        _wrote = ("已寫入事件流為 `DELISTED`", "已寫入事件流為 `LISTED`", "已另寫入事件流為 `REAPPEARED`")
+    else:
+        removed_note = "（%s，未寫入事件流%s）" % (
+            "不判定" if judged == "GATE_FAIL" else "熔斷",
+            "，已隔離" if r.get("quarantined") else "")
+        _wrote = ("僅供人工參考，非正式事件",) * 3
     added_note = removed_note
     L.append("| **自清單消失**（實際差集筆數，%s） | **%d**%s |" %
-              ("已寫入事件流為 `DELISTED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
-               len(r["removed_keys"]), removed_note))
+              (_wrote[0], len(r["removed_keys"]), removed_note))
     L.append("| 新增（實際差集筆數，%s） | %d%s |" %
-              ("已寫入事件流為 `LISTED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
-               len(r["added_keys"]), added_note))
+              (_wrote[1], len(r["added_keys"]), added_note))
     L.append("| └─ 其中重新出現（先前記為自清單消失，本次又出現，%s） | %d%s |" %
-              ("已另寫入事件流為 `REAPPEARED`" if judged == "NORMAL" else "僅供人工參考，非正式事件",
-               n_reappeared, added_note))
+              (_wrote[2], n_reappeared, added_note))
     L.append("| 去重 dup_keys（前日／當日） | %d / %d |" % (r["dup_old"], r["dup_new"]))
     if r["miss_old"] or r["miss_new"]:
         L.append("| 主鍵缺失 missing_key（前日／當日） | %d / %d |" % (r["miss_old"], r["miss_new"]))
-    L.append("| 完整性守門：前日 | %s（%s，total=%r, len(items)=%r） |" %
-              ("通過" if r["reason_old"] == "total_match" else "**未通過**", r["reason_old"], r["total_old"], r["n_old"]))
-    L.append("| 完整性守門：當日 | %s（%s，total=%r, len(items)=%r） |" %
-              ("通過" if r["reason_new"] == "total_match" else "**未通過**", r["reason_new"], r["total_new"], r["n_new"]))
+    L.append("| 完整性守門：前日 | %s（%s，上游自報總數=%r, len(items)=%r） |" %
+              ("通過" if r["ok_old"] else "**未通過**", r["reason_old"], r["total_old"], r["n_old"]))
+    L.append("| 完整性守門：當日 | %s（%s，上游自報總數=%r, len(items)=%r） |" %
+              ("通過" if r["ok_new"] else "**未通過**", r["reason_new"], r["total_new"], r["n_new"]))
     L.append("| 熔斷門檻 | %.1f%%（removed 率 %.2f%%，%s） |" %
               (cfg["breaker_pct"], r["removed_rate"], "已觸發" if judged == "BREAKER" else "未觸發"))
     L.append("| 偵測時間 | %s |" % datetime.now(timezone.utc).isoformat())
@@ -1297,19 +2040,31 @@ def render_report(source, cfg, r, judged):
     L.append("")
     if judged == "GATE_FAIL":
         L.append("> ⚠️ **因完整性守門未通過，本日不做「自清單消失／新增」判定，`events.jsonl` 未寫入任何事件。** "
-                  "`data.total` 與 `len(items)`（去重前）不相符，或缺 `total` 欄位。"
+                  "上游自報總數 `data.reported_total`（Coinbase CDP `pagination.total`）與 `len(items)`"
+                  "（去重前）相差超過容忍度、或 `data.truncated` 非 `false`、或該欄位缺失；"
+                  "2026-09-07 之前的舊快照沒有 `reported_total`，改判筆數是否落在實測合理區間。"
                   "上表的自清單消失／新增筆數僅為程式算出的原始差集，**未經完整性驗證，不代表正式判定**，"
                   "僅供人工評估用。")
         L.append("")
-    if judged == "BREAKER":
-        L.append("> 🔴 **熔斷觸發：removed 率 %.2f%% 超過門檻 %.1f%%，本日「自清單消失」的判定已暫停，"
-                  "改寫入 `ALERT-DELIST.md`，等待人工確認。** 完整性守門本身是通過的（`total == len(items)` 兩側皆相符），"
-                  "但移除比例超出日常區間（1.8%%~3.7%%），可能是抓取異常，也可能是真的有大量 resource 同時"
+    if judged == "BREAKER" and _to_events:
+        L.append("> 🔴 **熔斷觸發：removed 率 %.2f%% 超過門檻 %.1f%%。本日事件**照常寫入** "
+                  "`events.jsonl`，但每一筆都帶 `note:\"anomalous_scale\"`／`breaker_tripped:true`／"
+                  "`removed_pct`／`breaker_threshold`，並已寫 `ALERT-DELIST.md` 要求人工複核。** "
+                  "完整性守門本身是通過的（`total == len(items)` 兩側皆相符），"
+                  "但移除比例超出日常區間，可能是抓取異常，也可能是真的有大量 resource 同時"
                   "自清單消失，本程式不自動判斷成因，僅陳述數字。"
                   % (r["removed_rate"], cfg["breaker_pct"]))
         L.append("")
+    if judged == "BREAKER" and not _to_events:
+        L.append("> 🔴 **熔斷觸發：removed 率 %.2f%% 超過門檻 %.1f%%，且同時命中「疑似分頁截斷」"
+                  "結構性指紋，本日事件未寫入 `events.jsonl`，改寫入隔離檔 "
+                  "`data/%s/%s` 並寫 `ALERT-DELIST.md` 等待人工確認。** 事件事實沒有遺失，"
+                  "人工複核確認不是抓取問題後可提升回事件流。"
+                  % (r["removed_rate"], cfg["breaker_pct"], source, QUARANTINE_BASENAME))
+        L.append("")
     if r["removed_keys"]:
-        L.append("## ⚠️ 自清單消失（%d）%s" % (len(r["removed_keys"]), "" if judged == "NORMAL" else "（未經完整性驗證）"))
+        L.append("## ⚠️ 自清單消失（%d）%s" % (len(r["removed_keys"]),
+                  "" if judged != "GATE_FAIL" else "（未經完整性驗證）"))
         L.append("")
         for k in r["removed_keys"]:
             desc = short_desc(r["keyed_old"].get(k))
@@ -1317,7 +2072,8 @@ def render_report(source, cfg, r, judged):
         L.append("")
     if r["added_keys"]:
         extra = "（含 %d 筆重新出現，詳見下一節）" % n_reappeared if n_reappeared else ""
-        L.append("## 新增（%d）%s%s" % (len(r["added_keys"]), extra, "" if judged == "NORMAL" else "（未經完整性驗證）"))
+        L.append("## 新增（%d）%s%s" % (len(r["added_keys"]), extra,
+                  "" if judged != "GATE_FAIL" else "（未經完整性驗證）"))
         L.append("")
         for k in r["added_keys"]:
             desc = short_desc(r["keyed_new"].get(k))
@@ -1432,6 +2188,202 @@ def record_gate_fail(source, group, date, from_date, reason, n_old, n_new, seen=
     return True
 
 
+# ---------------------------------------------------------------------------
+# 做法 4【語意過濾】的事實紀錄（STATUS_FILTER_LOG）
+# ---------------------------------------------------------------------------
+
+_STATUS_FILTER_SEEN = None  # 行程內快取，見 load_status_filter_seen()
+
+
+def load_status_filter_seen(refresh=False):
+    """讀 STATUS_FILTER_LOG 目前所有 (date, source, group, key, field) 鍵值，供
+    record_status_filtered() 冪等判斷用。手法比照 load_seen()／load_gate_fail_seen()
+    （同一份容錯解析慣例），差別只在鍵值定義與「行程內快取」。
+
+    為什麼加快取（load_gate_fail_seen() 沒有）：GATE_FAIL 是罕見事件（實測至今 4 筆），
+    每次呼叫重讀整份檔案的成本可忽略；語意過濾的抑制筆數是「每天數十到數百筆 × 全歷史
+    重放」的量級（實測全歷史 251 筆），若每筆都重讀整份檔案會變成 O(n^2)。快取只在
+    本行程內有效，且 record_status_filtered() 寫入後會同步更新快取，不會不一致。
+    refresh=True 可強制重讀（供測試或呼叫端明確需要時使用）。"""
+    global _STATUS_FILTER_SEEN
+    if _STATUS_FILTER_SEEN is not None and not refresh:
+        return _STATUS_FILTER_SEEN
+    seen = set()
+    if os.path.exists(STATUS_FILTER_LOG):
+        with open(STATUS_FILTER_LOG, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    g = json.loads(line)
+                    seen.add((g["date"], g["source"], g["group"], g["key"], g["field"]))
+                except Exception:
+                    pass
+    _STATUS_FILTER_SEEN = seen
+    return seen
+
+
+def record_status_filtered(source, group, date, s, seen=None):
+    """冪等記錄一筆「被 status_filters 語意過濾抑制、因此沒有寫進 events.jsonl」的欄位變化。
+
+    這份紀錄是語意過濾可稽核的關鍵：抑制事件不等於丟掉資料——被抑制的每一筆的
+    key／欄位／新舊值／理由碼都完整保留在 STATUS_FILTER_LOG，任何人都能重新檢視
+    「這條規則到底濾掉了什麼」，必要時可反推回事件流。設計與 record_gate_fail() 同構
+    （只用附加模式 "a" 寫檔、從不覆寫或刪減、去重鍵含 date 以支援全歷史重放）。
+
+    s：status_changes_for_group() 放進 suppressed_out 的 dict，含 key／field／from／to／reason。"""
+    if seen is None:
+        seen = load_status_filter_seen()
+    key = (date, source, group, s["key"], s["field"])
+    if key in seen:
+        return False
+    os.makedirs(os.path.dirname(STATUS_FILTER_LOG), exist_ok=True)
+    rec = {"date": date, "source": source, "group": group, "key": s["key"],
+           "field": s["field"], "from": s["from"], "to": s["to"], "reason": s["reason"]}
+    with open(STATUS_FILTER_LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    seen.add(key)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# 做法 2【抖動標記 flap detection】
+# ---------------------------------------------------------------------------
+
+FLAP_MARK_FIELDS = ("flapped", "flap_fields", "flap_with")
+
+
+def _flap_val(v):
+    """把欄位值正規化成可雜湊、可比較的字串（狀態旗標可能是 bool／字串／None，
+    未來也可能出現巢狀值）。只用於抖動配對的相等比較，不影響事件內容本身。"""
+    return json.dumps(v, ensure_ascii=False, sort_keys=True)
+
+
+def _day_gap(d1, d2):
+    """兩個 YYYY-MM-DD 字串相差幾個日曆日；任一側格式不合回傳 None（呼叫端當作不可配對）。"""
+    try:
+        return (datetime.strptime(d2, "%Y-%m-%d") - datetime.strptime(d1, "%Y-%m-%d")).days
+    except Exception:
+        return None
+
+
+def flap_marks(events, window_days=FLAP_WINDOW_DAYS):
+    """做法 2 的核心判定（純函式，無 I/O、無副作用）。
+
+    輸入：一串事件 dict（同一個 source 的 events.jsonl 全部內容即可，非 STATUS_CHANGED
+          會自動略過）。輸出：{(date, group, key): {"fields": [...], "with": [日期字串...]}}。
+
+    判定：把每筆 STATUS_CHANGED 的 from/to 字典拆成逐欄位的轉換 (date, 舊值, 新值)，
+    對同一個 (group, key, 欄位) 的轉換序列，若存在兩筆 t1(a→b)、t2(b→a) 且
+    0 < 日期差 <= window_days，就把**兩筆事件**都標記起來，並互相記下對方的日期。
+    「翻回原值」的定義是嚴格的值相等（a、b 兩個值互換），不是「有變化就算」。
+
+    為什麼標記兩筆而不是只標第二筆：兩天的事件各自都如實描述了「快照之間欄位值確實
+    不同」這個事實，第一筆並沒有比第二筆更可信；抖動是**這一對**的性質，不是單筆的性質。
+
+    為什麼 flap_with 是日期清單而不是單一日期：events.jsonl 的去重鍵是
+    (date, source, group, key, event)，同一個 (group, key) 的兩筆 STATUS_CHANGED 之間
+    唯一不同的成分就是 date，所以「對方的日期」已足以唯一指出對應的那一筆事件
+    （沿用 REAPPEARED 的 "from" 欄位放日期字串的既有慣例）。用清單是因為連續震盪時
+    （例如連三天 a→b→a→b）中間那筆會同時與前後兩筆配對，單一值會漏掉資訊。
+
+    決定性：不依賴輸入順序（內部先排序），不做貪婪「配到就跳出」，同一組輸入永遠得到
+    同一組輸出——這是 annotate_flaps() 冪等的前提。"""
+    by_kf = {}
+    for e in events:
+        if not isinstance(e, dict) or e.get("event") != "STATUS_CHANGED":
+            continue
+        f_from, f_to = e.get("from"), e.get("to")
+        if not isinstance(f_from, dict) or not isinstance(f_to, dict):
+            continue
+        for f in f_from:
+            by_kf.setdefault((e.get("group"), e.get("key"), f), []).append(
+                (e.get("date"), _flap_val(f_from.get(f)), _flap_val(f_to.get(f))))
+    marks = {}
+    for (g, k, f), rows in sorted(by_kf.items(), key=repr):
+        rows = sorted(set(rows))
+        for i, (d1, a1, b1) in enumerate(rows):
+            for (d2, a2, b2) in rows[i + 1:]:
+                gap = _day_gap(d1, d2)
+                if gap is None:
+                    continue
+                if gap > window_days:
+                    break  # rows 已依日期排序，後面只會更遠
+                if gap <= 0:
+                    continue
+                if a2 == b1 and b2 == a1:
+                    for dd, other in ((d1, d2), (d2, d1)):
+                        m = marks.setdefault((dd, g, k), {"fields": set(), "with": set()})
+                        m["fields"].add(f)
+                        m["with"].add(other)
+    return {kk: {"fields": sorted(v["fields"]), "with": sorted(v["with"])}
+            for kk, v in marks.items()}
+
+
+def annotate_flaps(jsonl_path, window_days=FLAP_WINDOW_DAYS):
+    """把 flap_marks() 算出的抖動標記回寫進既有的 events.jsonl，回傳 (被標記事件數, 改寫行數)。
+
+    為什麼必須回頭改既有行：抖動要成立需要「第 2 筆事件」出現，而那時第 1 筆早就寫進
+    events.jsonl 了。這是本檔案唯一一處非附加寫入，因此刻意做了三層保護：
+      1. **從不刪除任何一行**，也從不改動 date/source/group/key/event/from/to 這 7 個既有
+         欄位——只加、改、拿掉 FLAP_MARK_FIELDS 這 3 個本輪新增欄位。
+      2. **無法解析的行原樣保留**（不當成錯誤、不丟棄），非 STATUS_CHANGED 的行原樣保留。
+      3. **原子寫入**（先寫 .flaptmp 再 os.replace），中途失敗不會留下半截檔案。
+
+    冪等性（scripts/verify_prod.py 第 6 項「detect_delistings 冪等（重跑零變化）」的關鍵）：
+    標記完全是「這份檔案內容」的純函式（flap_marks() 決定性，見該函式 docstring），而且
+    這裡同時處理「該標而沒標」與「不該標卻標了」兩個方向——後者讓標記狀態有唯一不動點，
+    所以第 1 次執行把標記寫進去之後，第 2 次執行算出完全相同的標記、比對相同、
+    `changed == 0`、**完全不開檔寫入**，檔案位元組不變。
+    唯一會改變檔案的時機是「真的有新標記或標記需要更新」，包含部署後的第一次執行
+    （見報告 §6.3 的部署順序提醒：先跑一次再 commit，不要先 commit 再跑 verify_prod）。
+
+    未被標記的行：如果它本來就沒有 FLAP_MARK_FIELDS，走「原樣保留」路徑，一個位元組都不動
+    （不做 json 反序列化再序列化的來回，避免任何非預期的格式漂移）。"""
+    if not os.path.exists(jsonl_path):
+        return 0, 0
+    with open(jsonl_path, encoding="utf-8") as f:
+        orig_lines = f.readlines()
+    parsed = []
+    for ln in orig_lines:
+        s = ln.strip()
+        if not s:
+            parsed.append(None)
+            continue
+        try:
+            parsed.append(json.loads(s))
+        except Exception:
+            parsed.append(None)   # 解析不了就原樣保留，不動它
+    marks = flap_marks([e for e in parsed if isinstance(e, dict)], window_days)
+    out_lines = []
+    changed = 0
+    for ln, e in zip(orig_lines, parsed):
+        if not isinstance(e, dict) or e.get("event") != "STATUS_CHANGED":
+            out_lines.append(ln)
+            continue
+        want = marks.get((e.get("date"), e.get("group"), e.get("key")))
+        cur = (e.get("flapped"), e.get("flap_fields"), e.get("flap_with"))
+        tgt = (True, want["fields"], want["with"]) if want else (None, None, None)
+        if cur == tgt:
+            out_lines.append(ln)
+            continue
+        for kk in FLAP_MARK_FIELDS:
+            e.pop(kk, None)
+        if want:
+            e["flapped"] = True
+            e["flap_fields"] = want["fields"]
+            e["flap_with"] = want["with"]
+        out_lines.append(json.dumps(e, ensure_ascii=False) + ("\n" if ln.endswith("\n") else ""))
+        changed += 1
+    if changed:
+        tmp = jsonl_path + ".flaptmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("".join(out_lines))
+        os.replace(tmp, jsonl_path)
+    return len(marks), changed
+
+
 def update_index(entries):
     """完全比照 scripts/detect_changes.py 的 update_index()：讀舊列 + 合併 + 去重 + 反序。
     與軌二共用同一個 CHANGES.md，兩支程式互相 append 不會覆寫對方。"""
@@ -1516,9 +2468,35 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=
     r = compare_pair(source, cfg, f_old, f_new)
     judged = judge(r, cfg)
 
+    # ----------------------------------------------------------------------
+    # 第四階段（2026-09-07，熔斷語意統一）：事件建構與「落地去向」分離。
+    #   舊行為：judged != "NORMAL" 就完全不建事件 → 事實永久遺失（尤其 REAPPEARED）。
+    #   新行為：三種判定**一律建事件**，只有「寫去哪裡」不同：
+    #     NORMAL                     → events.jsonl
+    #     BREAKER 且放行檢查通過      → events.jsonl，每筆加熔斷標記（標記但不否決）
+    #     BREAKER 且放行檢查不通過    → events_quarantine.jsonl（疑似分頁截斷）
+    #     GATE_FAIL                  → events_quarantine.jsonl（資料不可信）
+    # 完整理由見檔頭「第四階段」。
+    # ----------------------------------------------------------------------
+    release_ok, release_reason = True, ""
+    if judged == "BREAKER":
+        release_ok, release_reason = breaker_release_check(source, r["d_old"], r["d_new"], r)
+    to_events = (judged == "NORMAL") or (judged == "BREAKER" and release_ok)
+    # GATE_FAIL 是否落隔離檔由 QUARANTINE_GATE_FAIL 控制（預設 False，理由見該常數註解）。
+    to_quarantine = (not to_events) and (judged == "BREAKER" or QUARANTINE_GATE_FAIL)
+    marks = breaker_marks(r["removed_rate"], r["threshold_count"]) if judged == "BREAKER" else {}
+    r["breaker_release_ok"] = release_ok
+    r["breaker_release_reason"] = release_reason
+    r["to_events"] = to_events
+
     new_events = []
     reappeared_from = {}
-    if judged == "NORMAL":
+    # 第四階段：judge() 只會回傳這三個值，三種判定**一律建事件**（舊版是
+    # `if judged == "NORMAL":`），差別只在下面的落地去向。這裡刻意保留一層
+    # 條件式而不是把迴圈拉平，是為了讓下面三段既有的事件建構程式碼連縮排都
+    # 逐字元不變——scripts/selftest.py 的 mut_dd_reappeared 破壞驗證錨點含縮排，
+    # 拉平會讓那條檢查找不到錨點（教訓見 docs/selftest-fix-report.md §1.2）。
+    if judged in ("NORMAL", "BREAKER", "GATE_FAIL"):
         for k in r["removed_keys"]:
             new_events.append({"date": r["d_new"], "source": source, "group": source,
                                 "key": k, "event": "DELISTED",
@@ -1528,27 +2506,59 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=
                                 "key": k, "event": "LISTED",
                                 "from": None, "to": short_desc(r["keyed_new"].get(k))})
             if k in last_delisted:
-                # REAPPEARED（本輪新增）：這個 key 過去曾被記為消失，這次又出現在
-                # added_keys 裡——在上面剛寫的 LISTED 事件之外，額外補寫這一筆，
-                # 不取代 LISTED（兩者同一天、同時存在）。"from" 放上一次消失的日期，
-                # 讓這一筆事件本身就能還原「消失了幾天」，見檔頭「事件型別語意定義」。
+                # REAPPEARED：這個 key 過去曾被記為消失，這次又出現在「新增」
+                # 集合裡——在上面剛寫的 LISTED 事件之外，額外補寫這一筆，不取代
+                # LISTED（兩者同一天、同時存在）。"from" 放上一次消失的日期，讓
+                # 這一筆事件本身就能還原「消失了幾天」，見檔頭「事件型別語意定義」。
                 reappeared_from[k] = last_delisted[k]
                 new_events.append({"date": r["d_new"], "source": source, "group": source,
                                     "key": k, "event": "REAPPEARED",
                                     "from": last_delisted[k], "to": short_desc(r["keyed_new"].get(k))})
+    # 熔斷標記統一在事件全部建好之後一次套用（不在上面三個 append 內就地 update），
+    # 這樣三段既有的事件建構程式碼可以逐字元保持原樣——scripts/selftest.py 的
+    # mut_dd_reappeared 破壞驗證錨點就落在其中一段，改寫它們會讓那條檢查失去錨點。
+    if marks:
+        for e in new_events:
+            e.update(marks)
+    if to_events:
         # 用這一對快照本身的事實更新「最近一次消失日期」——跟下面 write_events()／
         # seen 判斷的「這筆事件是不是本次執行才第一次寫進檔案」完全無關：即使這筆
         # DELISTED 早就寫過（seen 命中，這次不會重複落地），這一對快照仍然「確實
         # 顯示」這個 key 在 r["d_new"] 這天消失，這件事實本身就是下一次牠重新出現時
         # 應該比對的基準，不能因為事件已經寫過就不更新這個狀態。
+        # 第四階段新增條件 to_events：只有真的寫進 events.jsonl 的事實才更新這個狀態，
+        # 讓 last_delisted 恆等於 events.jsonl 的內容。被隔離的移除**不更新**，
+        # 否則之後某天那個 key 回來時，events.jsonl 會出現一筆 REAPPEARED，
+        # 但它對應的 DELISTED 只存在於隔離檔裡，兩個檔案互相矛盾。
         for k in r["removed_keys"]:
             last_delisted[k] = r["d_new"]
 
-    r["reappeared_from"] = reappeared_from
+    # r["reappeared_from"] 的語意固定是「這次寫進 events.jsonl 的重新出現」，
+    # render_report()／下面的索引列都沿用這個語意（本輪未修改 render_report()）。
+    r["reappeared_from"] = reappeared_from if to_events else {}
+    r["quarantined_reappeared_from"] = {} if to_events else reappeared_from
 
     jsonl_path = os.path.join(TRACK_CRYPTO, "data", source, "events.jsonl")
-    fresh = write_events(jsonl_path, new_events, seen)
-    seen.update((e["date"], e["source"], e["group"], e["key"], e["event"]) for e in fresh)
+    if to_events:
+        fresh = write_events(jsonl_path, new_events, seen)
+        seen.update((e["date"], e["source"], e["group"], e["key"], e["event"]) for e in fresh)
+        quarantined = []
+    elif not to_quarantine:
+        fresh = []
+        quarantined = []
+    else:
+        fresh = []
+        q_path = os.path.join(TRACK_CRYPTO, "data", source, QUARANTINE_BASENAME)
+        q_seen = load_quarantine_seen(q_path)
+        reason_code = "GATE_FAIL" if judged == "GATE_FAIL" else "BREAKER_TRUNCATION_SUSPECT"
+        reason_text = (release_reason if judged == "BREAKER"
+                       else "完整性守門不通過：前日=%s／當日=%s" % (r["reason_old"], r["reason_new"]))
+        quarantined = write_quarantine(source, r["d_new"], new_events, reason_code, reason_text, q_seen)
+        if quarantined:
+            print("   [QUARANTINE] %s @ %s->%s：%d 筆事件寫入 %s（%s：%s）"
+                  % (source, r["d_old"], r["d_new"], len(quarantined),
+                     QUARANTINE_BASENAME, reason_code, reason_text))
+    r["quarantined"] = len(quarantined)
 
     entries_for_index = []
     if judged == "NORMAL" and not r["removed_keys"] and not reappeared_from:
@@ -1567,15 +2577,23 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=
         out = os.path.join(outdir, "%s.md" % r["d_new"])
         with open(out, "w", encoding="utf-8") as f:
             f.write(render_report(source, cfg, r, judged))
-        if judged == "NORMAL":
+        if judged == "NORMAL" or (judged == "BREAKER" and to_events):
             removed_cell = str(len(r["removed_keys"]))
             added_cell = str(len(r["added_keys"]))
             if reappeared_from:
                 added_cell += "（含 %d 筆重新出現）" % len(reappeared_from)
+            if judged == "BREAKER":
+                # 第四階段：熔斷改成「標記但不否決」後，事件是有寫的，索引列不能再寫
+                # 「熔斷」讓人以為沒寫；改成明確說明「已標記」。
+                removed_cell += "（熔斷已標記）"
         else:
             tag = "不判定" if judged == "GATE_FAIL" else "熔斷"
-            removed_cell = "%d（%s）" % (len(r["removed_keys"]), tag)
-            added_cell = "%d（%s）" % (len(r["added_keys"]), tag)
+            # 「，已隔離」只在事件真的有寫進隔離檔時才加；GATE_FAIL 在
+            # QUARANTINE_GATE_FAIL=False（預設）下沒有隔離任何東西，索引列必須維持
+            # 本輪之前的原樣，才不會憑空製造一堆與事實不符的差異。
+            suffix = "，已隔離" if to_quarantine else ""
+            removed_cell = "%d（%s%s）" % (len(r["removed_keys"]), tag, suffix)
+            added_cell = "%d（%s%s）" % (len(r["added_keys"]), tag, suffix)
         entries_for_index.append(
             "| %s | `track-crypto/%s` | %s | %s | %s | [紀錄](changes/%s/%s.md) |"
             % (r["d_new"], source, EMDASH, removed_cell, added_cell, source, r["d_new"]))
@@ -1586,11 +2604,11 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=
         # 詮釋（比照 scripts/healthcheck.py 的 check_cex_gate_skips() 對
         # gate_skips.jsonl reason 欄位的既有處理原則）。
         reasons = []
-        if r["reason_old"] != "total_match":
-            reasons.append("前日(%s)：%s（total=%r, len(items)=%r）"
+        if not r["ok_old"]:
+            reasons.append("前日(%s)：%s（上游自報總數=%r, len(items)=%r）"
                             % (r["d_old"], r["reason_old"], r["total_old"], r["n_old"]))
-        if r["reason_new"] != "total_match":
-            reasons.append("當日(%s)：%s（total=%r, len(items)=%r）"
+        if not r["ok_new"]:
+            reasons.append("當日(%s)：%s（上游自報總數=%r, len(items)=%r）"
                             % (r["d_new"], r["reason_new"], r["total_new"], r["n_new"]))
         record_gate_fail(source, source, r["d_new"], r["d_old"], "；".join(reasons),
                           r["n_old"], r["n_new"], gate_fail_seen)
@@ -1607,17 +2625,191 @@ def process_pair(source, cfg, f_old, f_new, seen, last_delisted, gate_fail_seen=
             "| removed 率 | %.2f%%（門檻 %.1f%%） |" % (r["removed_rate"], cfg["breaker_pct"]),
             "| 前日筆數（去重後） | %d |" % len(r["keyed_old"]),
             "| 當日移除筆數 | %d |" % len(r["removed_keys"]),
-            "",
-            ("本日 `%s` 的「自清單消失」判定已**暫停**，未寫入 "
-             "`data/%s/events.jsonl`。removed 率超過日常區間"
-             "（1.8%%~3.7%%），可能是抓取異常，也可能是真的有大量 resource 同時"
-             "自清單消失，詳見 `changes/%s/%s.md`。人工確認後可手動處理"
-             "（本程式不會自動重放此區間）。"
-             % (source, source, source, r["d_new"])),
         ]
+        if to_events:
+            lines += [
+                "| 處置 | **標記但不否決**：事件已寫入 `data/%s/events.jsonl` |" % source,
+                "| 放行依據 | %s |" % release_reason,
+                "",
+                ("本日 `%s` 的「自清單消失」判定**照常寫入** `data/%s/events.jsonl`，"
+                 "但該組轉換產生的每一筆事件都額外帶 `note:\"anomalous_scale\"`、"
+                 "`breaker_tripped:true`、`removed_pct`、`breaker_threshold` 四個欄位，"
+                 "**需要人工複核**。removed 率超過該來源的熔斷門檻，可能是抓取異常，"
+                 "也可能是真的有大量 resource 同時自清單消失，本程式不對成因下判斷"
+                 "（零觀點鐵律）。詳見 `changes/%s/%s.md`。若複核後判定為假事件，"
+                 "請用 `scripts/apply_correction.py` 更正，不要手動編輯事件流。"
+                 % (source, source, source, r["d_new"])),
+            ]
+        else:
+            lines += [
+                "| 處置 | **隔離**：事件已寫入 `data/%s/%s`，未進 events.jsonl |"
+                % (source, QUARANTINE_BASENAME),
+                "| 隔離原因 | %s |" % release_reason,
+                "",
+                ("本日 `%s` 的「自清單消失」判定**未寫入** `data/%s/events.jsonl`，"
+                 "因為除了移除規模超過熔斷門檻之外，還同時命中「疑似分頁截斷」的"
+                 "結構性指紋（見上表）。事件事實**沒有遺失**，已完整寫入隔離檔 "
+                 "`data/%s/%s`，人工複核確認不是抓取問題後可提升回事件流。"
+                 "詳見 `changes/%s/%s.md`。"
+                 % (source, source, source, QUARANTINE_BASENAME, source, r["d_new"])),
+            ]
         alert_written = write_alert_block(source, r["d_new"], lines)
 
     return judged, r, fresh, entries_for_index, alert_written
+
+
+# ==========================================================================
+# 第四階段（2026-09-07，熔斷語意統一）新增的函式，全部集中在這一段連續區塊，
+# 方便與其他同時進行的修改合併。本段之外的既有函式改動點見檔頭「本輪修改範圍」。
+# ==========================================================================
+
+def removal_tail_metrics(keyed_old, removed_keys):
+    """分頁截斷指紋：算「前一日清單順序中，結尾連續且全部被移除」的區塊。
+
+    回傳 (tail_run, tail_cover)：
+      tail_run   ＝ 從前一日清單最後一筆往回數，連續落在 removed_keys 裡的筆數。
+      tail_cover ＝ tail_run / len(removed_keys)，移除總數為 0 時定義為 0.0。
+
+    為什麼是這個指標（原理，不是經驗法則）：offset 分頁一旦提前中止，被丟掉的一定是
+    「伺服器排序的一段連續尾巴」，不會是清單中間的零星項目；真實下架則沒有這個限制。
+    keyed_old 是 dedup() 回傳的 dict，Python dict 保留插入順序，插入順序＝原始 items
+    的出現順序，所以 list(keyed_old) 就是前一日的清單順序，不必另外保存位置資訊。
+
+    本函式是純函式：不讀檔、不寫檔、不看設定，只吃兩個集合。門檻判斷不在這裡，
+    在 breaker_release_check()（門檻常數 BREAKER_TAIL_COVER_MAX）。
+    """
+    removed = set(removed_keys)
+    if not removed:
+        return 0, 0.0
+    run = 0
+    for k in reversed(list(keyed_old)):
+        if k in removed:
+            run += 1
+        else:
+            break
+    return run, run / len(removed)
+
+
+def _manifest_entry(date, source):
+    """讀 track-crypto/data/_manifest/<date>.json 裡該來源的紀錄，讀不到一律回 None
+    （由呼叫端 fail-closed 處理）。只讀不寫，任何例外都吞掉回 None——這是側證用的
+    輔助資料，不能因為它出問題就讓主流程掛掉。"""
+    p = os.path.join(TRACK_CRYPTO, "data", "_manifest", "%s.json" % date)
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            m = json.load(f)
+    except Exception:
+        return None
+    s = m.get("sources") or m.get("channels") or {}
+    e = s.get(source) if isinstance(s, dict) else None
+    return e if isinstance(e, dict) else None
+
+
+def breaker_release_check(source, d_old, d_new, r):
+    """熔斷成立時，判斷是否放行「標記但不否決」。回傳 (ok, reason)。
+
+    全部 fail-closed：任何一項讀不到、型別不對、或不通過，一律回 False（＝改走隔離檔）。
+
+    三道檢查：
+      1. 截斷指紋：tail_cover < BREAKER_TAIL_COVER_MAX（門檻校準見該常數註解）。
+      2. manifest 側證：兩側日期該來源的 ok 必須是 True、truncated 必須是 False
+         （精確型別檢查，缺失/None/True 一律不通過）。
+         **對 x402_bazaar 而言 truncated 這一項是恆真的**（見檔頭第四階段說明：
+         adapter 沒有回報這個旗標，snap_crypto.py 讀不到時預設 False），
+         這裡仍然檢查，是因為別的來源（agent_virtuals、mcp_smithery、vast_gpu）
+         這個旗標是真訊號，統一規則不因單一來源的缺陷而放棄。
+      3. parser_version 兩日一致：解析器改版會造成假消失（本專案三大假性變動陷阱
+         之一，見 docs/source-value-audit.md），改版當天不該放行大規模移除判定。
+
+    為什麼不檢查 manifest 的 complete 欄位：agent_virtuals 的 manifest complete 恆為
+    False（manifest 用嚴格 total_match，偵測程式對該來源另用 tolerant_total_match，
+    見 completeness_group()），加這個條件會讓該來源永遠無法放行，是把 manifest 的
+    嚴格度誤當成本程式的守門結論。本程式自己的守門結論是 r["gate_ok"]，
+    而 BREAKER 本來就蘊含 gate_ok==True（見 compare_pair()／compare_group()）。
+    """
+    cov = r.get("tail_cover")
+    if not isinstance(cov, (int, float)):
+        return False, "缺 tail_cover 欄位（fail-closed）"
+    if cov >= BREAKER_TAIL_COVER_MAX:
+        return False, ("疑似分頁截斷：尾端連續移除佔比 %.4f >= 門檻 %.2f（tail_run=%s）"
+                       % (cov, BREAKER_TAIL_COVER_MAX, r.get("tail_run")))
+    e_old = _manifest_entry(d_old, source)
+    e_new = _manifest_entry(d_new, source)
+    for d, e in ((d_old, e_old), (d_new, e_new)):
+        if e is None:
+            return False, "%s 的 manifest 查無 %s 紀錄（fail-closed）" % (d, source)
+        if e.get("ok") is not True:
+            return False, "%s manifest ok=%r（非布林 True）" % (d, e.get("ok"))
+        if e.get("truncated") is not False:
+            return False, "%s manifest truncated=%r（非布林 False）" % (d, e.get("truncated"))
+    if e_old.get("parser_version") != e_new.get("parser_version"):
+        return False, ("parser_version 兩日不同（%r → %r），解析器改版當天不放行"
+                       % (e_old.get("parser_version"), e_new.get("parser_version")))
+    return True, ("tail_cover=%.4f < %.2f；manifest ok/truncated/parser_version 兩日皆通過"
+                  % (cov, BREAKER_TAIL_COVER_MAX))
+
+
+def breaker_marks(removed_pct, threshold_count):
+    """熔斷事件的標記欄位（本檔案與 scripts/cex_events.py 共用同一組欄位名與語意）。
+
+      note              沿用 cex_events.py 從 2026-09-01 起就在用的既有值，
+                        不新造第二個名字，讓既有下游查詢照樣命中。
+      breaker_tripped   布林旗標，給不想比對字串的下游用。
+      removed_pct       本次移除佔前一日去重後筆數的百分比（四捨五入到小數 4 位）。
+      breaker_threshold 觸發門檻，**一律換算成筆數**（不是百分比）——本檔案第一階段
+                        SOURCES 用百分比比較、第二階段 GROUP_SOURCES 與 cex_events.py
+                        用筆數比較，換算成同一單位後三條路徑的欄位語意才真的一致。
+    """
+    return {"note": "anomalous_scale", "breaker_tripped": True,
+            "removed_pct": round(float(removed_pct), 4),
+            "breaker_threshold": round(float(threshold_count), 4)}
+
+
+def load_quarantine_seen(jsonl_path):
+    """讀隔離檔目前所有五元組鍵值，供 write_quarantine() 冪等判斷。
+    手法與 load_seen() 完全相同（同一組鍵、同一種容錯解析），只是換一個檔案。"""
+    return load_seen(jsonl_path)
+
+
+def write_quarantine(source, d_new, events, reason_code, reason_text, seen):
+    """把「本來會寫進 events.jsonl、但這組轉換不可信」的事件完整寫進隔離檔。
+
+    設計重點：
+      1. **隔離不是丟棄**。舊行為（judged != "NORMAL" 就完全不建事件）造成的遺失是
+         不可逆的，尤其 REAPPEARED——key 一旦回到清單，之後任何一次比對都不會再把它
+         放進 added_keys，判定機會永久消失（見檔頭第四階段問題 2）。寫進隔離檔之後，
+         事實還在，人工複核後可以提升。
+      2. 只追加，去重鍵與 events.jsonl 相同的五元組，重跑不會長出重複行（冪等）。
+      3. 隔離檔**不是** events.jsonl 的一部分：scripts/verify_prod.py 的冪等檢查
+         只雜湊 track-crypto/data/*/events.jsonl，本檔案不在其列；下游若要用，
+         必須明確地另外讀這個檔名，不會被誤當成已確認的事件。
+      4. 每筆額外帶 quarantine_reason／quarantine_detail／quarantine_date 三個欄位，
+         說明「為什麼被隔離」，人工複核時不必回去翻 log。
+    """
+    if not events:
+        return []
+    path = os.path.join(TRACK_CRYPTO, "data", source, QUARANTINE_BASENAME)
+    fresh = []
+    for e in events:
+        k = (e["date"], e["source"], e["group"], e["key"], e["event"])
+        if k in seen:
+            continue
+        rec = dict(e)
+        rec["quarantine_reason"] = reason_code
+        rec["quarantine_detail"] = reason_text
+        rec["quarantine_date"] = d_new
+        fresh.append((k, rec))
+    if not fresh:
+        return []
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        for _k, rec in fresh:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    for k, _rec in fresh:
+        seen.add(k)
+    return [rec for _k, rec in fresh]
 
 
 def main():
@@ -1638,6 +2830,9 @@ def main():
     # --------------------------------------------------------------------
     total_listed = total_delisted = total_reappeared = 0
     normal_days = gate_fail_days = breaker_days = 0
+    # 第四階段（熔斷語意統一）新增的兩個計數器，只用於最後的 SUMMARY 輸出，
+    # 不影響任何既有計數器與既有輸出格式。
+    breaker_marked_days = quarantined_events = 0
     all_index_entries = []
     any_source = False
     gate_fail_seen = load_gate_fail_seen()  # 本輪新增：跨 SOURCES／GROUP_SOURCES 兩迴圈共用一份
@@ -1657,8 +2852,11 @@ def main():
                 gate_fail_days += 1
             elif judged == "BREAKER":
                 breaker_days += 1
+                if r.get("to_events"):
+                    breaker_marked_days += 1
             else:
                 normal_days += 1
+            quarantined_events += r.get("quarantined", 0)
             n_listed = sum(1 for e in fresh if e["event"] == "LISTED")
             n_delisted = sum(1 for e in fresh if e["event"] == "DELISTED")
             n_reappeared = sum(1 for e in fresh if e["event"] == "REAPPEARED")
@@ -1677,6 +2875,8 @@ def main():
     # --------------------------------------------------------------------
     g_total_listed = g_total_delisted = g_total_reappeared = g_total_status = 0
     g_normal = g_gate_fail = g_breaker = 0
+    g_breaker_marked = g_not_to_events = 0
+    g_total_flapped = g_flap_rewritten = 0  # 本輪新增（做法 2 抖動標記），見 annotate_flaps()
     any_group_source = False
     for source, scfg in GROUP_SOURCES.items():
         any_group_source = True
@@ -1706,12 +2906,26 @@ def main():
                     g_gate_fail += 1
                 elif gr["judged"] == "BREAKER":
                     g_breaker += 1
+                    if gr.get("to_events"):
+                        g_breaker_marked += 1
                 else:
                     g_normal += 1
+                if not gr.get("to_events", True):
+                    g_not_to_events += 1
             print("%s: %s->%s [%s] 新事件 listed=%d delisted=%d reappeared=%d status_changed=%d%s"
                   % (source, d_old, d_new, judged_summary, n_listed, n_delisted, n_reappeared, n_status,
                      "  [ALERT-DELIST.md 已寫入]" if alert_written else ""))
             all_index_entries.extend(entries)
+        # 本輪新增（2026-09-07，做法 2 抖動標記）：本來源的全歷史配對跑完之後，對這份
+        # events.jsonl 重算一次抖動標記並回寫。放在這裡而不是每組配對之後，是因為抖動要
+        # 成立需要「後來那一筆」也已經寫進檔案；放在來源迴圈尾端剛好保證整段歷史都在了。
+        # 只影響 FLAP_MARK_FIELDS 這 3 個新增欄位，不動任何既有欄位（見 annotate_flaps()）。
+        n_flap, n_rewritten = annotate_flaps(jsonl_path)
+        g_total_flapped += n_flap
+        g_flap_rewritten += n_rewritten
+        if n_rewritten:
+            print("%s: 抖動標記回寫 %d 行（目前共 %d 筆事件帶標記，回翻視窗 %d 天）"
+                  % (source, n_rewritten, n_flap, FLAP_WINDOW_DAYS))
 
     if not any_source and not any_group_source:
         print("FATAL 白名單 SOURCES 與 GROUP_SOURCES 皆為空", file=sys.stderr)
@@ -1726,6 +2940,17 @@ def main():
              g_normal, g_gate_fail, g_breaker))
     print("GATE_FAIL 事實紀錄檔：%s（去重後累積 %d 筆歷史紀錄，供 healthcheck.py 告警用）"
           % (GATE_FAIL_LOG, len(gate_fail_seen)))
+    # 第四階段（熔斷語意統一）新增的一行 SUMMARY，格式與既有兩行 SUMMARY 同構，
+    # 既有兩行逐字元未動（下游若有在 grep "SUMMARY listed=" 不受影響）。
+    print("SUMMARY(BREAKER_SEMANTICS) breaker_days=%d breaker_marked_days=%d "
+          "quarantined_events=%d group_breaker=%d group_breaker_marked=%d "
+          "group_not_to_events=%d tail_cover_max=%.2f"
+          % (breaker_days, breaker_marked_days, quarantined_events,
+             g_breaker, g_breaker_marked, g_not_to_events, BREAKER_TAIL_COVER_MAX))
+    print("SUMMARY(FLAP/FILTER) flapped_events=%d flap_rewritten_lines=%d flap_window_days=%d "
+          "status_filtered=%d filter_log=%s"
+          % (g_total_flapped, g_flap_rewritten, FLAP_WINDOW_DAYS,
+             len(load_status_filter_seen(refresh=True)), STATUS_FILTER_LOG))
     return 0
 
 

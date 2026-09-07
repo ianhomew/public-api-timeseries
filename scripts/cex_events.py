@@ -23,6 +23,37 @@
      事件仍照常寫入（不能為了消假警報就整批不報，見 docs/cex-events-audit.md §4），
      但加註 note:"anomalous_scale"，供下游或人工複核辨識。
 
+熔斷語意統一（2026-09-07 新增，任務 C，見本機 docs/0907-C-breaker-semantics-report.md）：
+  背景：同一個「熔斷」概念，本檔案是「標記但不否決」，
+  track-crypto/scripts/detect_delistings.py 卻是「否決整組」，同一個概念兩種行為。
+  2026-09-06→09-07 x402_bazaar 熔斷因此讓 1,399 筆 DELISTED、387 筆 LISTED、
+  21 筆 REAPPEARED 永久遺失（docs/0907-events-audit-0904-0907.md §6.1）。
+  本輪統一成本檔案原本就在用的「標記但不否決」，兩支程式共用同一組欄位名與同一條規則。
+
+  本檔案的三項改動（全部是純加法，既有欄位與既有判定邏輯逐字元不變）：
+    1. 標記欄位由 2 個擴充為 4 個，並且**套用到該組轉換產生的每一筆事件**
+       （LISTED／DELISTED／STATUS_CHANGED），不再只標記 DELISTED：
+         note:"anomalous_scale"（既有，值不變）、removed_pct（既有，值不變）、
+         breaker_tripped:true（新增）、breaker_threshold（新增，單位是筆數）。
+       理由：熔斷是「這一組轉換整體異常」的性質，不是個別移除項目的性質；
+       下游要排除一次異常轉換時，必須能一致地排除該轉換的全部事件。
+    2. 新增告警：本檔案的熔斷過去**完全沒有接任何告警管道**（只有 stdout 一行 [CB]，
+       進 logs/cex_events.log 就沒人看了）。本輪比照 detect_delistings.py 的
+       ALERT-DELIST.md 前例，新增本檔案獨佔的 ALERT-CEXBREAKER.md，
+       只對「最新一組轉換」寫入（理由見 write_alert_block_cexbreaker() docstring），
+       歷史熔斷的永久紀錄本來就在 events.jsonl 的 breaker_tripped 欄位裡。
+    3. 完整性守門（上面第 2 點）由「否決並丟棄」升級為「否決但隔離保存」：
+       本來會寫入的事件改寫進 events_quarantine.jsonl，事實不再遺失。
+       events.jsonl 的內容完全不受影響（守門本來就不寫進去），
+       scripts/verify_prod.py 的冪等檢查只雜湊 events.jsonl，也不受影響。
+
+  為什麼本檔案**不**套用 detect_delistings.py 的「分頁截斷指紋 → 隔離」那一道閘門
+  （BREAKER_TRUNCATION_QUARANTINE = False，見該常數註解）：cex_symbols 的 7 家
+  交易所全部是單次不分頁端點（例如 MEXC 的 /api/v3/exchangeInfo），結構上不存在
+  「分頁提前中止砍掉連續尾端」這種失敗模式；失敗是全有全無，已由上面第 2 點的
+  交易所級守門涵蓋（docs/0907-events-audit-0904-0907.md §5.1 已獨立確認這一點）。
+  這是「同一條規則、依資料形狀宣告是否適用」，不是兩套規則。
+
 gate_skips.jsonl 冪等寫入（2026-09-04 新增，見 specs/SPEC-gate-dedup.md、
 docs/gate-dedup-report.md）：本檔 main() 每次執行都對「完整歷史」重新配對計算
 （snapshots() 回傳全部歷史快照），若不去重，同一筆完整性守門紀錄會被每天重複附加。
@@ -69,6 +100,171 @@ SPEC = {
 #   樣本僅 7 天，門檻應隨資料持續累積重新校準，不是最終值。
 CB_MIN_ABS = 10
 CB_PCT = 0.01
+
+# --------------------------------------------------------------------------
+# 熔斷語意統一（2026-09-07）新增的常數。名稱與語意與
+# track-crypto/scripts/detect_delistings.py 的同名常數一致。
+# --------------------------------------------------------------------------
+# 隔離檔：完整性守門觸發時，「本來會寫入 events.jsonl 的事件」改寫到這裡，
+# 事實完整保留、可人工複核後提升。只追加、去重鍵與 events.jsonl 相同的四元組
+# (date, exchange, symbol, event)。
+QUARANTINE_JL = os.path.join(OUT, "events_quarantine.jsonl")
+# 本檔案獨佔的熔斷告警檔（比照 ALERT-DELIST.md 的所有權設計，見
+# write_alert_block_cexbreaker() docstring）。
+ALERT_CEXBREAKER = os.path.join(REPO, "ALERT-CEXBREAKER.md")
+# 本檔案不套用「分頁截斷指紋 → 隔離」閘門，理由見檔頭「熔斷語意統一」最後一段
+# （7 家交易所皆為單次不分頁端點，結構上沒有這種失敗模式）。保留成常數而不是直接
+# 刪掉相關程式碼，是為了讓「為什麼兩支程式在這一點上不同」在原始碼裡就看得到；
+# 未來若有分頁型端點加入 cex_symbols，把這個值改成 True 即可。
+BREAKER_TRUNCATION_QUARANTINE = False
+# 分頁截斷指紋門檻（與 detect_delistings.BREAKER_TAIL_COVER_MAX 同值同義）。
+# 本檔案只把算出來的 tail_cover 寫進告警當參考資訊，不用它否決任何事情。
+BREAKER_TAIL_COVER_MAX = 0.50
+# 完整性守門觸發時要不要把「本來會寫入的事件」寫進隔離檔。**預設 False（不寫）**，
+# 與 detect_delistings.QUARANTINE_GATE_FAIL 同名同義同預設值（統一語意的一部分）。
+# 理由見該常數註解：守門不通過＝這份快照本身已知不可信，由它推出來的差集幾乎必然是
+# 假象，保存價值低；實測若開啟，光 agent_virtuals 4 個歷史截斷日就會產生 65,788 筆
+# 隔離紀錄（約 13 MB）。本檔案的守門歷來 0 次觸發（gate_skips.jsonl 不存在），
+# 開不開啟對現況都沒有實際差別，預設值與 detect_delistings 保持一致比較重要。
+QUARANTINE_GATE_FAIL = False
+
+# --------------------------------------------------------------------------
+# 熔斷語意統一（2026-09-07）新增的函式。與
+# track-crypto/scripts/detect_delistings.py 的同名函式行為一致（同一條規則）。
+# --------------------------------------------------------------------------
+
+def removal_tail_metrics(order_keys, removed_keys):
+    """分頁截斷指紋：算「前一日清單順序中，結尾連續且全部被移除」的區塊。
+    回傳 (tail_run, tail_cover)。定義與 detect_delistings.removal_tail_metrics()
+    逐字相同。本檔案只把結果當參考資訊寫進告警，不用它否決任何事情
+    （見 BREAKER_TRUNCATION_QUARANTINE 常數註解）。"""
+    removed = set(removed_keys)
+    if not removed:
+        return 0, 0.0
+    run = 0
+    for k in reversed(list(order_keys)):
+        if k in removed:
+            run += 1
+        else:
+            break
+    return run, run / len(removed)
+
+
+def breaker_marks(removed_pct, threshold_count):
+    """熔斷事件的標記欄位（與 detect_delistings.breaker_marks() 同名同義同欄位）。
+    note 沿用本檔案 2026-09-01 起就在用的既有值，不新造第二個名字；
+    removed_pct 沿用既有欄位與既有的 round(...,4) 精度；
+    breaker_tripped／breaker_threshold 為 2026-09-07 新增，breaker_threshold
+    一律是**筆數**（本檔案本來就用筆數比較，detect_delistings 第一階段的百分比
+    門檻會先換算成筆數，兩邊單位因此一致）。"""
+    return {"note": "anomalous_scale", "breaker_tripped": True,
+            "removed_pct": round(float(removed_pct), 4),
+            "breaker_threshold": round(float(threshold_count), 4)}
+
+
+def load_quarantine_seen():
+    """讀隔離檔目前所有四元組鍵值，供 write_quarantine() 冪等判斷。
+    手法與 main() 讀 events.jsonl 建 seen 集合完全相同。"""
+    seen = set()
+    if os.path.exists(QUARANTINE_JL):
+        for line in open(QUARANTINE_JL, encoding="utf-8"):
+            try:
+                e = json.loads(line)
+                seen.add((e["date"], e["exchange"], e["symbol"], e["event"]))
+            except Exception:
+                pass
+    return seen
+
+
+def write_quarantine(events, reason_code, reason_text, seen):
+    """把「本來會寫進 events.jsonl、但這組轉換不可信」的事件完整寫進隔離檔。
+
+    設計理由（與 detect_delistings.write_quarantine() 同一套）：
+      1. **隔離不是丟棄**。舊行為（完整性守門觸發就 continue）會讓那一組轉換的
+         LISTED／DELISTED／STATUS_CHANGED 全部消失且不會自動重放。
+      2. 只追加、去重鍵與 events.jsonl 相同，重跑不會長出重複行（冪等）。
+      3. 隔離檔不是 events.jsonl 的一部分：scripts/verify_prod.py 的冪等檢查
+         只雜湊 track-crypto/data/*/events.jsonl，本檔案不在其列。
+    """
+    if not events:
+        return []
+    fresh = []
+    for e in events:
+        k = (e["date"], e["exchange"], e["symbol"], e["event"])
+        if k in seen:
+            continue
+        rec = dict(e)
+        rec["quarantine_reason"] = reason_code
+        rec["quarantine_detail"] = reason_text
+        fresh.append((k, rec))
+    if not fresh:
+        return []
+    os.makedirs(os.path.dirname(QUARANTINE_JL), exist_ok=True)
+    with open(QUARANTINE_JL, "a", encoding="utf-8") as f:
+        for _k, rec in fresh:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    for k, _rec in fresh:
+        seen.add(k)
+    return [rec for _k, rec in fresh]
+
+
+def write_alert_block_cexbreaker(exch, d_cur, lines):
+    """寫入 ALERT-CEXBREAKER.md（本檔案獨佔的熔斷告警檔）。
+
+    為什麼要有這個檔案：本檔案的熔斷從 2026-09-01 上線至今**沒有接任何告警管道**，
+    只有 stdout 一行 [CB] 進 logs/cex_events.log。實測 events.jsonl 裡已經有 26 筆
+    note:"anomalous_scale" 的事件，代表熔斷確實觸發過，但從來沒有人被通知。
+    「標記但不否決」若沒有配套告警，等於把判斷責任丟給不存在的下游。
+
+    為什麼不寫進既有檔案：ALERT.md 是 healthcheck.py 獨佔（每次執行整檔覆寫／刪除）；
+    ALERT-DELIST.md 檔頭明文宣告「由 detect_delistings.py 獨佔寫入，不與任何其他
+    程式共用」；ALERT-CEXGATE.md 是 healthcheck.py 的輸出且語意是「異常排除後自動
+    消失」。三者都不能共用，比照既有前例另開獨立檔案。
+
+    為什麼只對「最新一組轉換」寫入（呼叫端條件）：main() 每次執行都對**完整歷史**
+    重新配對計算，若每一組歷史熔斷都寫一則，部署當下就會憑空生出多則歷史告警，
+    而 scripts/push.sh 的死人開關是用「檔案存不存在」判斷的，等於部署即報 fail。
+    歷史熔斷的永久紀錄本來就在 events.jsonl 的 breaker_tripped 欄位裡，不需要
+    告警檔再存一份。這與 healthcheck.py 的 check_cex_gate_skips()「只看 date==TODAY」
+    是同一個處理原則。
+
+    冪等：用 HTML 註解 marker 判斷同一組 (exchange, date) 是否已寫過，只追加、
+    永不刪除既有區塊（與 detect_delistings.write_alert_block() 相同）。
+    """
+    marker = "<!-- cex_events:%s:%s -->" % (exch, d_cur)
+    existing = ""
+    if os.path.exists(ALERT_CEXBREAKER):
+        with open(ALERT_CEXBREAKER, encoding="utf-8") as f:
+            existing = f.read()
+    if marker in existing:
+        return False
+    block = "\n".join(
+        ["", "## \U0001f534 cex_events／%s 上下架規模異常熔斷警報（%s）" % (exch, d_cur),
+         "", marker, ""] + lines + [""])
+    if existing.strip():
+        content = existing.rstrip("\n") + "\n" + block
+    else:
+        header = """# 🔴 cex_events 上下架規模異常警報（熔斷）
+
+本檔案由 `scripts/cex_events.py` 獨佔寫入，不與任何其他程式共用
+（`ALERT.md` 是 `scripts/healthcheck.py` 的輸出、`ALERT-DELIST.md` 是
+`track-crypto/scripts/detect_delistings.py` 的輸出、`ALERT-CEXGATE.md` 是
+`scripts/healthcheck.py` 讀 `gate_skips.jsonl` 後的輸出，四者互不相干）。
+
+本檔案記錄「某交易所單日 DELISTED 筆數超過熔斷門檻」這個事實。**熔斷不代表事件是假的**：
+本程式對熔斷採「標記但不否決」——事件**已經照常寫入** `track-crypto/data/cex_events/events.jsonl`，
+每一筆都帶 `note:"anomalous_scale"`、`breaker_tripped:true`、`removed_pct`、`breaker_threshold`
+四個欄位。本檔案的用途是**要求人工複核**，不是宣告資料有錯。
+
+本檔案只會新增，不會自動刪除既有區塊；只對「最新一組轉換」寫入（理由見
+`scripts/cex_events.py` 的 `write_alert_block_cexbreaker()` docstring）。
+人工確認後若需歸檔，請自行搬移或加註（例如在行尾加 `<!-- ack:YYYY-MM-DD -->`）。
+"""
+        content = header + block
+    with open(ALERT_CEXBREAKER, "w", encoding="utf-8") as f:
+        f.write(content)
+    return True
+
 
 def dig(obj, path):
     if path is None:
@@ -150,6 +346,14 @@ def main():
             except Exception:
                 pass
 
+    # 熔斷語意統一（2026-09-07）：隔離檔的既有鍵值（冪等用）、本次熔斷紀錄、
+    # 以及「最新一組轉換」的日期（告警只對最新一組寫入，理由見
+    # write_alert_block_cexbreaker() docstring）。
+    q_seen = load_quarantine_seen()
+    quarantined_total = 0
+    breaker_trips = []
+    latest_date = os.path.basename(files[-1])[:10]
+
     new = []
     gate_skips = []
     for prev_f, cur_f in zip(files[:-1], files[1:]):
@@ -175,6 +379,27 @@ def main():
                 print("   [SKIP] " + msg)
                 gate_skips.append({"date": d_cur, "exchange": exch, "from_date": d_prev,
                                     "reason": "；".join(reasons)})
+                # 熔斷語意統一（2026-09-07）第 3 項：守門由「否決並丟棄」升級為
+                # 「否決但隔離保存」。只有兩側都有解析出資料時才算得出有意義的差集
+                # （某一側整個交易所缺席時，「全部消失」是純粹的抓取假象，寫進隔離檔
+                # 只是噪音，維持原本只留 gate_skips 紀錄的作法）。
+                if QUARANTINE_GATE_FAIL and exch in a and exch in b:
+                    qa, qb = a[exch], b[exch]
+                    q_events = []
+                    for s in sorted(set(qb) - set(qa)):
+                        q_events.append({"date": d_cur, "exchange": exch, "symbol": s,
+                                          "event": "LISTED", "from": None, "to": qb[s]})
+                    for s in sorted(set(qa) - set(qb)):
+                        q_events.append({"date": d_cur, "exchange": exch, "symbol": s,
+                                          "event": "DELISTED", "from": qa[s], "to": None})
+                    for s in sorted(s for s in set(qa) & set(qb) if qa[s] != qb[s]):
+                        q_events.append({"date": d_cur, "exchange": exch, "symbol": s,
+                                          "event": "STATUS_CHANGED", "from": qa[s], "to": qb[s]})
+                    q_fresh = write_quarantine(q_events, "GATE_FAIL", "；".join(reasons), q_seen)
+                    quarantined_total += len(q_fresh)
+                    if q_fresh:
+                        print("   [QUARANTINE] %s @ %s→%s：%d 筆事件寫入 %s"
+                              % (exch, d_prev, d_cur, len(q_fresh), QUARANTINE_JL))
                 continue
 
             pa, pb = a[exch], b[exch]
@@ -182,8 +407,12 @@ def main():
             removed = sorted(set(pa) - set(pb))
             changed = sorted(s for s in set(pa) & set(pb) if pa[s] != pb[s])
 
+            # 熔斷語意統一（2026-09-07）：這一組轉換的事件先收集到 pair_events，
+            # 熔斷標記在下面一次套用到整組（不再只標記 DELISTED），最後才 extend 進
+            # new。既有的三段 append 內容逐字元不變，只是換了容器名稱。
+            pair_events = []
             for s in added:
-                new.append({"date": d_cur, "exchange": exch, "symbol": s,
+                pair_events.append({"date": d_cur, "exchange": exch, "symbol": s,
                             "event": "LISTED", "from": None, "to": pb[s]})
 
             removed_pct = (len(removed) / len(pa) * 100) if pa and removed else 0.0
@@ -200,11 +429,30 @@ def main():
                 if anomalous:
                     ev["note"] = "anomalous_scale"
                     ev["removed_pct"] = round(removed_pct, 4)
-                new.append(ev)
+                pair_events.append(ev)
 
             for s in changed:
-                new.append({"date": d_cur, "exchange": exch, "symbol": s,
+                pair_events.append({"date": d_cur, "exchange": exch, "symbol": s,
                             "event": "STATUS_CHANGED", "from": pa[s], "to": pb[s]})
+
+            # 熔斷語意統一（2026-09-07）：標記是「這一組轉換整體異常」的性質，
+            # 所以套用到整組（LISTED／DELISTED／STATUS_CHANGED），不只 DELISTED。
+            # 上面 for s in removed 迴圈裡既有的兩行 note／removed_pct 指派刻意保留
+            # 原樣（值與這裡算出來的完全相同，重複指派無副作用），是為了讓
+            # scripts/selftest.py 的 mut_ce_anomaly 破壞驗證錨點與既有語意都不受影響。
+            if anomalous:
+                marks = breaker_marks(removed_pct, threshold)
+                for ev in pair_events:
+                    ev.update(marks)
+                tail_run, tail_cov = removal_tail_metrics(pa, removed)
+                breaker_trips.append({
+                    "date": d_cur, "from_date": d_prev, "exchange": exch,
+                    "n_prev": len(pa), "n_removed": len(removed), "n_added": len(added),
+                    "n_changed": len(changed), "removed_pct": round(removed_pct, 4),
+                    "threshold": round(threshold, 4),
+                    "tail_run": tail_run, "tail_cover": round(tail_cov, 4),
+                })
+            new.extend(pair_events)
 
     fresh = [e for e in new if (e["date"], e["exchange"], e["symbol"], e["event"]) not in seen]
     if fresh:
@@ -235,6 +483,39 @@ def main():
                   "scripts/dedup_gate_skips.py --archive-before <YYYY-MM-DD> 歸檔舊紀錄"
                   % (GATE_LOG, _gate_log_lines, GATE_LOG_SIZE_HINT_LINES))
 
+    # 熔斷語意統一（2026-09-07）：只對「最新一組轉換」的熔斷寫告警，
+    # 理由見 write_alert_block_cexbreaker() docstring（避免部署當下憑空生出多則
+    # 歷史告警，讓 scripts/push.sh 的死人開關立刻報 fail）。
+    alerts_written = 0
+    for t in breaker_trips:
+        if t["date"] != latest_date:
+            continue
+        lines = [
+            "檢查時間（UTC）：%s" % datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "",
+            "| 項目 | 值 |",
+            "|---|---|",
+            "| 交易所 | `%s` |" % t["exchange"],
+            "| 比對區間 | `%s` \u2192 `%s` |" % (t["from_date"], t["date"]),
+            "| 前日筆數 | %d |" % t["n_prev"],
+            "| 當日 DELISTED 筆數 | %d（%.2f%%） |" % (t["n_removed"], t["removed_pct"]),
+            "| 熔斷門檻（筆數） | %.1f＝max(%d, %.1f%%\u00d7前日筆數) |"
+            % (t["threshold"], CB_MIN_ABS, CB_PCT * 100),
+            "| 同組 LISTED／STATUS_CHANGED | %d／%d |" % (t["n_added"], t["n_changed"]),
+            "| 分頁截斷指紋 tail_cover | %.4f（參考值，門檻 %.2f；本來源不用它否決，"
+            "見 BREAKER_TRUNCATION_QUARANTINE） |" % (t["tail_cover"], BREAKER_TAIL_COVER_MAX),
+            "| 處置 | **標記但不否決**：事件已寫入 `track-crypto/data/cex_events/events.jsonl` |",
+            "",
+            ("本組轉換產生的每一筆事件（LISTED／DELISTED／STATUS_CHANGED）都已帶 "
+             "`note:\"anomalous_scale\"`、`breaker_tripped:true`、`removed_pct`、"
+             "`breaker_threshold` 四個欄位，**需要人工複核**。本程式不對成因下判斷"
+             "（零觀點鐵律）：可能是抓取異常，也可能是真的有大量交易對同時下架。"
+             "若複核後判定為假事件，請用 `scripts/apply_correction.py` 更正，"
+             "不要手動編輯事件流。"),
+        ]
+        if write_alert_block_cexbreaker(t["exchange"], t["date"], lines):
+            alerts_written += 1
+
     c = Counter((e["exchange"], e["event"]) for e in fresh)
     print("新增事件 %d 筆（累積檔 %s）" % (len(fresh), JL))
     for (exch, ev), n in sorted(c.items()):
@@ -242,6 +523,11 @@ def main():
     if fresh_gate_skips:
         print("完整性守門觸發 %d 次新紀錄（紀錄於 %s；本次重新計算共 %d 次，%d 次為既有歷史重複已跳過）"
               % (len(fresh_gate_skips), GATE_LOG, len(gate_skips), len(gate_skips) - len(fresh_gate_skips)))
+    # 熔斷語意統一（2026-09-07）新增的一行 SUMMARY，格式與既有 EVENTS 那行同構，
+    # 既有輸出逐字元未動（下游若有在 grep "EVENTS new=" 或「新增事件 %d 筆」不受影響）。
+    print("BREAKER_SEMANTICS trips=%d trips_latest=%d alerts_written=%d quarantined=%d"
+          % (len(breaker_trips), sum(1 for t in breaker_trips if t["date"] == latest_date),
+             alerts_written, quarantined_total))
     print("EVENTS new=%d" % len(fresh))
     return 0
 

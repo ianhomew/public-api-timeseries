@@ -41,12 +41,39 @@ correction 紀錄 schema（每行一個 JSON object）：
     "corrected_by":   "cex-events-audit-2026-09-01"        # 這次稽核／更正流程的識別
   }
 
-用法：
+用法（cex_events，既有用法完全不變）：
   python3 apply_correction.py \
     --events events.jsonl --out-jsonl events-corrections.jsonl --out-md events-corrections.md \
     --target '{"date":"2026-08-30","exchange":"mexc","symbol":"XXX","event":"DELISTED"}' \
     --verdict false_event --reason-code DEMO --evidence "..." \
     --audit-ref "docs/cex-events-audit.md#demo" --corrected-by "demo"
+
+2026-09-07 新增（任務 B，docs/0907-B-rename-key-report.md §6）：支援 cex_events 以外的事件流
+------------------------------------------------------------------------------------
+  問題：本工具原本把主鍵欄位寫死成 (date, exchange, symbol, event)，那是
+  scripts/cex_events.py 產生的 events.jsonl 的 schema。track-crypto 的
+  track-crypto/data/<source>/events.jsonl 是另一種 schema
+  (date, source, group, key, event)，直接餵給本工具會在 load_events_keys()
+  丟 KeyError: 'exchange'（實測輸出見報告 §6.1），完全無法使用——也就是說
+  「更正註記」機制在本次修正之前只涵蓋 cex_events 一種事件流。
+
+  修法（純加法，不改既有預設行為）：新增兩個有預設值的參數
+    --key-fields   逗號分隔的主鍵欄位名稱，預設 "date,exchange,symbol,event"
+                   （＝既有行為，cex_events 呼叫端一個字都不必改）
+    --stream-label 產生的 markdown 標題裡的事件流名稱，預設 "cex_events"
+                   （＝既有行為）
+  events.jsonl 仍然全程唯讀、仍然只用附加模式寫 corrections、仍然在結束時
+  用 sha256 前後比對證明沒被動到——這三個安全機制一個字都沒有放寬。
+
+  track-crypto 用法範例：
+  python3 apply_correction.py \
+    --events track-crypto/data/crypto_project_liveness/events.jsonl \
+    --out-jsonl track-crypto/data/crypto_project_liveness/events-corrections.jsonl \
+    --out-md track-crypto/data/crypto_project_liveness/events-corrections.md \
+    --key-fields date,source,group,key,event --stream-label crypto_project_liveness \
+    --target '{"date":"2026-09-06","source":"crypto_project_liveness","group":"_hacks","key":"stake dao\u001f1773273600","event":"DELISTED"}' \
+    --verdict false_event --reason-code UPSTREAM_RENAME --evidence "..." \
+    --audit-ref "docs/0907-events-audit-0904-0907.md#55" --corrected-by "rename-key-0907"
 """
 import argparse
 import hashlib
@@ -66,8 +93,17 @@ def sha256_of(path):
     return h.hexdigest()
 
 
-def load_events_keys(events_path):
-    """回傳 events.jsonl 裡所有 (date,exchange,symbol,event) 鍵值的集合，供存在性檢查。"""
+DEFAULT_KEY_FIELDS = ("date", "exchange", "symbol", "event")
+
+
+def load_events_keys(events_path, key_fields=DEFAULT_KEY_FIELDS):
+    """回傳 events.jsonl 裡所有主鍵欄位組合的集合，供存在性檢查。
+
+    key_fields 預設 (date,exchange,symbol,event)＝cex_events 的 schema（既有行為）。
+    仍然用 e[欄位] 直接索引而不是 e.get()：事件流是同質的（同一份檔案裡每一行都是
+    同一個 schema），欄位名稱給錯時**必須立刻炸開**，不能默默把每一行都算成
+    「鍵值裡有 None」然後在後面回報「找不到這筆事件」——那會把「參數打錯」
+    誤導成「事件不存在」。"""
     keys = set()
     with open(events_path, encoding="utf-8") as f:
         for line in f:
@@ -75,7 +111,7 @@ def load_events_keys(events_path):
             if not line:
                 continue
             e = json.loads(line)
-            keys.add((e["date"], e["exchange"], e["symbol"], e["event"]))
+            keys.add(tuple(e[f] for f in key_fields))
     return keys
 
 
@@ -90,9 +126,21 @@ def load_corrections(jsonl_path):
     return rows
 
 
-def render_md(rows, events_path):
+def render_target_text(t):
+    """把一筆 target dict 轉成人類可讀字串。
+
+    向後相容：欄位剛好是 cex_events 那四個時，維持既有的固定順序輸出
+    （"日期 交易所 幣種 事件"），與本次修改之前逐字元相同；其餘 schema
+    一律用 "欄位=值" 逐項列出（依 target dict 自身的欄位順序），
+    不假設任何特定欄位存在。"""
+    if set(t) == set(DEFAULT_KEY_FIELDS):
+        return f"{t['date']} {t['exchange']} {t['symbol']} {t['event']}"
+    return " ".join(f"{k}={t[k]!r}" for k in t)
+
+
+def render_md(rows, events_path, stream_label="cex_events"):
     lines = []
-    lines.append("# events-corrections — cex_events 更正註記（人類可讀版，自動產生）")
+    lines.append(f"# events-corrections — {stream_label} 更正註記（人類可讀版，自動產生）")
     lines.append("")
     lines.append("> 本檔由 `events-corrections.jsonl` 自動重新算出，請勿手動編輯本檔；")
     lines.append("> 要新增/查詢更正，請改 `events-corrections.jsonl` 或用 `apply_correction.py`。")
@@ -107,9 +155,7 @@ def render_md(rows, events_path):
     lines.append("| # | 更正時間 | 判定 | 指向的原始事件 | 原因代碼 | 依據 | 稽核報告 |")
     lines.append("|---|---|---|---|---|---|---|")
     for i, r in enumerate(rows, 1):
-        targets = "; ".join(
-            f"{t['date']} {t['exchange']} {t['symbol']} {t['event']}" for t in r["targets"]
-        )
+        targets = "; ".join(render_target_text(t) for t in r["targets"])
         verdict_zh = {"false_event": "**判定為假事件**", "confirmed_true": "複核後仍確認為真"}.get(
             r["verdict"], r["verdict"]
         )
@@ -133,14 +179,28 @@ def main():
     ap.add_argument("--evidence", required=True)
     ap.add_argument("--audit-ref", required=True)
     ap.add_argument("--corrected-by", required=True)
+    ap.add_argument("--key-fields", default=",".join(DEFAULT_KEY_FIELDS),
+                     help="逗號分隔的主鍵欄位名稱（預設 %(default)s＝cex_events schema；"
+                          "track-crypto 事件流請用 date,source,group,key,event）")
+    ap.add_argument("--stream-label", default="cex_events",
+                     help="產生的 markdown 標題裡的事件流名稱（預設 %(default)s）")
     args = ap.parse_args()
+    key_fields = tuple(x.strip() for x in args.key_fields.split(",") if x.strip())
+    if not key_fields:
+        print("錯誤：--key-fields 不可為空", file=sys.stderr)
+        return 1
 
     before_hash = sha256_of(args.events)
 
-    valid_keys = load_events_keys(args.events)
+    valid_keys = load_events_keys(args.events, key_fields)
     targets = [json.loads(t) for t in args.target]
     for t in targets:
-        key = (t["date"], t["exchange"], t["symbol"], t["event"])
+        missing = [f for f in key_fields if f not in t]
+        if missing:
+            print("錯誤：--target %r 缺少主鍵欄位 %r，中止（不寫入任何檔案）"
+                  % (t, missing), file=sys.stderr)
+            return 1
+        key = tuple(t[f] for f in key_fields)
         if key not in valid_keys:
             print("錯誤：--target %r 在 %s 裡找不到對應的原始事件，中止（不寫入任何檔案）"
                   % (t, args.events), file=sys.stderr)
@@ -164,7 +224,7 @@ def main():
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     all_rows = load_corrections(args.out_jsonl)
-    md = render_md(all_rows, args.events)
+    md = render_md(all_rows, args.events, args.stream_label)
     with open(args.out_md, "w", encoding="utf-8") as f:
         f.write(md)
 
