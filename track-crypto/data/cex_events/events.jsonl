@@ -321,3 +321,77 @@
 {"date": "2026-09-07", "exchange": "mexc", "symbol": "XEMPIREUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-07", "exchange": "okx", "symbol": "XSNDK-USDC", "event": "LISTED", "from": null, "to": "preopen"}
 {"date": "2026-09-07", "exchange": "okx", "symbol": "XSPY-USDC", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "bitget", "symbol": "CNPYUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-08", "exchange": "bitget", "symbol": "PONSUSDT", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-08", "exchange": "gateio", "symbol": "CNPY_USDT", "event": "LISTED", "from": null, "to": "tradable"}
+{"date": "2026-09-08", "exchange": "gateio", "symbol": "STONKBROKER_USDT", "event": "LISTED", "from": null, "to": "tradable"}
+{"date": "2026-09-08", "exchange": "htx", "symbol": "ponsusdt", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "ACX-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "AUDIO-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "BFC-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "BLUM-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "DUCK-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "EMYC-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "FWOG-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "GAFI-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "GAIN-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "HONEY-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "HPOS10I-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "HYDRA-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "J-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "KARRAT-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "LVVA-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "MOVA-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "MTRG-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "NOBODY-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "PORTALS-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "REEF-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "SCOR-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "SN3-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "TSTBSC-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "WAX-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "kucoin", "symbol": "WEN-USDT", "event": "DELISTED", "from": "True", "to": null, "note": "anomalous_scale", "removed_pct": 2.4802, "breaker_tripped": true, "breaker_threshold": 10.08}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "AGISOLUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "AGISOLUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BENUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BENUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BREWUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BREWUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BUTTUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BUTTUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "CNPYUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "CTOUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "CTOUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "SOCKUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "SOCKUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BUTTCOINUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "MEERUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-08", "exchange": "mexc", "symbol": "BLOBUSDT", "event": "STATUS_CHANGED", "from": "2", "to": "1"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XAMD-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XCBRS-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XCOIN-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XCRCL-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XCRWV-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XDRAM-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XEWY-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XINTC-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XINTW-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XKORU-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XLITE-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XMRVL-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XMSTR-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XMU-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XMUU-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XMVLL-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XNBIS-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XNVDA-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XQQQ-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSHEIN-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSKHY-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSNXX-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSOXL-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSOXS-USDT", "event": "LISTED", "from": null, "to": "preopen"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSPCX-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XTSLA-USDC", "event": "LISTED", "from": null, "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSNDK-USDC", "event": "STATUS_CHANGED", "from": "preopen", "to": "live"}
+{"date": "2026-09-08", "exchange": "okx", "symbol": "XSPY-USDC", "event": "STATUS_CHANGED", "from": "preopen", "to": "live"}

@@ -30,3 +30,21 @@ resource 已永久下架**：本程式對「自清單消失」與「永久下架
 | 當日移除筆數 | 1399 |
 
 本日 `x402_bazaar` 的「自清單消失」判定已**暫停**，未寫入 `data/x402_bazaar/events.jsonl`。removed 率超過日常區間（1.8%~3.7%），可能是抓取異常，也可能是真的有大量 resource 同時自清單消失，詳見 `changes/x402_bazaar/2026-09-07.md`。人工確認後可手動處理（本程式不會自動重放此區間）。
+
+## 🔴 track-crypto/x402_bazaar 自清單消失熔斷警報（2026-09-08）
+
+<!-- detect_delistings:x402_bazaar:2026-09-08 -->
+
+檢查時間（UTC）：2026-09-08T03:31:45+00:00
+
+| 項目 | 值 |
+|---|---|
+| 來源 | `track-crypto/x402_bazaar` |
+| 比對區間 | `2026-09-07` → `2026-09-08` |
+| removed 率 | 6.69%（門檻 5.0%） |
+| 前日筆數（去重後） | 15578 |
+| 當日移除筆數 | 1042 |
+| 處置 | **隔離**：事件已寫入 `data/x402_bazaar/events_quarantine.jsonl`，未進 events.jsonl |
+| 隔離原因 | parser_version 兩日不同（1 → 2），解析器改版當天不放行 |
+
+本日 `x402_bazaar` 的「自清單消失」判定**未寫入** `data/x402_bazaar/events.jsonl`，因為除了移除規模超過熔斷門檻之外，還同時命中「疑似分頁截斷」的結構性指紋（見上表）。事件事實**沒有遺失**，已完整寫入隔離檔 `data/x402_bazaar/events_quarantine.jsonl`，人工複核確認不是抓取問題後可提升回事件流。詳見 `changes/x402_bazaar/2026-09-08.md`。

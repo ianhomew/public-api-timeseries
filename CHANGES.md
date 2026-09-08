@@ -4,6 +4,14 @@
 
 | 日期 | 來源 | 改寫 | 下架 | 新增 | 紀錄 |
 |---|---|---|---|---|---|
+| 2026-09-08 | `track-crypto/x402_bazaar` | — | 1042（熔斷，已隔離） | 236（熔斷，已隔離） | [紀錄](changes/x402_bazaar/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/oracle_feed_directory` | — | 1 | 0 | [紀錄](changes/oracle_feed_directory/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/openrouter_models` | — | 2；狀態變化 1 | 0 | [紀錄](changes/openrouter_models/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/crypto_project_liveness` | — | 1 | 3 | [紀錄](changes/crypto_project_liveness/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/cex_symbols_ext` | — | 2 | 0 | [紀錄](changes/cex_symbols_ext/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/cex_earn_apr` | — | 2 | 0 | [紀錄](changes/cex_earn_apr/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/cex_currency_status` | — | 0；狀態變化 5 | 6 | [紀錄](changes/cex_currency_status/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/agent_virtuals` | — | 0 | 145 | [紀錄](changes/agent_virtuals/2026-09-08.md) |
 | 2026-09-07 | `track-crypto/x402_bazaar` | — | 1399（熔斷已標記） | 387（含 31 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-07.md) |
 | 2026-09-07 | `track-crypto/openrouter_models` | — | 1 | 0 | [紀錄](changes/openrouter_models/2026-09-07.md) |
 | 2026-09-07 | `track-crypto/cex_currency_status` | — | 0；狀態變化 49 | 3 | [紀錄](changes/cex_currency_status/2026-09-07.md) |

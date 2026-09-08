@@ -79,3 +79,6 @@
 {"date": "2026-09-06", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-max", "event": "DELISTED", "from": "Qwen: Qwen3.8 Max", "to": null}
 {"date": "2026-09-06", "source": "openrouter_models", "group": "_models", "key": "qwen/qwen3.8-max-0902", "event": "LISTED", "from": null, "to": "Qwen: Qwen3.8 Max (0902)"}
 {"date": "2026-09-07", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.2:free", "event": "DELISTED", "from": "Z.ai: GLM 5.2 (free)", "to": null}
+{"date": "2026-09-08", "source": "openrouter_models", "group": "_models", "key": "minimax/minimax-m2.7:free", "event": "DELISTED", "from": "MiniMax: MiniMax M2.7 (free)", "to": null}
+{"date": "2026-09-08", "source": "openrouter_models", "group": "_models", "key": "minimax/minimax-m3:free", "event": "DELISTED", "from": "MiniMax: MiniMax M3 (free)", "to": null}
+{"date": "2026-09-08", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.7-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": "2026-09-10"}, "to": {"expiration_date": null}}
