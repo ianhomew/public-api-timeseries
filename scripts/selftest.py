@@ -5095,6 +5095,359 @@ def chk_dd_tautological_gates_real_replay(is_mutant):
     return Result(ok_all, "%s 真實快照：%s（各案期望 NORMAL / GATE_FAIL）" % (date, "；".join(detail)))
 
 
+# ==========================================================================
+# 死人開關判定：永久事件帳本不得直接觸發 healthchecks.io /fail
+# （2026-09-09 新增，見 scripts/alert_state.py 檔頭與 docs/0909-deadman-switch-report.md）
+#
+# 背景：scripts/push.sh 原本用「根目錄有沒有這 7 個檔名」決定要不要回報 /fail。
+# 其中 ALERT-DELIST.md／ALERT-CEXBREAKER.md 是**永久事件帳本**（檔頭明文「只會新增，
+# 不會自動刪除既有區塊」，全 repo 無任何刪除路徑），因此 2026-09-07 一次熔斷之後
+# 死人開關就永遠是紅的，「排程今天沒跑」這個它唯一該偵測的訊號被永久淹沒。
+# 下面 5 條檢查把修好之後的不變量鎖住，避免任何人（含未來的自己）改回去。
+#
+# 這一區刻意不動檔頭的 TARGET_REL（那是既有 5 支關鍵程式的登記表），改用本區自己的
+# 小工具讀取／安裝 scripts/alert_state.py 與 scripts/push.sh，把新增範圍限制在檔尾，
+# 降低與其他同時進行中的 selftest.py 修改互相衝突的機率。
+# ==========================================================================
+
+ALERT_STATE_REL = "scripts/alert_state.py"
+PUSH_SH_REL = "scripts/push.sh"
+
+
+def _read_repo_text(rel):
+    """唯讀讀取 SOURCE_REPO 底下的檔案（本區專用，不進 _SOURCE_CACHE）。"""
+    with open(os.path.join(SOURCE_REPO, rel), encoding="utf-8") as f:
+        return f.read()
+
+
+def _make_alert_repo(sandbox, alert_state_text, files):
+    """在沙盒裡造一個「最小 repo」：只有 scripts/alert_state.py 與指定的告警檔。
+    files: {檔名: 內容}。回傳這個假 repo 的根目錄。"""
+    repo = os.path.join(sandbox, "repo")
+    os.makedirs(repo, exist_ok=True)
+    install_text(repo, ALERT_STATE_REL, alert_state_text)
+    for fn, content in files.items():
+        install_text(repo, fn, content)
+    return repo
+
+
+def _deadman_eval(repo):
+    """直接執行 alert_state.py --deadman，回傳 (rc, primary, review, stdout)。
+    primary／review 依 scripts/push.sh 的**同一條 fail-closed 規則**解讀：
+    預設 fail，只有在輸出裡明確看到 `=ok` 才是 ok。"""
+    rc, out, err = run_py(os.path.join(repo, ALERT_STATE_REL), repo, args=["--deadman"])
+    blob = out + err
+    primary = "ok" if "DEADMAN_PRIMARY=ok" in blob else "fail"
+    review = "ok" if "DEADMAN_REVIEW=ok" in blob else "fail"
+    return rc, primary, review, blob
+
+
+# 合成的帳本檔：檔頭刻意逐字保留正式檔頭那句「`<!-- ack:YYYY-MM-DD -->`」字面範例，
+# 用來驗證「說明文字裡的範例不會被誤判成真的 ack」（alert_state.py fail-closed d）。
+_LEDGER_HEADER = (
+    "# \U0001f534 selftest 合成熔斷帳本\n"
+    "\n"
+    "本檔案只會新增，不會自動刪除既有區塊。\n"
+    "\u4eba\u5de5\u78ba\u8a8d\u5f8c\u82e5\u9700\u6b78\u6a94\uff0c\u8acb\u81ea\u884c\u642c\u79fb\u6216\u52a0\u8a3b"
+    "\uff08\u4f8b\u5982\u5728\u884c\u5c3e\u52a0 `<!-- ack:YYYY-MM-DD -->`\uff09\u3002\n"
+)
+
+
+def _ledger(blocks):
+    """blocks: [(marker, ack_or_None)]，組成一份合成帳本檔內容。"""
+    out = [_LEDGER_HEADER]
+    for marker, ack in blocks:
+        tail = (" <!-- ack:%s -->" % ack) if ack else ""
+        out.append("\n## \U0001f534 selftest 合成熔斷警報 %s\n\n<!-- %s -->%s\n\n"
+                   "| \u9805\u76ee | \u503c |\n|---|---|\n| \u4f86\u6e90 | selftest |\n" % (marker, marker, tail))
+    return "".join(out)
+
+
+def mut_as_ledger_as_realtime(text):
+    """把 ALERT-DELIST.md 的語意分類從 ledger 改回 realtime
+    ——等同復原 2026-09-09 之前「檔案存在即回報 fail」的舊行為。"""
+    return apply_mutation(
+        text,
+        '        "kind": "ledger",\n        "owner": "track-crypto/scripts/detect_delistings.py",',
+        '        "kind": "realtime",\n        "owner": "track-crypto/scripts/detect_delistings.py",',
+        "as_ledger_as_realtime")
+
+
+def mut_as_ack_always_true(text):
+    """讓每一則區塊都被當成「已確認」——待複核訊號會整個消失（漏報方向）。"""
+    return apply_mutation(
+        text,
+        "    @property\n    def acked(self):\n        return self.ack_date is not None",
+        "    @property\n    def acked(self):\n        return True",
+        "as_ack_always_true")
+
+
+def mut_as_ack_always_false(text):
+    """讓 ack 永遠不算數——待複核燈就再也關不掉，退回「永久紅燈」的老毛病。"""
+    return apply_mutation(
+        text,
+        "    @property\n    def acked(self):\n        return self.ack_date is not None",
+        "    @property\n    def acked(self):\n        return False",
+        "as_ack_always_false")
+
+
+def mut_as_drop_failclosed(text):
+    """拿掉兩條 fail-closed：未登記告警檔不再報警、帳本解析不出區塊不再報警。"""
+    t = apply_mutation(
+        text,
+        '        res["unregistered"].append(fname)\n        res["primary_fail"] = True',
+        '        res["unregistered"].append(fname)',
+        "as_drop_unregistered_guard")
+    return apply_mutation(
+        t,
+        'return [], [], "檔案存在但解析不出任何 `## ` 區塊（形狀不符預期，不敢當成沒事）"',
+        'return [], [], None',
+        "as_drop_shape_guard")
+
+
+def mut_push_deadman_default_ok(text):
+    """把 scripts/push.sh 的 fail-closed 預設值從 fail 改成 ok
+    ——判定程式當掉時會靜默轉綠，正是最危險的靜默失敗。"""
+    return apply_mutation(
+        text,
+        "DEADMAN_PRIMARY=fail\nDEADMAN_REVIEW=fail\n",
+        "DEADMAN_PRIMARY=ok\nDEADMAN_REVIEW=ok\n",
+        "push_deadman_default_ok")
+
+
+def _slice_deadman(push_text):
+    """從 scripts/push.sh 原文切出死人開關那一段（兩個界標之間）。
+    界標不見就直接丟例外——那代表 push.sh 已改版，本檢查需要跟著更新，
+    絕不可以靜默跳過（比照 apply_mutation() 的既有原則）。"""
+    b, e = "# >>> deadman-eval-begin", "# >>> deadman-eval-end"
+    i, j = push_text.find(b), push_text.find(e)
+    if i < 0 or j < 0 or j < i:
+        raise RuntimeError("scripts/push.sh 找不到 deadman-eval 界標（begin=%d end=%d）" % (i, j))
+    return push_text[i:j]
+
+
+def _run_push_deadman(sandbox, repo, push_text, review_url=None, tag="run"):
+    """把 push.sh 的死人開關片段套上 hc_ping／hc_review_ping 樁，用 bash 實跑一遍。
+    **不會**碰到任何真實的 healthchecks.io 網址：兩個樁只把結果寫進本地檔案。
+    回傳 (returncode, ping 紀錄字串, stdout+stderr)。"""
+    pinglog = os.path.join(sandbox, "ping-%s.log" % tag)
+    harness = "\n".join([
+        "#!/usr/bin/env bash",
+        "set -Eeuo pipefail",
+        'R="$1"', 'PINGLOG="$2"', 'cd "$R"',
+        '# 樁：只寫本地檔案，絕不對外發任何請求。',
+        'hc_ping() { echo "primary ${1:-/ok}" >> "$PINGLOG"; }',
+        'hc_review_ping() { [ -n "${HC_REVIEW_PING_URL:-}" ] || return 1; '
+        'echo "review ${1:-/ok}" >> "$PINGLOG"; return 0; }',
+        "",
+        _slice_deadman(push_text),
+        "",
+    ])
+    hpath = install_text(sandbox, "deadman_harness_%s.sh" % tag, harness)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("SELFTEST_SOURCE_REPO", "SELFTEST_WORKDIR", "SELFTEST_SKIP_MUTANTS")}
+    env.pop("HC_REVIEW_PING_URL", None)
+    env.pop("HC_PING_URL", None)
+    if review_url:
+        env["HC_REVIEW_PING_URL"] = review_url
+    try:
+        proc = subprocess.run(["bash", hpath, repo, pinglog], cwd=sandbox, env=env,
+                              capture_output=True, text=True, timeout=60)
+        rc, blob = proc.returncode, proc.stdout + proc.stderr
+    except subprocess.TimeoutExpired as ex:
+        rc, blob = 124, (ex.stdout or "") + (ex.stderr or "") + "\n[selftest] TIMEOUT"
+    pings = ""
+    if os.path.exists(pinglog):
+        with open(pinglog, encoding="utf-8") as f:
+            pings = f.read()
+    return rc, pings, blob
+
+
+@check("alert_state.ledger_not_deadman_primary",
+       mutate_target="alert_state", mutate=mut_as_ledger_as_realtime)
+def chk_as_ledger_not_primary(is_mutant):
+    """核心不變量：**永久事件帳本不得直接觸發死人開關的排程健康訊號**。
+
+    甲、只有 ALERT-DELIST.md（帳本，含 1 則未確認熔斷）存在時：
+        PRIMARY 必須是 ok（排程本身沒問題），REVIEW 必須是 fail（有事待複核）。
+        這就是 2026-09-07~09-09 永久紅燈的成因被修掉的證明。
+    乙、對照組：改放 ALERT.md（即時狀態旗標）時 PRIMARY 必須是 fail。
+        沒有這一組，甲就可能只是「判定被整個關掉」的假通過。
+    #mutant 把 ALERT-DELIST.md 的分類改回 realtime（＝舊行為），甲的 PRIMARY 變成 fail，
+    本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("as_ledger_primary_mut" if is_mutant else "as_ledger_primary")
+    text = _read_repo_text(ALERT_STATE_REL)
+    if is_mutant:
+        text = mut_as_ledger_as_realtime(text)
+
+    repo_a = _make_alert_repo(sandbox, text, {
+        "ALERT-DELIST.md": _ledger([("detect_delistings:selftest_src:2030-05-01", None)])})
+    rc_a, p_a, r_a, _ = _deadman_eval(repo_a)
+
+    sandbox_b = new_sandbox("as_ledger_primary_ctl_mut" if is_mutant else "as_ledger_primary_ctl")
+    repo_b = _make_alert_repo(sandbox_b, text, {"ALERT.md": "# \U0001f534 每日自我檢查發現異常\n"})
+    _rc_b, p_b, _r_b, _ = _deadman_eval(repo_b)
+
+    ok = (p_a == "ok") and (r_a == "fail") and (p_b == "fail")
+    return Result(ok,
+                  "帳本(1 則未確認) primary=%s(期望 ok) review=%s(期望 fail) rc=%d；"
+                  "對照組即時旗標 ALERT.md primary=%s(期望 fail)"
+                  % (p_a, r_a, rc_a, p_b))
+
+
+@check("alert_state.unacked_ledger_trips_review",
+       mutate_target="alert_state", mutate=mut_as_ack_always_true)
+def chk_as_unacked_trips_review(is_mutant):
+    """待複核訊號不得被漏掉（漏報方向）。三種「不算已確認」的情況都必須讓 REVIEW=fail：
+      甲、完全沒有 ack 註解。
+      乙、只有檔頭說明文字裡的字面範例 `<!-- ack:YYYY-MM-DD -->`（YYYY 不是數字，
+          不能被當成真的 ack）——本檢查用的合成帳本檔頭刻意逐字含這句。
+      丙、寫壞的 ack（`<!-- ack:soon -->`，日期不符 YYYY-MM-DD）。
+    #mutant 讓 acked 恆為 True，三種情況都會變成 REVIEW=ok，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("as_unacked_mut" if is_mutant else "as_unacked")
+    text = _read_repo_text(ALERT_STATE_REL)
+    if is_mutant:
+        text = mut_as_ack_always_true(text)
+
+    repo1 = _make_alert_repo(sandbox, text, {
+        "ALERT-CEXBREAKER.md": _ledger([("cex_events:selftest_ex:2030-05-02", None)])})
+    _rc1, p1, r1, _ = _deadman_eval(repo1)
+
+    sb2 = new_sandbox("as_unacked_bad_mut" if is_mutant else "as_unacked_bad")
+    bad = _ledger([("cex_events:selftest_ex:2030-05-03", None)]).replace(
+        "<!-- cex_events:selftest_ex:2030-05-03 -->",
+        "<!-- cex_events:selftest_ex:2030-05-03 --> <!-- ack:soon -->")
+    repo2 = _make_alert_repo(sb2, text, {"ALERT-CEXBREAKER.md": bad})
+    _rc2, p2, r2, _ = _deadman_eval(repo2)
+
+    ok = (r1 == "fail") and (r2 == "fail") and (p1 == "ok") and (p2 == "ok")
+    return Result(ok,
+                  "無 ack（檔頭含 YYYY-MM-DD 字面範例）review=%s(期望 fail) primary=%s(期望 ok)；"
+                  "壞掉的 ack:soon review=%s(期望 fail) primary=%s(期望 ok)"
+                  % (r1, p1, r2, p2))
+
+
+@check("alert_state.ack_clears_review",
+       mutate_target="alert_state", mutate=mut_as_ack_always_false)
+def chk_as_ack_clears_review(is_mutant):
+    """待複核燈必須關得掉（否則只是換個地方永久紅燈）。
+
+    同一份帳本兩則區塊：兩則都加上合法 ack 之後 REVIEW 必須轉成 ok；
+    只 ack 其中一則時 REVIEW 仍必須是 fail（部分確認不算數，不可以整檔一起放行）。
+    另外驗證 --ack 子命令本身：加註後 detect_delistings.py／cex_events.py 用來判斷
+    「這則寫過沒有」的 marker 子字串**仍然找得到**（冪等不被 ack 破壞）。
+    #mutant 讓 acked 恆為 False，全部 ack 後仍是 fail，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("as_ack_clear_mut" if is_mutant else "as_ack_clear")
+    text = _read_repo_text(ALERT_STATE_REL)
+    if is_mutant:
+        text = mut_as_ack_always_false(text)
+
+    m1 = "detect_delistings:selftest_src:2030-05-04"
+    m2 = "detect_delistings:GROUP:selftest_src:g1:2030-05-05"
+    repo = _make_alert_repo(sandbox, text, {"ALERT-DELIST.md": _ledger([(m1, None), (m2, None)])})
+    script = os.path.join(repo, ALERT_STATE_REL)
+
+    rc_a1, _o, _e = run_py(script, repo, args=["--ack", "ALERT-DELIST.md", m1, "2030-05-09"])
+    _rc, p_half, r_half, _ = _deadman_eval(repo)
+    rc_a2, _o, _e = run_py(script, repo, args=["--ack", "ALERT-DELIST.md", m2, "2030-05-09"])
+    _rc, p_full, r_full, _ = _deadman_eval(repo)
+
+    with open(os.path.join(repo, "ALERT-DELIST.md"), encoding="utf-8") as f:
+        body = f.read()
+    markers_intact = ("<!-- %s -->" % m1 in body) and ("<!-- %s -->" % m2 in body)
+
+    ok = (r_half == "fail") and (r_full == "ok") and (p_full == "ok") \
+        and markers_intact and rc_a1 == 0 and rc_a2 == 0
+    return Result(ok,
+                  "ack 1/2 則 review=%s(期望 fail)；ack 2/2 則 review=%s(期望 ok) primary=%s(期望 ok)；"
+                  "--ack rc=%d/%d；ack 後兩個原始 marker 仍可被冪等比對找到=%s"
+                  % (r_half, r_full, p_full, rc_a1, rc_a2, markers_intact))
+
+
+@check("alert_state.failclosed_unknown_and_unparsable",
+       mutate_target="alert_state", mutate=mut_as_drop_failclosed)
+def chk_as_failclosed(is_mutant):
+    """判斷不出來的情況一律往報警倒（fail-closed）。
+
+    甲、根目錄出現**登記表裡沒有**的 ALERT-*.md → PRIMARY 必須 fail。
+        這條直接擋住「新增第 9 個告警檔卻忘了接線」——ALERT-CEXBREAKER.md
+        2026-09-08 上線後就是這樣漏了 1 天零通知。
+    乙、帳本檔存在但解析不出任何 `## ` 區塊（形狀不符預期）→ REVIEW 必須 fail。
+    #mutant 同時拿掉這兩條防線，甲乙都會變 ok，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("as_failclosed_mut" if is_mutant else "as_failclosed")
+    text = _read_repo_text(ALERT_STATE_REL)
+    if is_mutant:
+        text = mut_as_drop_failclosed(text)
+
+    repo1 = _make_alert_repo(sandbox, text, {"ALERT-SELFTESTNEW.md": "# 未登記的新告警檔\n"})
+    _rc1, p1, _r1, _ = _deadman_eval(repo1)
+
+    sb2 = new_sandbox("as_failclosed_shape_mut" if is_mutant else "as_failclosed_shape")
+    repo2 = _make_alert_repo(sb2, text, {"ALERT-DELIST.md": "# 只有檔頭，沒有任何 ## 區塊\n"})
+    _rc2, _p2, r2, _ = _deadman_eval(repo2)
+
+    ok = (p1 == "fail") and (r2 == "fail")
+    return Result(ok,
+                  "未登記告警檔 primary=%s(期望 fail)；帳本解析不出區塊 review=%s(期望 fail)"
+                  % (p1, r2))
+
+
+@check("push_sh.deadman_failclosed",
+       mutate_target="push_sh", mutate=mut_push_deadman_default_ok)
+def chk_push_deadman_failclosed(is_mutant):
+    """scripts/push.sh 那一側的接線行為（用 bash 實跑界標之間的原文片段，
+    hc_ping／hc_review_ping 換成只寫本地檔案的樁，**不會碰到任何真實 ping 網址**）。
+
+    四種情境：
+      甲、帳本有未確認區塊＋HC_REVIEW_PING_URL 已設定 → 主開關 ok、第二開關 /fail。
+          （這就是「排程健康」與「待人工複核」被分開的證明。）
+      乙、帳本全部已確認＋URL 已設定 → 兩邊都 ok。
+      丙、帳本有未確認區塊＋URL **未設定** → 待複核訊號不得靜默消失，退回主開關 /fail。
+      丁、alert_state.py 整支被刪掉（模擬判定程式當掉）→ 主開關必須 /fail。
+    #mutant 把 push.sh 的 fail-closed 預設值改成 ok，丁會靜默變綠，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("push_deadman_mut" if is_mutant else "push_deadman")
+    as_text = _read_repo_text(ALERT_STATE_REL)
+    push_text = _read_repo_text(PUSH_SH_REL)
+    if is_mutant:
+        push_text = mut_push_deadman_default_ok(push_text)
+
+    m = "detect_delistings:selftest_src:2030-05-06"
+    url = "http://127.0.0.1:9/selftest-never-used"  # 只給樁判斷「有沒有設定」，樁不會發請求
+
+    repo_a = _make_alert_repo(sandbox, as_text, {"ALERT-DELIST.md": _ledger([(m, None)])})
+    _rc, ping_a, _b = _run_push_deadman(sandbox, repo_a, push_text, review_url=url, tag="a")
+
+    sb_b = new_sandbox("push_deadman_b_mut" if is_mutant else "push_deadman_b")
+    repo_b = _make_alert_repo(sb_b, as_text, {"ALERT-DELIST.md": _ledger([(m, "2030-05-09")])})
+    _rc, ping_b, _b2 = _run_push_deadman(sb_b, repo_b, push_text, review_url=url, tag="b")
+
+    sb_c = new_sandbox("push_deadman_c_mut" if is_mutant else "push_deadman_c")
+    repo_c = _make_alert_repo(sb_c, as_text, {"ALERT-DELIST.md": _ledger([(m, None)])})
+    _rc, ping_c, _b3 = _run_push_deadman(sb_c, repo_c, push_text, review_url=None, tag="c")
+
+    sb_d = new_sandbox("push_deadman_d_mut" if is_mutant else "push_deadman_d")
+    repo_d = _make_alert_repo(sb_d, as_text, {"ALERT-DELIST.md": _ledger([(m, None)])})
+    os.remove(os.path.join(repo_d, ALERT_STATE_REL))
+    _rc, ping_d, _b4 = _run_push_deadman(sb_d, repo_d, push_text, review_url=url, tag="d")
+
+    ok = (("primary /ok" in ping_a) and ("review /fail" in ping_a)
+          and ("primary /ok" in ping_b) and ("review /ok" in ping_b)
+          and ("primary /fail" in ping_c)
+          and ("primary /fail" in ping_d))
+    return Result(ok,
+                  "甲 未確認+有第二URL=%r(期望 primary /ok + review /fail)；"
+                  "乙 已確認+有第二URL=%r(期望兩者 /ok)；"
+                  "丙 未確認+無第二URL=%r(期望 primary /fail)；"
+                  "丁 alert_state.py 被刪=%r(期望 primary /fail)"
+                  % (ping_a.replace("\n", ","), ping_b.replace("\n", ","),
+                     ping_c.replace("\n", ","), ping_d.replace("\n", ",")))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="離線回歸自測（見 docs/selftest.md）")
     parser.add_argument("--filter", default=None, help="只跑名稱包含此子字串的檢查")

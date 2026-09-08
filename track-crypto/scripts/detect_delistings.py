@@ -2046,8 +2046,11 @@ def write_alert_block_group(source, gname, d_new, lines):
 
 本檔案涵蓋白名單內所有來源（第一階段 `x402_bazaar`、第二階段甲組其餘 8 個來源），
 依「來源＋子集合＋日期」個別記錄每一則熔斷事件，只會新增，不會自動刪除既有區塊。
-人工確認後若需歸檔，請自行搬移或加註（例如在行尾加 `<!-- ack:YYYY-MM-DD -->`），
-本程式不會自動清除任何已寫入的區塊。
+人工確認後請在該則的 marker 行尾加 `<!-- ack:YYYY-MM-DD -->`
+（建議用 `python3 scripts/alert_state.py --ack ALERT-DELIST.md <marker> <日期>` 加註，一次一則）。
+2026-09-09 起這個註解是**機器會讀的**：`scripts/alert_state.py` 以「還有沒有未加註的區塊」
+決定死人開關的「待人工複核」訊號，全部加註後該訊號才會轉綠（見該檔檔頭）。
+本程式仍不會自動清除任何已寫入的區塊。
 """
         content = header + block
     with open(ALERT_DELIST, "w", encoding="utf-8") as f:
@@ -2913,8 +2916,11 @@ resource 已永久下架**：本程式對「自清單消失」與「永久下架
 
 本檔案只會新增，不會自動刪除既有區塊：每一則對應一組已發生的熔斷事件
 （特定來源×特定比對日期），不是「現在是否有異常」的即時狀態旗標。
-人工確認後若需歸檔，請自行搬移或加註（例如在行尾加 `<!-- ack:YYYY-MM-DD -->`），
-本程式不會自動清除任何已寫入的區塊。
+人工確認後請在該則的 marker 行尾加 `<!-- ack:YYYY-MM-DD -->`
+（建議用 `python3 scripts/alert_state.py --ack ALERT-DELIST.md <marker> <日期>` 加註，一次一則）。
+2026-09-09 起這個註解是**機器會讀的**：`scripts/alert_state.py` 以「還有沒有未加註的區塊」
+決定死人開關的「待人工複核」訊號，全部加註後該訊號才會轉綠（見該檔檔頭）。
+本程式仍不會自動清除任何已寫入的區塊。
 """
         content = header + block
     with open(ALERT_DELIST, "w", encoding="utf-8") as f:

@@ -50,14 +50,56 @@ commit 標題：
 | 情況 | 動作 |
 |---|---|
 | 流程開始 | ping `/start` |
-| 全部成功且無 `ALERT.md` | ping 成功 |
+| 全部成功且無任何**即時狀態旗標** | ping 成功 |
 | 任一步驟失敗、push 失敗 | ping `/fail` |
-| push 成功但存在 `ALERT.md` | ping `/fail`（讓使用者收到通知） |
+| push 成功但存在任一**即時狀態旗標** | ping `/fail`（讓使用者收到通知） |
 | **VPS 當機／斷網／cron 沒跑** | **什麼都不 ping → 外部服務逾時後主動通知** |
 
 計時器在**外部**，不在 VPS 上，所以整台機器消失也能被發現。
 ping 網址等同一把權杖，存放在 `~/snap/.env` 的 `HC_PING_URL`（已被 `.gitignore` 排除），
 不寫進這個公開 repo。
+
+### 兩個訊號：排程健康／待人工複核（2026-09-09 起）
+
+告警檔分成兩種語意（見下方「八種告警檔」）。把它們混在同一顆燈上會出事：
+`ALERT-DELIST.md` 是**只增不刪的永久事件帳本**，2026-09-07 一次熔斷寫檔之後就永遠存在，
+於是死人開關從那天起**每天都紅、而且不可能自己轉綠**——一顆永遠紅的燈等於沒有燈，
+「排程今天沒跑」這個它唯一該偵測的訊號被淹沒了。因此拆成兩個訊號：
+
+| 訊號 | 環境變數 | 語意 | 判定 | 怎麼轉綠 |
+|---|---|---|---|---|
+| `PRIMARY` | `HC_PING_URL`（既有，值不變） | 排程今天有沒有正常跑完 | 任一**即時狀態旗標**存在 → `/fail` | 異常排除，隔天自動綠 |
+| `REVIEW` | `HC_REVIEW_PING_URL`（新增，選用） | 有沒有已發生的事件還沒人看過 | 任一**永久事件帳本**有**未確認**區塊 → `/fail` | 人工複核後加註 ack |
+
+判定邏輯集中在 `scripts/alert_state.py`（語意登記表＋規則的**唯一事實來源**），
+`scripts/push.sh` 只把結果翻成 ping，並把**實際觸發的是哪些檔案**逐行寫進 `logs/push.log`：
+
+```
+2026-09-09T07:05:30+08:00 [deadman] PRIMARY ok  ← 6 個即時狀態旗標全部不存在，且根目錄沒有未登記的告警檔
+2026-09-09T07:05:30+08:00 [deadman] REVIEW fail ← 永久事件帳本 ALERT-DELIST.md 有 2/2 則未確認：<!-- detect_delistings:x402_bazaar:2026-09-07 -->、<!-- detect_delistings:x402_bazaar:2026-09-08 -->
+2026-09-09T07:05:30+08:00 [deadman] alert_state.py rc=2 primary=ok review=fail
+```
+
+**`HC_REVIEW_PING_URL` 沒設定時，待複核訊號會退回主開關**（fail-closed，訊號絕不靜默消失）：
+`push.sh` 會多印一行「退回主開關」並讓 `PRIMARY` 也 `/fail`。
+代價是主開關會維持紅燈直到所有區塊被確認；好處是「少一盞燈」不會變成「少一個訊號」。
+建議把第二個 check 的 grace 設長（≥ 3 天），讓它主要反映「待複核」而不是「今天有沒有跑」。
+
+### 人工複核與 ack
+
+兩個永久事件帳本的檔頭**早就寫著**「人工確認後若需歸檔……例如在行尾加
+`<!-- ack:YYYY-MM-DD -->`」。2026-09-09 起這句話變成**機器會讀的**：區塊內出現
+`<!-- ack:YYYY-MM-DD -->`（日期必須是真的數字）即視為已確認，`REVIEW` 才會轉綠。
+
+```bash
+python3 scripts/alert_state.py --deadman   # 乾跑判定，不 ping 任何網址
+python3 scripts/alert_state.py --list      # 列出每一則區塊與確認狀態
+python3 scripts/alert_state.py --ack ALERT-DELIST.md \
+        'detect_delistings:x402_bazaar:2026-09-07' 2026-09-09
+```
+
+`--ack` **一次只處理一則、且必須指明 marker**，刻意不提供「全部一次 ack」——
+那等於橡皮圖章。ack 註解是純 HTML 註解，不影響上游程式的冪等比對。
 
 ## 自我檢查：`ALERT.md`
 
@@ -74,17 +116,40 @@ ping 網址等同一把權杖，存放在 `~/snap/.env` 的 `HC_PING_URL`（已�
 停抓的來源要從該清單移除，否則會持續誤報；`track-gov` 則自 `track-gov/adapters/*.py`
 **自動探索**，新增機關不必改程式。
 
-### 三種告警檔
+### 八種告警檔（分兩種語意）
 
-| 檔案 | 意義 |
-|---|---|
-| `ALERT.md` | 資料異常：缺檔、體積異常、manifest 有來源失敗 |
-| `ALERT-DETECT.md` | **變動偵測程式本身失敗** —— 當日沒有做改寫／下架比對 |
-| `ALERT-HEALTH.md` | **自我檢查程式本身失敗** —— 當日沒有做資料異常檢查 |
+權威清單在 `scripts/alert_state.py` 的 `ALERT_REGISTRY`（唯一事實來源，
+`push.sh` 與 `daily_report.py` 都讀它，不再各自硬編碼）。
+執行 `python3 scripts/alert_state.py --list` 可看到目前狀態。
 
-後兩者是「監控自己壞掉」的情況。若不特別處理，程式崩潰會被當成「沒有異常」，
-核心功能失效的那一天剛好也是最不會被發現的一天。
-任一告警檔存在時，死人開關一律 ping `/fail`。
+**即時狀態旗標（6 個）**：產生者每次執行都重算目前的真相，異常排除時自己刪檔。
+「檔案存在」＝「現在有事」→ 直接觸發 `PRIMARY`。
+
+| 檔案 | 意義 | 產生／刪除者 |
+|---|---|---|
+| `ALERT.md` | 資料異常：缺檔、體積異常、manifest 有來源失敗 | `scripts/healthcheck.py` |
+| `ALERT-DETECT.md` | **變動偵測程式本身失敗** —— 當日沒有做改寫／下架比對 | `scripts/push.sh` |
+| `ALERT-HEALTH.md` | **自我檢查程式本身失敗** —— 當日沒有做資料異常檢查 | `scripts/push.sh` |
+| `ALERT-BACKUP.md` | Hugging Face 異地備份未同步（含 `HF_TOKEN` 未設定＝備份未啟用） | `scripts/push.sh` |
+| `ALERT-CEXGATE.md` | `cex_events` 完整性守門觸發（只反映最新一次轉換） | `scripts/healthcheck.py` |
+| `ALERT-DELISTGATE.md` | 軌一下架偵測完整性守門觸發（只反映最新一次轉換） | `scripts/healthcheck.py` |
+
+**永久事件帳本（2 個）**：**只增不刪**，每一則區塊對應一次已發生的熔斷事件
+（特定來源×特定比對日期）。「檔案存在」＝「歷史上發生過需要人工複核的事」，
+**不等於**「現在有事」→ 改看「有沒有未 ack 的區塊」，觸發 `REVIEW`。
+
+| 檔案 | 意義 | 產生者 | 刪除路徑 |
+|---|---|---|---|
+| `ALERT-DELIST.md` | 軌一「自清單消失」規模異常熔斷 | `track-crypto/scripts/detect_delistings.py` | **無** |
+| `ALERT-CEXBREAKER.md` | CEX 上下架規模異常熔斷 | `scripts/cex_events.py` | **無** |
+
+`ALERT-DETECT.md`／`ALERT-HEALTH.md` 是「監控自己壞掉」的情況。若不特別處理，
+程式崩潰會被當成「沒有異常」，核心功能失效的那一天剛好也是最不會被發現的一天。
+
+**fail-closed**：根目錄出現**登記表以外**的 `ALERT*.md` 會直接讓 `PRIMARY` 變紅。
+`ALERT-CEXBREAKER.md` 於 2026-09-08 新增時，`push.sh` 與 `daily_report.py` 兩份
+硬編碼清單都漏加，熔斷寫了檔卻零通知管道 —— 這條規則就是為了消滅同一類漏報。
+新增第 9 個告警檔時，**必須同時登記進 `ALERT_REGISTRY`**，否則隔天就會被抓到。
 
 排查順序：`crontab -l` → `track-*/logs/cron.log` → 手動執行 snapshotter。
 

@@ -459,10 +459,11 @@ def check_disk(issues):
 # git commit 留紀錄）。
 #
 # 告警檔案選擇：併入既有 ALERT.md 的 issues 清單（append 進 main() 已有的共用 issues
-# list），不新增第 8 種告警檔（本專案目前已有 7 種：ALERT.md／ALERT-DETECT.md／
-# ALERT-HEALTH.md／ALERT-DELIST.md／ALERT-BACKUP.md／ALERT-CEXGATE.md／
-# ALERT-DELISTGATE.md，見 scripts/daily_report.py 的 alert_files 清單與 scripts/push.sh
-# 收尾的存在性檢查）。理由：這條檢查與 check_timestamps()／check_disk()／
+# list），不新增另一種告警檔（本專案目前有 8 種，權威清單見 scripts/alert_state.py 的
+# ALERT_REGISTRY——2026-09-09 起檔名與語意分類只登記在那一份，scripts/push.sh 的死人開關
+# 與 scripts/daily_report.py 的告警附錄都改讀它，不再各自硬編碼；先前兩邊各維護一份的
+# 結果是 cex_events.py 新增的 ALERT-CEXBREAKER.md 兩邊都漏掉）。理由：這條檢查與
+# check_timestamps()／check_disk()／
 # check_manifest() 屬於同一種語意——「檢查一項系統事實，異常時 append 進共用 issues、
 # 正常時什麼都不做」，每次執行都是全新判定（無跨執行的狀態機），不像 ALERT-CEXGATE.md／
 # ALERT-DELISTGATE.md 那樣必須用「只認 date==TODAY」過濾一份對完整歷史重新計算的追加式

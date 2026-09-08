@@ -106,6 +106,22 @@ except Exception:
     healthcheck = None
 
 
+def _load_alert_state_module():
+    """以路徑載入 alert_state.py（手法同 _load_healthcheck_module()）。
+    只讀取它的語意登記表與唯讀判定函式（scan_ledger/evaluate 都不寫檔）。"""
+    path = os.path.join(SCRIPT_DIR, "alert_state.py")
+    spec = importlib.util.spec_from_file_location("alert_state", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+try:
+    alert_state = _load_alert_state_module()
+except Exception:
+    alert_state = None
+
+
 def _discover_sources():
     """回傳 (active, name_hint)：
     active：[(track, key), ...]，直接沿用 healthcheck.ACTIVE（若載入失敗則退回
@@ -935,21 +951,64 @@ def build_cumulative_stats():
     return "\n".join(lines)
 
 
+# 2026-09-09 前的舊版在這裡硬編碼一份 7 個檔名的 alert_files 清單，
+# scripts/push.sh 的死人開關條件式裡另有一份**各自維護**的同樣清單。兩份清單漂移過：
+# scripts/cex_events.py 於 2026-09-08 新增的 ALERT-CEXBREAKER.md 兩邊都漏掉，
+# 熔斷已寫檔卻既不進本報告、也不觸發死人開關（連續 1 天零通知）。
+# 現在檔名清單與語意分類統一由 scripts/alert_state.py 的 ALERT_REGISTRY 提供
+# （同一份登記表、同一套判定，比照本檔既有的「與 ALERT.md 採用完全相同的判定函式」原則）。
+_ALERT_FILES_FALLBACK = [
+    "ALERT.md", "ALERT-DETECT.md", "ALERT-HEALTH.md", "ALERT-BACKUP.md",
+    "ALERT-CEXGATE.md", "ALERT-DELISTGATE.md", "ALERT-DELIST.md", "ALERT-CEXBREAKER.md",
+]
+
+
 def build_alert_section():
-    alert_files = ["ALERT.md", "ALERT-DETECT.md", "ALERT-HEALTH.md", "ALERT-DELIST.md", "ALERT-BACKUP.md", "ALERT-CEXGATE.md", "ALERT-DELISTGATE.md"]
+    """列出每一個告警檔的存在狀態；對「永久事件帳本」額外列出未確認區塊數。
+
+    回傳 (文字, any_alert)。any_alert 的語意刻意與死人開關的 PRIMARY 訊號一致：
+    只有**即時狀態旗標**存在才算「現在有事」；永久事件帳本存在只代表歷史上曾經
+    觸發過，另外用「未確認 N 則」呈現，不會讓報告永遠掛著「有告警」
+    （理由與 scripts/push.sh 死人開關同源，見 scripts/alert_state.py 檔頭）。
+    """
+    if alert_state is not None:
+        alert_files = list(alert_state.ALL_ALERTS)
+        ledgers = set(alert_state.LEDGER_ALERTS)
+    else:
+        alert_files = list(_ALERT_FILES_FALLBACK)
+        ledgers = {"ALERT-DELIST.md", "ALERT-CEXBREAKER.md"}
     lines = []
     any_alert = False
+    if alert_state is None:
+        lines.append("⚠️ `scripts/alert_state.py` 無法載入，以下清單為本檔後備副本，"
+                     "可能與死人開關實際判定不一致，請人工核對。")
+        lines.append("")
     for fn in alert_files:
         path = os.path.join(REPO, fn)
-        if os.path.isfile(path):
-            any_alert = True
-            lines.append(f"**{fn}**（存在）：")
-            content = safe(lambda p=path: open(p, "r", encoding="utf-8", errors="replace").read().splitlines(), [])
-            for l in content[:10]:
-                lines.append(f"> {l}")
-            lines.append("")
-        else:
+        if not os.path.isfile(path):
             lines.append(f"- {fn}：不存在")
+            continue
+        if fn in ledgers:
+            # 永久事件帳本：只增不刪，用「未確認區塊數」而不是「檔案存在」表達現況。
+            n_total, n_unacked, err = None, None, None
+            if alert_state is not None:
+                blocks, unacked, err = safe(
+                    lambda p=path: alert_state.scan_ledger(p), ([], [], "本報告呼叫 scan_ledger 失敗"))
+                n_total, n_unacked = len(blocks), len(unacked)
+            if err:
+                lines.append(f"**{fn}**（永久事件帳本，⚠️ {err}）：")
+            elif n_total is None:
+                lines.append(f"**{fn}**（永久事件帳本，未確認數不明）：")
+            else:
+                lines.append(f"**{fn}**（永久事件帳本，共 {n_total} 則，"
+                             f"未確認 {n_unacked} 則）：")
+        else:
+            any_alert = True
+            lines.append(f"**{fn}**（即時狀態旗標，存在＝現在有異常）：")
+        content = safe(lambda p=path: open(p, "r", encoding="utf-8", errors="replace").read().splitlines(), [])
+        for l in content[:10]:
+            lines.append(f"> {l}")
+        lines.append("")
     return "\n".join(lines), any_alert
 
 

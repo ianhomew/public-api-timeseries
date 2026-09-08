@@ -2,7 +2,7 @@
 
 ## 這是什麼
 
-`scripts/selftest.py` 是**離線、唯讀、可重複執行**的回歸自測，涵蓋本專案 5 支關鍵程式的
+`scripts/selftest.py` 是**離線、唯讀、可重複執行**的回歸自測，涵蓋本專案 7 支關鍵程式的
 核心保護機制：
 
 | 程式 | 涵蓋的不變量 |
@@ -12,9 +12,11 @@
 | `scripts/cex_events.py` | 每日只取最後一份／交易所級失敗守門／異常規模熔斷註記 |
 | `scripts/healthcheck.py` | 連續截斷告警 N=2／排程寬限（排程未到不算缺檔） |
 | `scripts/daily_report.py` | 42 個來源全列（不漏列）／異常數與 `ALERT.md` 一致 |
+| `scripts/alert_state.py` | 永久事件帳本不得觸發死人開關的排程健康訊號／未確認區塊必須觸發待複核訊號／ack 必須關得掉燈／未登記告警檔與無法解析的帳本一律 fail-closed（2026-09-09 新增，見下方「死人開關的兩個訊號」） |
+| `scripts/push.sh` | 死人開關接線的 fail-closed 行為（判定程式當掉／第二個 ping 網址未設定時不得靜默轉綠）（2026-09-09 新增；**本專案唯一一條真的用 `bash` 執行 shell 腳本片段的檢查**） |
 
 （另有 1 條 `selftest.workdir_cleanup_guard` 檢查，2026-09-08 新增，測試對象是
-`scripts/selftest.py` 自己的 WORKDIR 自清安全防呆，不屬於上述 5 支正式程式，
+`scripts/selftest.py` 自己的 WORKDIR 自清安全防呆，不屬於上述正式程式，
 見下方「WORKDIR 自清」一節。）
 
 **它不是**「跑一次歷史資料看有沒有報錯」的煙霧測試。每一條不變量都有對應的合成測試資料，
@@ -33,9 +35,9 @@ python3 scripts/selftest.py
 所有輸出（合成快照、程式副本、沙盒執行結果）都寫在 `/tmp/selftest/run-<時間戳記>-<pid>/`，
 不會寫到任何正式目錄，不連外網。**全數 PASS 時，執行結束會自動清掉這個 WORKDIR**；
 有 FAIL 時保留供除錯；`SELFTEST_KEEP=1` 可強制保留（不論成敗），見下方「WORKDIR 自清」
-一節。耗時隨檢查數量增加持續成長，**2026-09-09 正式目錄實測 160 條 37.4s**（2026-09-08 的
-138 條 44.3s、132 條 41.6s、130 條 40.2s，早期 86 條 15.6s、19 條約 3～5 秒為歷史數字，
-僅供對照成長趨勢，請以最新實測為準），仍遠低於 2 分鐘預算。
+一節。耗時隨檢查數量增加持續成長，**2026-09-09 正式目錄實測 170 條 41.8s**（同日稍早的
+160 條 39.6s、2026-09-08 的 138 條 44.3s、132 條 41.6s、130 條 40.2s，早期 86 條 15.6s、
+19 條約 3～5 秒為歷史數字，僅供對照成長趨勢，請以最新實測為準），仍遠低於 2 分鐘預算。
 
 可用旗標：
 - `--filter <關鍵字>`：只跑名稱包含這個關鍵字的檢查（開發單一項目時用），例如
@@ -78,6 +80,36 @@ run-<時間戳記>-<pid>`）底下建立合成快照、程式副本與沙盒執�
 若要保留 WORKDIR 手動核對沙盒內容（例如 `sandbox-NNN-*/` 底下的 `changes/*.md`、
 `ALERT.md`、`events.jsonl` 等實際產生的檔案），設定 `SELFTEST_KEEP=1` 即可，不必等到
 剛好有檢查 FAIL。
+
+## 死人開關的兩個訊號（2026-09-09 新增 5 條檢查）
+
+`scripts/alert_state.py` 是死人開關判定的**唯一事實來源**（告警檔語意登記表 + 兩個訊號的
+判定規則）。它取代了原本硬編碼在 `scripts/push.sh` 與 `scripts/daily_report.py` 的**兩份**
+檔名清單——那兩份已經漂移過一次，`ALERT-CEXBREAKER.md` 兩邊都漏掉，熔斷寫了檔卻零通知
+（詳見 `docs/operations.md` 的「八種告警檔」與「兩個訊號」兩節）。
+
+| 檢查名稱 | 鎖住的不變量 | 破壞驗證改壞什麼 |
+|---|---|---|
+| `alert_state.ledger_not_deadman_primary` | **永久事件帳本不得直接觸發排程健康訊號**（`PRIMARY`）；含對照組：換成即時狀態旗標時 `PRIMARY` 必須 fail | 把 `ALERT-DELIST.md` 的分類從 `ledger` 改回 `realtime`（＝復原 2026-09-09 之前的舊行為） |
+| `alert_state.unacked_ledger_trips_review` | 未確認區塊必須觸發 `REVIEW`；檔頭裡的字面 `<!-- ack:YYYY-MM-DD -->` 範例與寫壞的 `ack:soon` 都不算數 | 讓 `Block.acked` 恆為 `True`（＝什麼都算已確認） |
+| `alert_state.ack_clears_review` | ack 必須關得掉燈；部分 ack（1/2 則）不算；ack 後原 marker 仍能被上游的冪等比對找到 | 讓 `Block.acked` 恆為 `False`（＝ack 沒有用） |
+| `alert_state.failclosed_unknown_and_unparsable` | 未登記的 `ALERT*.md` → `PRIMARY` fail；帳本解析不出 `## ` 區塊 → `REVIEW` fail | 同時拿掉這兩條防線 |
+| `push_sh.deadman_failclosed` | `push.sh` 接線的 4 種情境（見下表），預設必須是紅燈 | 把 `push.sh` 的 fail-closed 預設值從 `fail` 改成 `ok` |
+
+`push_sh.deadman_failclosed` 是本檔**唯一一條真的用 `bash` 執行 shell 腳本的檢查**：
+它從 `scripts/push.sh` 原文用界標 `# >>> deadman-eval-begin` / `# >>> deadman-eval-end`
+**切出真正的那段 bash**，套上只寫本地檔案的 `hc_ping`／`hc_review_ping` 樁，用 `bash` 實跑。
+**不是靜態字串比對，也不會碰到任何真實 ping 網址。** 四種情境：
+
+| | 情境 | 期望 |
+|---|---|---|
+| 甲 | 帳本有未確認 + `HC_REVIEW_PING_URL` 已設定 | `primary /ok` + `review /fail` |
+| 乙 | 帳本全部已確認 + URL 已設定 | 兩者 `/ok` |
+| 丙 | 帳本有未確認 + URL **未設定** | `primary /fail`（待複核訊號退回主開關） |
+| 丁 | `alert_state.py` 被刪掉（模擬判定程式當掉） | `primary /fail` |
+
+⚠️ **改動 `push.sh` 那段時，兩個界標註解必須保留**，否則這條檢查會直接報錯
+（`apply_mutation` 找不到錨點就丟例外，不會靜默略過——這是刻意的）。
 
 ## 輸出怎麼看
 

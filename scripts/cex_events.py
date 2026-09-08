@@ -258,7 +258,10 @@ def write_alert_block_cexbreaker(exch, d_cur, lines):
 
 本檔案只會新增，不會自動刪除既有區塊；只對「最新一組轉換」寫入（理由見
 `scripts/cex_events.py` 的 `write_alert_block_cexbreaker()` docstring）。
-人工確認後若需歸檔，請自行搬移或加註（例如在行尾加 `<!-- ack:YYYY-MM-DD -->`）。
+人工確認後請在該則的 marker 行尾加 `<!-- ack:YYYY-MM-DD -->`
+（建議用 `python3 scripts/alert_state.py --ack ALERT-CEXBREAKER.md <marker> <日期>` 加註，一次一則）。
+2026-09-09 起這個註解是**機器會讀的**：`scripts/alert_state.py` 以「還有沒有未加註的區塊」
+決定死人開關的「待人工複核」訊號，全部加註後該訊號才會轉綠（見該檔檔頭）。
 """
         content = header + block
     with open(ALERT_CEXBREAKER, "w", encoding="utf-8") as f:
