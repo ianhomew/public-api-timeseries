@@ -123,6 +123,51 @@ ping 網址等同一把權杖，存放在 `~/snap/.env` 的 `HC_PING_URL`（已�
 `event` 為 `LISTED` / `DELISTED` / `STATUS_CHANGED`。
 需累積兩份以上快照才會產生輸出。
 
+## 軌一逐來源事件流（與上一節的交易所事件流是**兩條不同的流**）
+
+`track-crypto/scripts/detect_delistings.py` 逐日比對各來源的相鄰快照，把差異寫入
+`track-crypto/data/<source>/events.jsonl`（只追加）：
+
+```json
+{"date":"2026-09-06","source":"crypto_project_liveness","group":"_hacks","key":"stake dao\u001f1773273600","event":"RENAMED","from":"Stake DAO","to":"Stake DAO Yield","from_key":"stake dao\u001f1773273600","to_key":"stake dao yield\u001f1773273600","stable_id":"249\u001f1773273600","stable_id_fields":["defillamaId","date"]}
+```
+
+去重鍵為 `(date, source, group, key, event)`。`event` 是**封閉集合**，目前 5 種：
+
+| `event` | 意義 | `key` 指的是 | `from` / `to` |
+|---|---|---|---|
+| `LISTED` | 這個主鍵今日新出現在清單裡 | 新出現的主鍵 | `null` / 新項目描述 |
+| `DELISTED` | 這個主鍵今日從清單裡消失 | 消失的主鍵 | 舊項目描述 / `null` |
+| `REAPPEARED` | 先前記為消失的主鍵今日又出現 | 重新出現的主鍵 | 上次消失的日期 / 新項目描述 |
+| `STATUS_CHANGED` | 主鍵仍在清單裡，但被追蹤的欄位值改變 | 續存的主鍵 | 只含變動欄位的 dict / 同上 |
+| `RENAMED` | 上游把同一個東西改了名字（主鍵字串變了，但來源端的穩定識別不變） | **改名前**的舊主鍵 | 改名前描述 / 改名後描述 |
+
+`RENAMED` 另有 4 個型別專屬欄位：`from_key`（＝`key`，舊主鍵）、`to_key`（新主鍵）、
+`stable_id`（判定「是同一個東西」所依據的穩定識別字串）、`stable_id_fields`
+（組成該穩定識別的來源欄位名稱）。`key` 放**舊**主鍵，是為了讓「追蹤某個主鍵、
+發現它從快照裡消失」的下游能直接查到解釋，不會誤判成資料靜默遺失。
+
+`STATUS_CHANGED` 可能另帶 `flapped` / `flap_fields` / `flap_with` 三個抖動標記欄位
+（欄位值在短期內翻回原值時附加，只是註記、不改變事件本身）。熔斷放行的事件另帶
+`note` / `breaker_tripped` / `removed_pct` / `breaker_threshold` 四個欄位。
+
+**這條流與上一節的 `cex_events/events.jsonl` 是兩條獨立的流**：後者的 schema 是
+`{date, exchange, symbol, event, from, to}`、只有 3 種型別，兩者不可混用。
+
+各型別的精確語意與判定條件，權威定義在
+`track-crypto/scripts/detect_delistings.py` 檔頭。
+
+### 型別集合變更史
+
+| 日期 | commit | 變更 |
+|---|---|---|
+| 2026-09-01 | `7cce2dc` | 第一階段：`LISTED`／`DELISTED`／`REAPPEARED` |
+| 2026-09-02 | `5122411` | 第二階段：新增 `STATUS_CHANGED`（第 4 種） |
+| 2026-09-08 | （本次） | 新增 `RENAMED`（第 5 種） |
+
+型別集合只增不減。新增型別時，既有型別的語意、欄位與產生條件一律不變，
+既有事件行一行都不刪改；本表與 `CHANGES.md` 是變更的公告位置。
+
 ## 里程碑
 
 `scripts/milestone.py` 依累積天數自動在 repo 根目錄產生 `NEXT-STEP.md`：

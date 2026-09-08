@@ -12,7 +12,8 @@ public-api-timeseries/
 │   │   ├── cex_symbols/YYYY-MM-DD.json.gz
 │   │   ├── vast_gpu/YYYY-MM-DD.json.gz
 │   │   ├── mcp_registry/YYYY-MM-DD.json.gz      （已停抓，保留歷史）
-│   │   ├── cex_events/events.jsonl              （上/下架事件流，只追加）
+│   │   ├── cex_events/events.jsonl              （交易所上/下架事件流，只追加）
+│   │   ├── <source>/events.jsonl                （軌一逐來源事件流，只追加）
 │   │   └── _manifest/YYYY-MM-DD.json
 │   └── scripts/snap_crypto.py
 ├── track-gov/
@@ -66,6 +67,22 @@ public-api-timeseries/
 
 > ⚠️ **兩軌的巢狀層級不同**：`track-crypto` 的內容在 `snap["data"]` 之下；
 > `track-gov` 的 `items` 直接在**頂層**，沒有 `data` 這一層。
+
+## 事件流 JSONL 結構
+
+repo 裡有**兩條互相獨立**的事件流，schema 與型別集合都不同，不可混用。
+兩者都是 JSON Lines（一行一個 JSON 物件）、**只追加**、從不刪改既有行。
+
+| | `cex_events/events.jsonl` | `<source>/events.jsonl` |
+|---|---|---|
+| 產生程式 | `scripts/cex_events.py` | `track-crypto/scripts/detect_delistings.py` |
+| 涵蓋範圍 | 只有交易所標的 | 軌一各來源逐一一份 |
+| 去重鍵 | `(date, exchange, symbol, event)` | `(date, source, group, key, event)` |
+| `event` 型別 | 3 種：`LISTED`／`DELISTED`／`STATUS_CHANGED` | 5 種：`LISTED`／`DELISTED`／`REAPPEARED`／`STATUS_CHANGED`／`RENAMED` |
+
+逐型別的欄位表、`RENAMED` 的專屬欄位、以及型別集合的變更史
+→ [operations.md](operations.md)。更正註記（判定為假事件時另寫 `events-corrections.jsonl`，
+**不刪除原行**）→ `scripts/apply_correction.py`。
 
 ## manifest 結構
 

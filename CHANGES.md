@@ -7,6 +7,7 @@
 | 2026-09-08 | `track-crypto/x402_bazaar` | — | 1042（熔斷，已隔離） | 236（熔斷，已隔離） | [紀錄](changes/x402_bazaar/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/oracle_feed_directory` | — | 1 | 0 | [紀錄](changes/oracle_feed_directory/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/openrouter_models` | — | 2；狀態變化 1 | 0 | [紀錄](changes/openrouter_models/2026-09-08.md) |
+| 2026-09-08 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/crypto_project_liveness` | — | 1 | 3 | [紀錄](changes/crypto_project_liveness/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/cex_symbols_ext` | — | 2 | 0 | [紀錄](changes/cex_symbols_ext/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/cex_earn_apr` | — | 2 | 0 | [紀錄](changes/cex_earn_apr/2026-09-08.md) |
@@ -14,10 +15,12 @@
 | 2026-09-08 | `track-crypto/agent_virtuals` | — | 0 | 145 | [紀錄](changes/agent_virtuals/2026-09-08.md) |
 | 2026-09-07 | `track-crypto/x402_bazaar` | — | 1399（熔斷已標記） | 387（含 31 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-07.md) |
 | 2026-09-07 | `track-crypto/openrouter_models` | — | 1 | 0 | [紀錄](changes/openrouter_models/2026-09-07.md) |
+| 2026-09-07 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-07.md) |
 | 2026-09-07 | `track-crypto/cex_currency_status` | — | 0；狀態變化 49 | 3 | [紀錄](changes/cex_currency_status/2026-09-07.md) |
 | 2026-09-07 | `track-crypto/agent_virtuals` | — | 3 | 110 | [紀錄](changes/agent_virtuals/2026-09-07.md) |
 | 2026-09-06 | `track-crypto/x402_bazaar` | — | 302 | 735（含 86 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-06.md) |
 | 2026-09-06 | `track-crypto/openrouter_models` | — | 1 | 1 | [紀錄](changes/openrouter_models/2026-09-06.md) |
+| 2026-09-06 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-06.md) |
 | 2026-09-06 | `track-crypto/crypto_project_liveness` | — | 0；上游改名抵銷 2 | 2 | [紀錄](changes/crypto_project_liveness/2026-09-06.md) |
 | 2026-09-06 | `track-crypto/cex_withdrawal_limits` | — | 0 | 1 | [紀錄](changes/cex_withdrawal_limits/2026-09-06.md) |
 | 2026-09-06 | `track-crypto/cex_currency_status` | — | 0；狀態變化 49 | 3 | [紀錄](changes/cex_currency_status/2026-09-06.md) |
@@ -26,6 +29,7 @@
 | 2026-09-05 | `track-crypto/oracle_feed_directory` | — | 0 | 5 | [紀錄](changes/oracle_feed_directory/2026-09-05.md) |
 | 2026-09-05 | `track-crypto/openrouter_models` | — | 1 | 6 | [紀錄](changes/openrouter_models/2026-09-05.md) |
 | 2026-09-05 | `track-crypto/ofac_sanctions_crypto` | — | 0 | 3 | [紀錄](changes/ofac_sanctions_crypto/2026-09-05.md) |
+| 2026-09-05 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-05.md) |
 | 2026-09-05 | `track-crypto/crypto_project_liveness` | — | 0 | 1 | [紀錄](changes/crypto_project_liveness/2026-09-05.md) |
 | 2026-09-05 | `track-crypto/cex_symbols_ext` | — | 0；狀態變化 6 | 0 | [紀錄](changes/cex_symbols_ext/2026-09-05.md) |
 | 2026-09-05 | `track-crypto/cex_earn_apr` | — | 0；狀態變化 2 | 3 | [紀錄](changes/cex_earn_apr/2026-09-05.md) |
@@ -36,6 +40,7 @@
 | 2026-09-04 | `track-crypto/openrouter_providers` | — | 0 | 1 | [紀錄](changes/openrouter_providers/2026-09-04.md) |
 | 2026-09-04 | `track-crypto/openrouter_models` | — | 1；狀態變化 3 | 2 | [紀錄](changes/openrouter_models/2026-09-04.md) |
 | 2026-09-04 | `track-crypto/ofac_sanctions_crypto` | — | 1 | 6 | [紀錄](changes/ofac_sanctions_crypto/2026-09-04.md) |
+| 2026-09-04 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-04.md) |
 | 2026-09-04 | `track-crypto/cex_symbols_ext` | — | 0 | 6 | [紀錄](changes/cex_symbols_ext/2026-09-04.md) |
 | 2026-09-04 | `track-crypto/cex_earn_apr` | — | 0 | 10 | [紀錄](changes/cex_earn_apr/2026-09-04.md) |
 | 2026-09-04 | `track-crypto/cex_currency_status` | — | 0；狀態變化 8 | 10 | [紀錄](changes/cex_currency_status/2026-09-04.md) |
@@ -44,6 +49,7 @@
 | 2026-09-03 | `track-crypto/x402_bazaar` | — | 173 | 542（含 55 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/oracle_feed_directory` | — | 0 | 2 | [紀錄](changes/oracle_feed_directory/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/openrouter_models` | — | 0；狀態變化 1 | 6 | [紀錄](changes/openrouter_models/2026-09-03.md) |
+| 2026-09-03 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/crypto_project_liveness` | — | 0 | 1 | [紀錄](changes/crypto_project_liveness/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/cex_symbols_ext` | — | 0；狀態變化 1 | 0 | [紀錄](changes/cex_symbols_ext/2026-09-03.md) |
 | 2026-09-03 | `track-crypto/cex_earn_apr` | — | 0；狀態變化 2 | 0 | [紀錄](changes/cex_earn_apr/2026-09-03.md) |
@@ -53,6 +59,7 @@
 | 2026-09-02 | `track-crypto/x402_bazaar` | — | 177 | 438（含 34 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-02.md) |
 | 2026-09-02 | `track-crypto/oracle_feed_directory` | — | 0 | 6 | [紀錄](changes/oracle_feed_directory/2026-09-02.md) |
 | 2026-09-02 | `track-crypto/openrouter_models` | — | 8；狀態變化 2 | 2 | [紀錄](changes/openrouter_models/2026-09-02.md) |
+| 2026-09-02 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-02.md) |
 | 2026-09-02 | `track-crypto/crypto_project_liveness` | — | 1 | 2 | [紀錄](changes/crypto_project_liveness/2026-09-02.md) |
 | 2026-09-02 | `track-crypto/cex_withdrawal_limits` | — | 0 | 1 | [紀錄](changes/cex_withdrawal_limits/2026-09-02.md) |
 | 2026-09-02 | `track-crypto/cex_symbols_ext` | — | 0；狀態變化 1 | 3 | [紀錄](changes/cex_symbols_ext/2026-09-02.md) |
@@ -61,6 +68,7 @@
 | 2026-09-01 | `track-crypto/x402_bazaar` | — | 411 | 669（含 17 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-01.md) |
 | 2026-09-01 | `track-crypto/oracle_feed_directory` | — | 1 | 6 | [紀錄](changes/oracle_feed_directory/2026-09-01.md) |
 | 2026-09-01 | `track-crypto/openrouter_models` | — | 1 | 30 | [紀錄](changes/openrouter_models/2026-09-01.md) |
+| 2026-09-01 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-09-01.md) |
 | 2026-09-01 | `track-crypto/crypto_project_liveness` | — | 0 | 5 | [紀錄](changes/crypto_project_liveness/2026-09-01.md) |
 | 2026-09-01 | `track-crypto/cex_symbols_ext` | — | 2 | 1 | [紀錄](changes/cex_symbols_ext/2026-09-01.md) |
 | 2026-09-01 | `track-crypto/cex_earn_apr` | — | 0 | 10 | [紀錄](changes/cex_earn_apr/2026-09-01.md) |
@@ -68,10 +76,12 @@
 | 2026-09-01 | `track-crypto/agent_virtuals` | — | 0（_items:GATE_FAIL） | 0 | [紀錄](changes/agent_virtuals/2026-09-01.md) |
 | 2026-08-31 | `track-crypto/x402_bazaar` | — | 254 | 409（含 54 筆重新出現） | [紀錄](changes/x402_bazaar/2026-08-31.md) |
 | 2026-08-31 | `track-crypto/openrouter_models` | — | 0；狀態變化 1 | 0 | [紀錄](changes/openrouter_models/2026-08-31.md) |
+| 2026-08-31 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-08-31.md) |
 | 2026-08-31 | `track-crypto/crypto_project_liveness` | — | 0 | 3 | [紀錄](changes/crypto_project_liveness/2026-08-31.md) |
 | 2026-08-31 | `track-crypto/cex_currency_status` | — | 0；狀態變化 3 | 0 | [紀錄](changes/cex_currency_status/2026-08-31.md) |
 | 2026-08-31 | `track-crypto/agent_virtuals` | — | 0（_items:GATE_FAIL） | 0 | [紀錄](changes/agent_virtuals/2026-08-31.md) |
 | 2026-08-30 | `track-crypto/x402_bazaar` | — | 528 | 313（含 16 筆重新出現） | [紀錄](changes/x402_bazaar/2026-08-30.md) |
+| 2026-08-30 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-08-30.md) |
 | 2026-08-30 | `track-crypto/crypto_project_liveness` | — | 0 | 2 | [紀錄](changes/crypto_project_liveness/2026-08-30.md) |
 | 2026-08-30 | `track-crypto/cex_currency_status` | — | 0；狀態變化 2 | 0 | [紀錄](changes/cex_currency_status/2026-08-30.md) |
 | 2026-08-30 | `track-crypto/agent_virtuals` | — | 0（_items:GATE_FAIL） | 0 | [紀錄](changes/agent_virtuals/2026-08-30.md) |
@@ -80,6 +90,7 @@
 | 2026-08-29 | `track-crypto/openrouter_providers` | — | 0 | 2 | [紀錄](changes/openrouter_providers/2026-08-29.md) |
 | 2026-08-29 | `track-crypto/openrouter_models` | — | 2；狀態變化 1 | 11 | [紀錄](changes/openrouter_models/2026-08-29.md) |
 | 2026-08-29 | `track-crypto/ofac_sanctions_crypto` | — | 0 | 2 | [紀錄](changes/ofac_sanctions_crypto/2026-08-29.md) |
+| 2026-08-29 | `track-crypto/mcp_smithery` | — | 0（_servers:GATE_FAIL） | 0 | [紀錄](changes/mcp_smithery/2026-08-29.md) |
 | 2026-08-29 | `track-crypto/crypto_project_liveness` | — | 0 | 1 | [紀錄](changes/crypto_project_liveness/2026-08-29.md) |
 | 2026-08-29 | `track-crypto/cex_currency_status` | — | 0；狀態變化 6 | 5 | [紀錄](changes/cex_currency_status/2026-08-29.md) |
 | 2026-08-29 | `track-crypto/agent_virtuals` | — | 0（_items:GATE_FAIL） | 0 | [紀錄](changes/agent_virtuals/2026-08-29.md) |

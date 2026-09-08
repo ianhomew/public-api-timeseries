@@ -454,6 +454,127 @@ legacy_range_check 分支並全部通過（實測 len(items) 落在 [14255,16592
 [12829,18252]），events.jsonl 對歷史資料重放後**逐位元組不變**（沙盒實測，
 見報告 §7）。changes/x402_bazaar/*.md 的「完整性守門」兩列文字會改變
 （reason 字串換了），這是預期中的顯示差異，不影響任何事件判定。
+
+第五階段（2026-09-08，任務 0908-1）：新增第 5 種事件型別 RENAMED。
+完整推導與驗證輸出見本機 docs/0908-1-renamed-event-report.md。
+
+【被本輪推翻的既有敘述】上方第四階段任務 B 區塊寫「本輪**沒有**新增第 5 種事件型別
+（是否要新增 RENAMED，列為待裁示事項）」——該待裁示事項已由使用者於 2026-09-08
+裁示「**要看到改名**」。那段歷史敘述保留原樣不改寫（那是當時的紀錄），以本段為準。
+
+【為什麼要加】任務 B 的抵銷層讓改名不再被誤判成 DELISTED＋LISTED，但代價是
+events.jsonl 對這件事**完全沉默**：只讀事件流的下游會看到一個主鍵無聲消失、
+另一個主鍵無聲出現，必須改去讀人類可讀日報才知道發生了改名
+（docs/0907-B-rename-key-report.md §9.4 第 1 項自陳的壞處）。本輪把改名升格為
+正式事件，讓事件流自己講得清楚。
+
+【事件型別集合的變更】events.jsonl 的 event 欄位由 4 值封閉集合
+  {LISTED, DELISTED, REAPPEARED, STATUS_CHANGED}
+擴充為 5 值：
+  {LISTED, DELISTED, REAPPEARED, STATUS_CHANGED, RENAMED}
+這是**已公開介面（CC BY 4.0）的變更**，屬於「只增不減」的相容擴充：既有 4 種型別的
+語意、欄位、產生條件一個字元都沒有改，既有事件行一行都沒有動。只按 event 值過濾的
+下游不會壞（拿不到 RENAMED 就等於維持 B 的行為）；把 event 當封閉列舉、對未知值
+丟例外的下游會需要更新——這一點已在 track-crypto/README.md 與 docs/operations.md
+的 schema 說明中明文公告。
+
+【RENAMED 的欄位】除既有 7 個核心欄位外另有 4 個具名欄位，設計目標是讓一筆事件
+就能回答「什麼東西／從什麼名字改成什麼名字／依據哪個穩定 id 判定／哪一天」：
+  date              判定發生日（＝當日快照日期，與其他事件型別一致）
+  source / group    來源與子集合（與其他事件型別一致）
+  key               **舊主鍵**（從當日快照消失的那一個），與 from_key 恆等
+  event             固定字串 "RENAMED"
+  from              舊項目的人類可讀描述（desc_field，本來源即改名前的 name）
+  to                新項目的人類可讀描述（＝改名後的 name）
+  from_key          舊主鍵（與 key 相同，具名冗餘，見 build_group_events() 內註解）
+  to_key            新主鍵（改名後的那一個）
+  stable_id         判定依據的穩定識別字串（例如 "249\x1f1773273600"）
+  stable_id_fields  組成該穩定識別的欄位名稱清單（例如 ["defillamaId", "date"]）
+
+  key 取舊主鍵而不是新主鍵的理由見 build_group_events() 內的長註解（摘要：舊主鍵
+  才是「消失」的那一個，追蹤它的下游若查不到事件就會誤判為靜默遺失）。
+
+【本輪只動 6 處（其餘一律未修改）】
+  1. build_group_events()：在 last_delisted 更新之後、STATUS_CHANGED 區塊之前，
+     新增一個「逐筆把 renamed_pairs 轉成 RENAMED 事件」的迴圈（純加法；
+     renamed_pairs 為空的 12 個子集合迴圈一次都不會跑）。
+  2. render_group_source_report()：表格那一列與「🔄 上游改名」小節的措辭由
+     「未寫入事件流」改為「事件型別 RENAMED」（只改文字，不改判定）。
+  3. render_group_source_report() 檔尾那一句事實聲明補上「被上游改名」。
+  4. process_group_source_pair()：索引列的 total_renamed 統計口徑由
+     judged=="NORMAL" 對齊成 to_events（與同一段其他 4 個 total_* 一致）。
+  5. 本檔頭這段說明。
+  6. （配套，另一個檔案）scripts/selftest.py 新增 4 條檢查與 4 個 mutation。
+
+【本輪不修改】reconcile_renames()／stable_identity()／build_stable_id_index()／
+compare_group()／dedup()／judge()／status_changes_for_group()／status_filter_hit()／
+completeness()／completeness_group()／extract_group_items()／compare_pair()／
+process_pair()／render_report()／write_events()／load_seen()／update_index()／
+annotate_flaps()／flap_marks()／record_gate_fail()／record_status_filtered()／
+write_alert_block()／write_alert_block_group()／write_quarantine()／main()
+一個字元都沒有改。改名的**判定邏輯**（誰跟誰是同一個東西）完全沿用任務 B，
+本輪只負責把已經判定出來的結果落地成事件。
+
+【冪等性】RENAMED 沿用既有的 write_events() 去重鍵 (date, source, group, key, event)，
+同一組改名重跑不會重複寫入。annotate_flaps() 只改寫 event=="STATUS_CHANGED" 的行，
+RENAMED 的行走「原樣保留」路徑，一個位元組都不會被動到。
+部署後**第一次**執行會為 2026-09-06 的 Stake DAO 改名補寫 2 筆 RENAMED
+（這是預期中的一次性追加），第二次起 events.jsonl 逐位元組不變。
+
+──────────────────────────────────────────────────────────────────────────
+第五階段（2026-09-08）：修掉 GROUP_SOURCES 剩下的 3 個「恆真式」完整性守門
+本機規格／報告：docs/0908-4-tautological-gates-report.md（任務 0908-4）
+──────────────────────────────────────────────────────────────────────────
+【緣由】任務 D（第四階段）修掉 SOURCES["x402_bazaar"] 的恆真式守門時，附帶掃描
+發現宣告 total_match 的 6 個來源中還有 3 個是同一個毛病——自報欄位就是 adapter
+自己算的 len(...)，判斷式恆為假、守門恆為真。本輪逐一親打上游確認「到底有沒有
+真總數」後修掉：
+
+  來源                        上游有真總數嗎（本輪親驗）              本輪修法
+  ofac_sanctions_crypto      **有**。OFAC 另外發布的 SDN.XML 檔頭    改 reported_total_match
+                             有 <publshInformation><Record_Count>，  （adapter 保存上游
+                             2026-09-08 實測 Record_Count(19329)     Record_Count；容忍度
+                             ＝ sdn.csv 資料列數(19329)＝ XML        取 0＝嚴格相等，
+                             sdnEntry 數(19329)，uid 集合差集皆 0    理由見該來源設定註解）
+  openrouter_providers       **沒有**。回應頂層只有 data 一個鍵，    改 range_check
+                             limit/offset/page/per_page 全被忽略      [92, 117]
+  crypto_project_liveness    **沒有**。回傳裸 JSON 陣列，無任何       改 range_check
+                             中繼欄位；官方文件也寫 "Returns:         [1115, 1383]
+                             array of {...}"
+
+【本輪只動 4 處】
+  1. GROUP_SOURCES 三個子集合的完整性設定（ofac_sanctions_crypto._items／
+     openrouter_providers._providers／crypto_project_liveness._hacks），
+     **一律刪掉 total_fields**，不留假的保護感。
+  2. completeness_group() 新增 reported_total_match 分支（純加法，
+     既有 total_match／range_check／tolerant_total_match 三個分支
+     一個字元都沒有改）。
+  3. 同函式 docstring 補上新方法的說明。
+  4. 本說明區塊。
+
+【本輪不修改】compare_group()／compare_pair()／completeness()／judge()／dedup()／
+extract_group_items()／build_group_events()／status_changes_for_group()／
+reconcile_renames()（第四階段任務 B 新增）／render_group_source_report()／
+write_alert_block_group()／process_pair()／process_group_source_pair()／
+record_gate_fail()／snapshots()／load()／update_index()／write_events()／
+breaker_release_check()／main() 一個字元都沒有改；SOURCES（x402_bazaar）整張表
+沒有動；GROUP_SOURCES 其餘 19 個子集合的設定沒有動。
+
+【相容性】三個來源既有的 12 份快照（2026-08-28～09-08）全部通過新守門：
+  - ofac：沒有 reported_total 欄位 -> 走 legacy_range_check[17387,21262]，
+    實測 n 落在 19319～19329，全部通過（adapter PARSER_VERSION 1→2 之後
+    才會開始有 reported_total）。
+  - openrouter_providers：n 落在 103～106，區間 [92,117] 全部通過。
+  - crypto_project_liveness：n 落在 1239～1257，區間 [1115,1383] 全部通過。
+歷史重放 events.jsonl 逐位元組不變（沙盒實測，見報告 §5）。
+changes/<source>/*.md 內「完整性守門」列的 reason 文字會改變（total_match ->
+range_check[...]／legacy_range_check[...]），屬預期中的顯示差異。
+
+【誠實揭露】range_check 是**弱守門**：它擋得住「整批塌陷／結構改變」，擋不住
+「少了幾十筆」。這兩個來源都是「單次請求取回整份清單、沒有分頁迴圈」，本來就
+沒有分頁截斷這個失效模式（HTTP 讀取中斷會直接拋例外、記為抓取失敗，不會產生
+半份快照），真正的主力防線是熔斷（breaker_pct=1.0%）。換掉恆真式的價值在於
+**不再宣稱一個不存在的保護**，而不是換到一個同樣強的保護。
 """
 import os
 import sys
@@ -633,6 +754,8 @@ SOURCES = {
 #      _items 只是佔位」，不對外呈現在人類可讀報告的子集合標題（見
 #      render_group_source_report()）。
 #   4. 【完整性檢查兩種方式，都在 completeness_group() 實作】
+#      （第三階段追加 tolerant_total_match、第五階段追加 reported_total_match，
+#        故現行共四種；本段落保留原文，以現行 completeness_group() docstring 為準）
 #      - total_match：來源自報 count／total_count 等欄位，逐一比對
 #        欄位值 == 該子集合原始筆數（去重前），全部存在且相符才算通過；
 #        可選 require_empty（例如 payment_protocol_repos 的 errors 欄位）
@@ -758,7 +881,51 @@ GROUP_SOURCES = {
             "_items": {
                 "path": ("items",), "shape": "list", "key_field": "uid",
                 "desc_field": "sdn_name",
-                "completeness": "total_match", "total_fields": ("count",),
+                # 第五階段修正（2026-09-08，見本檔頭「第五階段」區塊與
+                # 本機 docs/0908-4-tautological-gates-report.md §3.1）：
+                # 原設定 "total_match" + total_fields=("count",) 是**恆真式**
+                # ——adapter 直接寫 "count": len(items)，自報值與被檢查對象是同一個
+                # 數字。本輪親打上游確認 OFAC 另外發布的 SDN.XML 檔頭含
+                # <publshInformation><Record_Count>，且 2026-09-08 實測
+                # Record_Count(19329) == sdn.csv 資料列數(19329) == XML sdnEntry 數(19329)、
+                # uid 集合完全相同（差集兩邊皆 0）。adapter 已改為用 HTTP Range 只取
+                # XML 前 4KB 解析出這個數字並存成 data.reported_total，本表改為比對它，
+                # **並刪除 total_fields**（不留一個假的保護感）。
+                "completeness": "reported_total_match",
+                "reported_total_field": "reported_total",
+                # 容忍度門檻 = max(tolerance_abs_floor, tolerance_pct% × reported_total)
+                # 本來源取 **max(0, 0%) = 0（嚴格相等）**，公式本身沿用 completeness()
+                # 對 x402_bazaar 的同一組機制，但**數值刻意與它不同**，理由如下：
+                #   x402_bazaar 是「活的分頁目錄」——一次全量分頁約 45 秒，期間目錄本身
+                #   會增減，上游 pagination.total 與實得筆數天生會差 0~1 筆，所以必須留
+                #   容忍度（任務 D §4.3）。
+                #   本來源不是那種東西：sdn.csv 與 SDN.XML 是**同一次發布的兩個檔案**
+                #   （每日快照抓的是靜態檔，不是即時查詢），同一版本內兩者筆數必然相等。
+                #   2026-09-08 實測：Record_Count 19,329 ＝ CSV 資料列數 19,329
+                #   ＝ XML sdnEntry 19,329，且 uid 集合逐一相同（差集皆 0）；
+                #   另用上游 delta 檔（publication 968／969）對帳，19321+5+3=19329 閉合。
+                # 為什麼不留 max(5, 0.1%)≈19 筆的容忍度（本輪實測後否決）：
+                #   OFAC 單次發布的實際變動量可達 +65 列（2026-08-24, publication 964）、
+                #   +47 列（08-20），**遠大於 19**。留 19 筆容忍度既擋不住真正的換版競態
+                #   （那種情形落差會是幾十筆、照樣 fail），又會放過「CSV 真的少了 19 筆」
+                #   這種小規模缺損 —— 兩頭都不討好。改用嚴格相等，語意乾淨：
+                #   「兩個檔案對不起來就是不可信，不判定」。
+                # 誤報風險評估：只有「CSV 與 XML 兩次請求之間 OFAC 正好換版」才會誤判。
+                #   實測 2026-08-18~09-04 共 7 次發布（平均 2.6 天一次，發布時刻約
+                #   UTC 14:01，同批各檔 Last-Modified 只差 7 秒），本專案排程在 UTC 00:00
+                #   （相距約 10 小時），兩次請求相隔約 10 秒
+                #   -> 【推論】約 0.39 次/日 × (10s/86400s) ≈ 4.5e-5，量級是「數十年一次」。
+                #   真的發生時是 GATE_FAIL（當日不判定＋寫 gate_skips.jsonl），
+                #   不是資料遺失，隔日即自動恢復。
+                "tolerance_pct": 0.0,
+                "tolerance_abs_floor": 0,
+                # legacy_range：adapter 升版（PARSER_VERSION 1→2）之前的既有快照沒有
+                # reported_total 欄位，退回區間檢查，否則全部歷史相鄰配對會變成
+                # GATE_FAIL、毀掉重放。12 份既有快照（2026-08-28～09-08）實測
+                # min=19319、max=19329 -> floor(19319×0.9)=17387、ceil(19329×1.1)=21262。
+                # **誠實揭露**：區間法鑑別力遠弱於 reported_total_match（少 1,000 筆
+                # 仍落在區間內），只是舊資料相容分支，不是等價替代。
+                "legacy_range": (17387, 21262),
                 "status_fields": (),
                 "breaker_pct": 1.0, "abs_floor": 5,
             },
@@ -786,7 +953,26 @@ GROUP_SOURCES = {
             "_providers": {
                 "path": ("providers",), "shape": "list", "key_field": "slug",
                 "desc_field": "name",
-                "completeness": "total_match", "total_fields": ("count",),
+                # 第五階段修正（2026-09-08，見本檔頭「第五階段」區塊與
+                # 本機 docs/0908-4-tautological-gates-report.md §3.2）：
+                # 原設定 "total_match" + total_fields=("count",) 是**恆真式**
+                # ——adapter 直接寫 "count": len(providers)。本輪親打上游確認
+                # GET https://openrouter.ai/api/v1/providers 的回應**頂層只有 data
+                # 一個鍵**、沒有任何總數或分頁中繼資料，且 limit／offset／page／
+                # per_page 四種分頁參數全部被忽略（四次請求都回同一份 24,609B、106 筆），
+                # 官方文件（llms-full.txt「List all providers」）也只有單一 List 操作、
+                # 無分頁參數。**上游沒有真總數可比**，因此依本檔 GROUP_SOURCES 既有
+                # 方法論改用 range_check（實測 min／max 各加 10% 邊界）。
+                # 12 份既有快照（2026-08-28～09-08）實測 min=103、max=106 ->
+                # floor(103×0.9)=92、ceil(106×1.1)=117。
+                # **誠實揭露**：本來源是「單次請求取回整份清單」，沒有分頁迴圈，
+                # 真正的截斷風險是 HTTP 讀取中斷（會直接拋例外、記為抓取失敗，
+                # 不會產生半份快照）。區間法只能擋「整批塌陷／結構改變」這一類，
+                # 對少數幾筆的遺漏沒有鑑別力；本來源的主要防線是熔斷
+                # （breaker_pct=1.0%，n≈106 時 max(5, 1.06)=5 筆即熔斷）。
+                # 區間上界 117 在目前成長速度（11 天 +3 家）下約 40 天後會被自然成長
+                # 追上，**必須定期重新校準**（沿用本檔 range_check 既有立場）。
+                "completeness": "range_check", "range": (92, 117),
                 "status_fields": (),
                 "breaker_pct": 1.0, "abs_floor": 5,
             },
@@ -856,6 +1042,12 @@ GROUP_SOURCES = {
 #      取得 https://api.llama.fi/hacks 全量陣列後才組出這個欄位），對「抓到
 #      一半」沒有獨立驗證力，僅對欄位缺失／型別錯誤等結構性問題有防護——
 #      本項為誠實揭露，不隱藏此檢查的實際強度（見報告 §2.1）。
+#      🔴 **2026-09-08（第五階段）更新**：上面這段誠實揭露只揭露、沒有修。
+#      本輪親打上游確認 api.llama.fi/hacks 回的是裸 JSON 陣列、上游確實沒有
+#      任何可比對的總數，已把這個子集合的 completeness 從恆真的 total_match
+#      改成 range_check[1115,1383]（見該子集合設定處的行內註解與本檔頭
+#      「第五階段」區塊）。上面這段文字保留原樣是為了保存當時的判斷紀錄，
+#      **現行設定以 GROUP_SOURCES 為準，已不再是 total_match**。
 #      breaker_pct=1.0%、abs_floor=5：實測 7 組乾淨相鄰配對中唯一一次真實
 #      消失事件 1 筆／1247 筆，門檻約為其 12.5 倍；該事件（MORE Markets，
 #      2026-09-01→09-02）經追查其 defillamaId／parentProtocolId 在後續
@@ -916,7 +1108,26 @@ GROUP_SOURCES = {
             "_hacks": {
                 "path": ("hacks",), "shape": "list", "key_field": ("name", "date"),
                 "desc_field": "name",
-                "completeness": "total_match", "total_fields": ("count",),
+                # 第五階段修正（2026-09-08，見本檔頭「第五階段」區塊與
+                # 本機 docs/0908-4-tautological-gates-report.md §3.3）：
+                # 原設定 "total_match" + total_fields=("count",) 是**恆真式**
+                # ——adapter 直接寫 "count": len(j)；本檔下方第二階段區塊早就自己
+                # 誠實揭露過這件事（「count 實為 len(hacks) 的同義重複計算」），
+                # 但當時沒有換掉。本輪親打上游確認
+                # GET https://api.llama.fi/hacks **回傳的是裸 JSON 陣列**
+                # （頂層不是物件，沒有任何 count／total／分頁欄位），limit／page
+                # 參數被忽略（同一份 342,071B、1,257 筆），官方文件
+                # （api-docs.defillama.com llms-pro.txt）對 /api/hacks 的描述也是
+                # 「Returns: array of {date, name, ...}」。**上游沒有真總數可比**，
+                # 因此依本檔既有方法論改用 range_check。
+                # 12 份既有快照（2026-08-28～09-08）實測 min=1239、max=1257 ->
+                # floor(1239×0.9)=1115、ceil(1257×1.1)=1383。
+                # **誠實揭露**：同 openrouter_providers，本來源是單次請求取回整份
+                # 陣列、無分頁迴圈；區間法只擋得住「整批塌陷」，主要防線是熔斷
+                # （breaker_pct=1.0%，n≈1257 時門檻 max(5, 12.57)=12.6 筆）。
+                # 這份清單是**只增不減的累積事件簿**（12 天實測單調不減 1239→1257），
+                # 上界 1383 約 77 天後會被自然成長追上，**必須定期重新校準**。
+                "completeness": "range_check", "range": (1115, 1383),
                 "status_fields": (),
                 "breaker_pct": 1.0, "abs_floor": 5,
                 # 第四階段新增（2026-09-07，任務 B）：穩定識別欄位，供 reconcile_renames()
@@ -950,6 +1161,106 @@ GROUP_SOURCES = {
                 "completeness": "range_check", "range": (1658, 2051),
                 "status_fields": (),
                 "breaker_pct": 1.0, "abs_floor": 5,
+            },
+        },
+    },
+# ============================================================================
+# 第五階段新增（2026-09-08，使用者裁示「6. 按照建議」＝把 mcp_smithery 納入下架偵測；
+# 完整推導、逐項實測數字、風險揭露見本機 docs/0908-3-smithery-detect-report.md）。
+#
+# 為什麼**現在**才納入：2026-09-07 之前 adapter 少帶 seed 參數，只抓到 272 / 11,771 筆
+# （覆蓋率 2.3%），把它納入偵測會用 2.3% 的任意子集合去推「消失」，必然產生大量假事件；
+# 2026-09-07 修好（docs/0907-A-smithery-rootcause.md）之後 09-08 實測 11,917 / 11,917
+# ＝ 覆蓋率 100.0%、跨頁重複 0，才夠格納入。
+#
+#   1.【主鍵用 id，不用 qualifiedName —— 這是 0907-B 補丁踩過的坑】
+#      id 是 UUID v4（36 碼），12 份真實快照（2026-08-28～09-08，272～11,917 筆）
+#      實測：缺失 0 筆、每日唯一 100%（去重前後筆數相同）。
+#      qualifiedName（例：`pipeworx/gateway`）是 `namespace + "/" + slug` 組出來的
+#      **人類可讀名稱**，兩個成分都是使用者可自行修改的展示欄位；上游改名時
+#      集合差會同時吐出「一筆消失＋一筆新增」的假事件（crypto_project_liveness 的
+#      Saturn→SATURN 就是同一類問題，見第三階段第 2 點）。
+#      11 組相鄰日實測交叉驗證：同一 id 的 qualifiedName 改變 0 次、
+#      同一 qualifiedName 的 id 改變 0 次 —— 目前兩者都穩定，但只有 id 是
+#      **結構上**不可能被使用者改的識別碼，故取 id。
+#      desc_field 取 qualifiedName（只用於人類可讀報告的說明欄，不參與判定）。
+#   2.【完整性守門用 full_flag_tolerant_total_match，且**不是恆真式**】
+#      adapter 產出的 data 節點有兩個「總數」欄位，必須挑對：
+#        - total_returned：值 = len(servers) 本身 → **恆真式**，12 份快照實測差恆為 0，
+#          對「抓一半」零防護力。**刻意不用。**
+#        - total_count_reported：上游回應 pagination.totalCount 保存下來的自報總數
+#          → 真正的獨立驗證。12 份快照實測與 len(servers) 的相對誤差：
+#          2026-08-28～09-07（舊 adapter）97.51%～97.69%（例 09-07：272 vs 11,771），
+#          2026-09-08（新 adapter）0.0000%（11,917 vs 11,917）。
+#          同一組資料下兩個欄位給出完全相反的結論 → 鑑別力已實證，不是恆真式。
+#      再加一道 is_full 旗標（adapter 一手訊號，True 才算抓完；定義為
+#      stop_reason=="exhausted" 且覆蓋率 >= 98%），缺失/False 一律 fail-closed。
+#      tolerance_pct=0.3% 的推導（兩側都留 2.8 倍以上餘裕）：
+#        上界（不可誤殺）：實得筆數與自報總數的最大實測落差 0.0085%
+#          （2026-09-07 全量掃描 11,814 vs 11,813，見 docs/0907-A-smithery-rootcause.md）；
+#          2026-09-08 正式排程與本輪 15:47 重抓皆為 0.0000%。adapter 原始碼記錄
+#          「同一輪內 totalCount 在 11,803~11,814 之間漂移」＝ 11 筆 ＝ 0.093%
+#          （一輪全量約 229 秒，期間目錄本身會成長）。0.3% 是最壞值 0.093% 的 3.2 倍。
+#        下界（要抓得到）：單一分頁遺漏 = PAGE_SIZE = 100 筆 = 現行規模的 0.839%，
+#          是門檻的 2.8 倍 → 漏一頁一定會被擋下。
+#        樣本揭露：全量快照目前**只有 1 天**（2026-09-08）＋本輪 1 次重抓，
+#          樣本極薄，應隨每日快照累積重新校準（沿用第二／第三階段同一立場）。
+#   3.【熔斷門檻 breaker_pct=1.0%、abs_floor=20】
+#      兩組互相獨立的實測日移除率，結論收斂：
+#        (i) 舊 adapter 的 272 筆子集合，10 組相鄰日（08-28～09-07）移除數
+#            1,0,1,0,1,1,0,2,0,0 → 合計 6 筆，平均 0.221%/日，單日最大 2/271 ＝ 0.738%。
+#        (ii) 全量母體同日內實測：2026-09-08 00:00 UTC 正式快照（11,917 筆）對
+#            本輪 07:55 UTC 重抓（11,936 筆），間隔 7 小時 55 分，移除 9 筆
+#            （0.0755%）、新增 28 筆；線性外推 24 小時約 27.8 筆 ＝ 0.233%/日【推論】。
+#      套本檔案第二階段既有公式 ceil(max(1.0, 單日最大% × 1.35))：
+#        0.738 × 1.35 = 0.996 → max(1.0, 0.996) = **1.0**。與 (ii) 外推值
+#        0.233 × 1.35 = 0.315 相比也遠在安全側。現行規模下 1.0% ≈ 119 筆，
+#        約為外推日均移除量的 4.3 倍。
+#      abs_floor=20：現行規模下**可證明是惰性的**（1.0%×11,917＝119 ≫ 20，
+#        只有 n_old < 2,000 時才會生效），而 n_old < 2,000 在結構上不可能發生
+#        ——adapter 的 MIN_ITEMS=8000 會先丟 RuntimeError，該日根本不會有快照；
+#        取 20 是與同為五位數規模的 agent_virtuals 一致，不是精確調校。
+#      **樣本只有 1 天全量 + 1 次同日重抓**，比照專案既有 30~60 天慣例，
+#      這個門檻要等累積 30~60 天全量快照後才算真正校準過（見報告 §5.3）。
+#   4.【status_fields=("unlisted","inactive")】上游原生的「已下架／已停用」旗標，
+#      比照第二階段原則 6（旗標優先）納入。實測成本為零：
+#        09-08 全量 11,917 筆 unlisted True=0、inactive True=0、缺失 0；
+#        10 組 v2 相鄰配對（交集約 271 筆）兩欄位變動 0；
+#        09-08 同日全量交集 11,908 筆兩欄位變動 0。
+#      **不納入** verified（True 283 筆／2.375%）、isDeployed（8,666 筆／72.72%）、
+#      remote（3,251 筆為 None）、bySmithery（137 筆／1.15%）：這四個是能力／品質
+#      屬性不是上架狀態；remote 大量缺值，上游若補值會產生 None→False 的假變化。
+#      【推論】unlisted／inactive 也可能結構上永遠為 False（上游可能在清單端就
+#      濾掉這類項目，那樣它們只會直接從清單消失＝走 DELISTED），本輪無法證實或證偽；
+#      納入的成本是 0，留著是為了「真的翻旗標時抓得到」。
+#   5.【parser_version 版本下限守門 min_parser_version=3 —— 本輪最重要的風險控制】
+#      09-07 以前的舊快照只有 272 筆、09-08 起是 11,917 筆，直接比對會產生
+#      **11,645 筆假 LISTED**（實測：09-07→09-08 以 id 做集合差，added=11,645、
+#      removed=0）。本檔案原本的 parser_version 豁免機制只存在於
+#      breaker_release_check()，那條路徑只在 judged=="BREAKER" 時才會走到，
+#      **管不到這個情境**（本情境 removed=0，熔斷根本不會成立）。
+#      因此本輪新增 parser_version_floor_check()（見該函式），並在
+#      process_group_source_pair() 掛上。只有設定 min_parser_version 的子集合
+#      才啟用，其餘 13 個子集合完全 no-op。
+#      同時也已實測確認：即使把這道守門整個拿掉，完整性守門仍會獨立擋下全部
+#      11 組舊配對（舊快照 is_full=False → GATE_FAIL），兩層互相獨立（見報告 §4.3）。
+# ============================================================================
+    "mcp_smithery": {
+        "label": "Smithery MCP 註冊表全量伺服器清單（registry.smithery.ai/servers）",
+        "groups": {
+            "_servers": {
+                "path": ("servers",), "shape": "list", "key_field": "id",
+                "desc_field": "qualifiedName",
+                "completeness": "full_flag_tolerant_total_match",
+                "full_field": "is_full",
+                "total_field": "total_count_reported",
+                "tolerance_pct": 0.3,
+                "status_fields": ("unlisted", "inactive"),
+                "breaker_pct": 1.0, "abs_floor": 20,
+                # 版本下限：只有 parser_version >= 3（帶 seed 的全量 adapter）且兩日
+                # 相同的配對才進行比對。低於下限或兩日不同一律 GATE_FAIL，見上方第 5 點
+                # 與 parser_version_floor_check()。
+                "min_parser_version": 3,
             },
         },
     },
@@ -1073,6 +1384,13 @@ def completeness_group(data_root, gcfg):
     tolerant_total_match：第三階段新增（見下方對應分支的行內註解），自報總數與原始筆數
                  容許 gcfg["tolerance_pct"] 相對誤差，並要求 gcfg["truncated_field"]
                  明確為 False，目前只有 agent_virtuals 使用。
+    reported_total_match：第五階段新增（2026-09-08，見下方對應分支的行內註解）。
+                 gcfg["reported_total_field"] 讀到的**上游自報總數**與原始筆數比對，
+                 容忍度 = max(tolerance_abs_floor, tolerance_pct% × 自報總數)；
+                 該欄位不存在（adapter 升版前的舊快照）時退回 gcfg["legacy_range"]
+                 區間檢查。目前只有 ofac_sanctions_crypto 使用。
+                 ⚠️ 這個欄位的值必須來自**上游另一份獨立來源**，不可以是 adapter 自己
+                 算出來的 len(items)——那會讓守門變成恆真式（本輪修掉的缺陷）。
     total_fields／require_empty／total_field／truncated_field 一律讀 data_root 這一層
     （來源的 data 節點本身），不是子集合節點內——本階段 8 個來源的自報總數欄位
     （count／total_count／errors）實測皆位於 data 頂層，不在子集合節點內部
@@ -1138,6 +1456,93 @@ def completeness_group(data_root, gcfg):
             return False, n_raw, ("%s(%r) 與原始筆數(%d) 相對誤差 %.4f%% 超過容忍度 %.2f%%"
                                    % (total_field, total, n_raw, gap_pct, tol))
         return True, n_raw, "tolerant_total_match(gap=%.4f%%,tol=%.2f%%)" % (gap_pct, tol)
+    elif method == "full_flag_tolerant_total_match":
+        # 第五階段新增（2026-09-08，目前只有 mcp_smithery 使用；完整推導與實測數字見
+        # 本機 docs/0908-3-smithery-detect-report.md §3）。
+        #
+        # 與 tolerant_total_match 的差別只有一個：旗標的**極性相反**。
+        # agent_virtuals 的 adapter 自報 `truncated`（True＝抓壞了），mcp_smithery 的
+        # adapter 自報 `is_full`（True＝抓好了）。snap_crypto.py 只在寫 manifest 時
+        # 把 is_full 反極性成 truncated，**快照 data 節點裡沒有 truncated 這個欄位**
+        # （2026-08-28～09-08 全部 12 份快照實測確認），所以不能直接沿用
+        # tolerant_total_match：`data_root.get("truncated")` 恆為 None，
+        # `None is not False` 會讓這個來源**每一天都 fail-closed**，等於永遠沒有偵測。
+        # 依本檔案第二／第三階段既有慣例（新需求＝新增一個具名分支，不改既有分支），
+        # 另開這個分支；既有三個分支一個字元都沒有動。
+        #
+        # 兩個條件都要通過：
+        #   1. full_field（is_full）必須明確是布林 True。缺失／None／False 一律
+        #      fail-closed。這是 adapter 自己回報的「這次有沒有抓完」一手訊號
+        #      （adapter 內部定義：stop_reason=="exhausted" 且覆蓋率 >= 98%），
+        #      優先權最高，比照 tolerant_total_match 的旗標優先原則。
+        #   2. total_field（total_count_reported，即上游 pagination.totalCount）
+        #      與 n_raw（原始筆數，去重前）的相對誤差不得超過 tolerance_pct
+        #      （分母是 total_field 的值，與 tolerant_total_match 同一算式）。
+        #
+        # **這不是恆真式**（第四階段 x402_bazaar 踩過的坑，見檔頭與本檔 SOURCES 上方
+        # 註解）：adapter 另有一個 `total_returned` 欄位，它的值就是 len(servers)
+        # 本身，拿它來比對是自我一致的假保護；本設定刻意**不用** total_returned，
+        # 用的是上游回應 pagination.totalCount 保存下來的 total_count_reported。
+        # 12 份真實快照實測：2026-08-28～09-07 這 11 天 total_returned 恆等於
+        # len(servers)（差 0），但 total_count_reported 與 len(servers) 差
+        # 97.51%～97.69%（例如 09-07：272 vs 11,771），09-08 修好後差 0.0000%
+        # （11,917 vs 11,917）——同一組資料下兩個欄位給出完全相反的結論，
+        # 證明本守門對「抓一半」有真實鑑別力。
+        if not isinstance(data_root, dict):
+            return False, n_raw, "data 節點非物件，無法讀自報欄位與 is_full 旗標"
+        ff_name = gcfg["full_field"]
+        ff_val = data_root.get(ff_name)
+        if ff_val is not True:
+            return False, n_raw, ("%s(%r) 非布林 True（缺失/False 一律 fail-closed 視為不完整）"
+                                   % (ff_name, ff_val))
+        total_field = gcfg["total_field"]
+        total = data_root.get(total_field)
+        if not isinstance(total, (int, float)) or isinstance(total, bool) or total <= 0:
+            return False, n_raw, "缺 %s 欄位或非正數（%r）" % (total_field, total)
+        gap_pct = abs(total - n_raw) / total * 100.0
+        tol = gcfg["tolerance_pct"]
+        if gap_pct > tol:
+            return False, n_raw, ("%s(%r) 與原始筆數(%d) 相對誤差 %.4f%% 超過容忍度 %.2f%%"
+                                   % (total_field, total, n_raw, gap_pct, tol))
+        return True, n_raw, ("full_flag_tolerant_total_match(gap=%.4f%%,tol=%.2f%%)"
+                             % (gap_pct, tol))
+    elif method == "reported_total_match":
+        # 第五階段新增（2026-09-08，恆真式守門修正第二批，見本檔頭「第五階段」區塊，
+        # 目前只有 ofac_sanctions_crypto 使用）：比對「上游另外發布的自報總數」與
+        # 子集合原始筆數，容忍度 = max(tolerance_abs_floor, tolerance_pct% × 自報總數)。
+        # 名稱與語意刻意與 completeness()（SOURCES 路徑，x402_bazaar，任務 D）的
+        # reported_total_match 完全一致，不另創第二套講法；兩者是不同函式、不同
+        # 程式碼路徑（一個服務單一清單來源，一個服務多子集合來源），彼此不能互相涵蓋。
+        #
+        # 與同函式 tolerant_total_match 的差異，以及為什麼不直接沿用它：
+        #   1. 門檻表示法不同：本方法用「絕對筆數」門檻 max(abs_floor, pct%×total)
+        #      ——這是本檔既有房規（熔斷 threshold_count、completeness() 皆同構）；
+        #      tolerant_total_match 用的是相對誤差百分比。
+        #   2. tolerant_total_match 強制要求 truncated_field 明確為布林 False。
+        #      本方法的唯一使用者是「單次下載整份 CSV」的來源，沒有分頁迴圈，
+        #      也就沒有「翻頁翻到一半」這個一手訊號可回報；硬塞一個恆為 False 的
+        #      旗標只會製造另一個假保護感——那正是本輪要修掉的東西，所以不塞。
+        # 舊快照（adapter 升版前沒有這個欄位）退回 legacy_range 區間檢查，比照
+        # completeness() 的同名相容分支：不這樣做的話全部歷史相鄰配對都會 GATE_FAIL。
+        if not isinstance(data_root, dict):
+            return False, n_raw, "data 節點非物件，無法讀自報欄位"
+        rtot = data_root.get(gcfg["reported_total_field"])
+        if rtot is None:
+            lo_g, hi_g = gcfg["legacy_range"]
+            if n_raw < lo_g or n_raw > hi_g:
+                return False, n_raw, ("legacy_range_check[%d,%d] 未通過：原始筆數 %d 超出實測合理區間"
+                                      % (lo_g, hi_g, n_raw))
+            return True, n_raw, "legacy_range_check[%d,%d]" % (lo_g, hi_g)
+        if not isinstance(rtot, (int, float)) or isinstance(rtot, bool) or rtot <= 0:
+            return False, n_raw, "%s 非正數（%r）" % (gcfg["reported_total_field"], rtot)
+        tol_n = max(gcfg["tolerance_abs_floor"], gcfg["tolerance_pct"] / 100.0 * rtot)
+        gap_n = abs(rtot - n_raw)
+        if gap_n > tol_n:
+            return False, n_raw, ("%s(%s) 與原始筆數(%d) 相差 %d 筆，超過容忍度 %.1f 筆"
+                                  "（max(%s, %.2f%%×%s)）"
+                                  % (gcfg["reported_total_field"], rtot, n_raw, gap_n, tol_n,
+                                     gcfg["tolerance_abs_floor"], gcfg["tolerance_pct"], rtot))
+        return True, n_raw, "reported_total_match(gap=%d,limit=%.1f)" % (gap_n, tol_n)
     return False, n_raw, "未知完整性檢查方式 %r" % (method,)
 
 
@@ -1405,6 +1810,35 @@ def build_group_events(source, gname, gcfg, r, judged, d_new, last_delisted,
         for k in r["removed_keys"]:
             last_delisted[k] = d_new
 
+    # 第五階段新增（2026-09-08，任務 0908-1）：把 compare_group() 抵銷掉的每一組
+    # 上游改名補寫成一筆第 5 種事件型別 RENAMED。
+    #
+    # 為什麼第四階段（任務 B）沒寫、本輪要寫：B 刻意把改名只記在人類可讀日報，
+    # 代價是「只讀 events.jsonl 的下游會看到一個主鍵無聲消失、另一個主鍵無聲出現」
+    # （docs/0907-B-rename-key-report.md §9.4 第 1 項列為待裁示）。使用者裁示
+    # 「要看到改名」，因此本輪把改名升格為正式事件。
+    #
+    # key 取「舊主鍵」而不是新主鍵：舊主鍵才是**從當日快照消失**的那一個，追蹤它的
+    # 下游若查不到任何事件，就會誤以為資料靜默遺失——那正是本輪要修掉的失效模式。
+    # 新主鍵由同一筆事件的 to_key 明確指出；兩個主鍵字串都在同一行裡，純文字 grep
+    # 任一邊都找得到。from_key 與 key 恆等，是刻意保留的自我說明冗餘：events.jsonl
+    # 的 key 欄位語意本來就隨 event 型別而異（DELISTED＝消失的鍵、LISTED＝出現的鍵、
+    # STATUS_CHANGED＝續存的鍵），RENAMED 一次牽涉兩個鍵，用具名欄位講清楚方向，
+    # 下游不必去背「RENAMED 的 key 是哪一邊」。
+    #
+    # stable_id／stable_id_fields 回答「依據什麼判定這是同一個東西」，讓每一筆
+    # RENAMED 都能被獨立複核，不必回頭讀程式碼才知道判定基礎。
+    #
+    # 未啟用抵銷層的 12 個子集合 renamed_pairs 恆為空 list，這個迴圈一次都不會跑，
+    # 產出的事件清單與本輪之前逐位元組相同。
+    for k_old, k_new, sid in (r.get("renamed_pairs") or ()):
+        new_events.append({"date": d_new, "source": source, "group": gname, "key": k_old,
+                            "event": "RENAMED",
+                            "from": short_desc_generic(r["keyed_old"].get(k_old), desc_field),
+                            "to": short_desc_generic(r["keyed_new"].get(k_new), desc_field),
+                            "from_key": k_old, "to_key": k_new, "stable_id": sid,
+                            "stable_id_fields": list(gcfg.get("stable_id_fields") or ())})
+
     # 做法 4【語意過濾】：suppressed 收集被規則抑制、因此不產生 STATUS_CHANGED 的欄位變化，
     # 逐筆寫進 STATUS_FILTER_LOG 事實紀錄檔（見 record_status_filtered()）。
     # process_group_source_pair() 為了統計報表筆數會再呼叫一次 status_changes_for_group()，
@@ -1442,9 +1876,13 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
     L.append("| 改寫 | %s |" % EMDASH)
     L.append("| 偵測時間 | %s |" % datetime.now(timezone.utc).isoformat())
     L.append("")
-    L.append("> \u2139\ufe0f **措辭說明**：「自清單消失」「新增」「重新出現」「狀態變化」都只是描述"
+    # 第五階段改（2026-09-08，任務 0908-1）：這段是**嵌在已公開資料檔裡的 schema 宣告**，
+    # 事件型別集合由 4 值擴充成 5 值時必須同步更新，否則已公開的 changes/*.md 會繼續
+    # 宣告一個過期的封閉集合。代價是重放會改寫全部既有 changes/*.md（實測 66 份，
+    # 見報告 §6.2），這些檔案必須與程式碼同一個 commit 進去。
+    L.append("> \u2139\ufe0f **措辭說明**：「自清單消失」「新增」「重新出現」「上游改名」「狀態變化」都只是描述"
               "『這個項目在這兩份快照裡的狀態』的事實，**不代表任何原因推測**。"
-              "機器可讀事件型別為 `DELISTED`／`LISTED`／`REAPPEARED`／`STATUS_CHANGED`"
+              "機器可讀事件型別為 `DELISTED`／`LISTED`／`REAPPEARED`／`RENAMED`／`STATUS_CHANGED`"
               "（型別定義見 `track-crypto/scripts/detect_delistings.py` 檔頭）。"
               "本來源含 %d 個子集合，各子集合的完整性守門與熔斷各自獨立判定，"
               "互不影響（例如某子集合熔斷不會連帶讓其他子集合也不判定）。" % len(scfg["groups"]))
@@ -1476,7 +1914,11 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
         if r.get("renamed_pairs"):
             # 第四階段新增（2026-09-07，任務 B）：只有真的抵銷到東西才多這一列，
             # 其餘情況表格逐位元組不變。
-            L.append("| 上游改名抵銷（未寫入事件流） | %d |" % len(r["renamed_pairs"]))
+            # 第五階段改（2026-09-08，任務 0908-1）：改名現在會寫入事件流為 RENAMED，
+            # 措辭比照同表格其他列的既有慣例（依 _g_to_events 分兩種寫法）。
+            L.append("| 上游改名（%s） | %d%s |" %
+                      ("已寫入事件流為 `RENAMED`" if _g_to_events else "僅供人工參考，非正式事件",
+                       len(r["renamed_pairs"]), tag))
         if gcfg.get("status_fields"):
             L.append("| 狀態變化（%s） | %d%s |" %
                       ("已寫入 STATUS_CHANGED" if _g_to_events else "僅供人工參考", len(status_changes), tag))
@@ -1538,11 +1980,12 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
             # 第四階段新增（2026-09-07，任務 B）：只有抵銷層真的配對到東西時才輸出這一節，
             # 其餘任何情況（含未啟用抵銷層的 12 個子集合）連這個 if 都不會成立，
             # 日報內容與本輪之前逐位元組相同。
-            L.append("### \U0001f504 上游改名（%d，**未寫入事件流**）" % len(r["renamed_pairs"]))
+            L.append("### \U0001f504 上游改名（%d，事件型別 `RENAMED`）" % len(r["renamed_pairs"]))
             L.append("")
             L.append("以下項目的主鍵字串在兩份快照之間變了，但來源端的穩定識別"
                       "（`%s`）完全相同，判定為**同一個東西被上游改了名字**，"
-                      "不是「消失」也不是「新增」，因此**不寫入 `DELISTED`／`LISTED`**。"
+                      "不是「消失」也不是「新增」，因此**不寫入 `DELISTED`／`LISTED`**，"
+                      "改為各寫一筆 `RENAMED` 事件（`key`＝舊主鍵、`to_key`＝新主鍵）。"
                       "只陳述兩個主鍵字串與該穩定識別，不推測上游為什麼改名。"
                       % "＋".join(gcfg.get("stable_id_fields") or ()))
             L.append("")
@@ -1568,7 +2011,7 @@ def render_group_source_report(source, scfg, d_old, d_new, group_results):
     L.append("---")
     L.append("")
     L.append("本紀錄由 `track-crypto/scripts/detect_delistings.py` 自動產生（第二階段）。")
-    L.append("僅陳述「哪個項目在哪天消失／出現／重新出現／狀態變化」此一事實，**不含任何解讀或評論**。")
+    L.append("僅陳述「哪個項目在哪天消失／出現／重新出現／被上游改名／狀態變化」此一事實，**不含任何解讀或評論**。")
     return "\n".join(L) + "\n"
 
 
@@ -1624,6 +2067,27 @@ def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by
     quarantine_batches = []  # 第四階段新增：[(gname, judged, reason_text, r, events)]
     for gname, gcfg in scfg["groups"].items():
         r = compare_group(source, gname, gcfg, data_old, data_new)
+        # 第五階段新增（2026-09-08，mcp_smithery 納入偵測）：解析器版本下限守門。
+        # 只有設定了 "min_parser_version" 的子集合才啟用；其餘 13 個子集合
+        # gcfg.get("min_parser_version") 是 None，parser_version_floor_check()
+        # 第一行就原樣回傳 (True, "")，r 的既有鍵一個都不會被改到，行為與本輪之前
+        # 逐位元組相同（已用全歷史重放驗證，見 docs/0908-3-smithery-detect-report.md §4）。
+        pv_ok, pv_reason = parser_version_floor_check(source, gcfg, d_old, d_new)
+        r["parser_version_gate_ok"] = pv_ok
+        r["parser_version_gate_reason"] = pv_reason
+        if not pv_ok:
+            # 併進既有的完整性守門結論，不新增第四種 judged 值：judge() 只讀
+            # r["gate_ok"]，壓成 False 就會走既有的 GATE_FAIL 路徑
+            # ——事件不進 events.jsonl、寫 _gate_fail/gate_skips.jsonl 事實紀錄、
+            # 產生人類可讀日報，行為與完整性守門不通過完全一致。
+            # ok_old／ok_new 只在「本來通過」時才覆寫，本來就不通過的那一側保留原本的
+            # 完整性理由，不損失稽核資訊（render_group_source_report() 會把兩側的
+            # reason 都印出來）。
+            r["gate_ok"] = False
+            for _side in ("old", "new"):
+                if r["ok_%s" % _side]:
+                    r["ok_%s" % _side] = False
+                    r["reason_%s" % _side] = "parser_version 守門：%s" % pv_reason
         judged = judge(r, gcfg)
         last_delisted = last_delisted_by_group.setdefault(gname, {})
         # 第四階段（2026-09-07，熔斷語意統一）：逐子集合各自決定事件的落地去向，
@@ -1702,8 +2166,14 @@ def process_group_source_pair(source, scfg, f_old, f_new, seen, last_delisted_by
         total_reappeared = sum(len(gr["reappeared_from"]) for gr in group_results.values() if gr["to_events"])
         total_status = sum(len(gr["status_changes"]) for gr in group_results.values() if gr["to_events"])
         non_normal = [g for g, gr in group_results.items() if gr["judged"] != "NORMAL"]
+        # 第五階段改（2026-09-08，任務 0908-1）：口徑由 judged=="NORMAL" 對齊成
+        # to_events，與上面 4 行 total_* 完全一致。理由：RENAMED 現在是真的會寫進
+        # events.jsonl 的事件，落地與否由 to_events 決定（BREAKER 放行時也會寫），
+        # 索引列若還用 judged=="NORMAL" 就會出現「事件流有 RENAMED、索引列寫 0」的
+        # 矛盾。judged=="NORMAL" 蘊含 to_events==True，因此這個改動只在
+        # 「BREAKER 但放行」時才有差異，其餘情況索引列逐位元組不變。
         total_renamed = sum(len(gr["r"].get("renamed_pairs") or ())
-                            for gr in group_results.values() if gr["judged"] == "NORMAL")
+                            for gr in group_results.values() if gr["to_events"])
         removed_cell = str(total_removed)
         added_cell = str(total_added)
         if total_reappeared:
@@ -2812,6 +3282,65 @@ def write_quarantine(source, d_new, events, reason_code, reason_text, seen):
     return [rec for _k, rec in fresh]
 
 
+# ==========================================================================
+# 第五階段（2026-09-08，mcp_smithery 納入下架偵測）新增的函式，集中在這一段連續
+# 區塊，方便與其他同時進行的修改合併。本段之外的改動點只有三處（全部是純追加）：
+#   1. completeness_group()：新增 full_flag_tolerant_total_match 分支
+#      （既有 total_match／range_check／tolerant_total_match 三個分支一字未改）。
+#   2. GROUP_SOURCES：新增 "mcp_smithery" 條目（既有 11 個來源一字未改）。
+#   3. process_group_source_pair()：compare_group() 之後多呼叫一次
+#      parser_version_floor_check()（未設定 min_parser_version 的子集合是 no-op）。
+# ==========================================================================
+
+def parser_version_floor_check(source, gcfg, d_old, d_new):
+    """解析器版本下限守門。回傳 (ok, reason)。
+
+    **未設定 gcfg["min_parser_version"] 的子集合一律直接回 (True, "")**——這是
+    opt-in 機制，不是全域行為改變（比照第四階段 stable_id_fields 的既有慣例：
+    只有設定了那個鍵的子集合才啟用抵銷層）。目前只有 mcp_smithery/_servers 設定。
+
+    為什麼需要這道守門（實測，不是推測）：
+      `mcp_smithery` 的 adapter 在 2026-09-07 從 v2 升到 v3（少帶 seed 的 bug 修好，
+      見 docs/0907-A-smithery-rootcause.md）。09-07 快照 272 筆、09-08 快照 11,917 筆，
+      以 id 做集合差 added=11,645、removed=0 —— 直接比對會一次寫進 **11,645 筆假
+      LISTED 事件**，而且 events.jsonl 不在 .gitignore 排除範圍內，會永久污染 git 歷史。
+
+    為什麼既有機制不夠：
+      本檔案原本唯一的 parser_version 檢查在 breaker_release_check()，那條路徑
+      **只有 judged=="BREAKER" 時才會被呼叫**。本情境 removed=0，熔斷根本不成立，
+      永遠走不到那個檢查。scripts/detect_changes.py 的「parser_version 不同就跳過」
+      是另一支程式（軌二變動偵測器）的機制，管不到本檔案。
+
+    三條規則，全部 fail-closed（任何一項讀不到／型別不對一律回 False）：
+      1. 兩側日期在 track-crypto/data/_manifest/<date>.json 都要查得到本來源紀錄。
+      2. 兩側的 parser_version 都必須是整數且 >= min_parser_version。
+      3. 兩側的 parser_version 必須相同（解析器改版當天不比對，理由同
+         breaker_release_check() 第 3 點：改版會造成假消失／假新增）。
+
+    只讀 manifest，不讀快照本體；沿用既有的 _manifest_entry()（讀不到回 None，
+    任何例外都吞掉），不新增任何檔案存取路徑。
+    """
+    floor = gcfg.get("min_parser_version")
+    if floor is None:
+        return True, ""
+    entries = {}
+    for d in (d_old, d_new):
+        e = _manifest_entry(d, source)
+        if e is None:
+            return False, "%s 的 manifest 查無 %s 紀錄（fail-closed）" % (d, source)
+        pv = e.get("parser_version")
+        if not isinstance(pv, int) or isinstance(pv, bool):
+            return False, ("%s 的 manifest parser_version=%r 非整數（fail-closed）" % (d, pv))
+        if pv < floor:
+            return False, ("%s 的 parser_version=%d 低於下限 %d，"
+                           "舊解析器產出的快照不可與新版比對" % (d, pv, floor))
+        entries[d] = pv
+    if entries[d_old] != entries[d_new]:
+        return False, ("parser_version 兩日不同（%d → %d），解析器改版當天不比對"
+                       % (entries[d_old], entries[d_new]))
+    return True, ("parser_version 兩日皆為 %d（>= 下限 %d）" % (entries[d_new], floor))
+
+
 def main():
     # --------------------------------------------------------------------
     # 第一階段（x402_bazaar，SOURCES）：本迴圈與下方三行 summary print 自 commit
@@ -2877,6 +3406,7 @@ def main():
     g_normal = g_gate_fail = g_breaker = 0
     g_breaker_marked = g_not_to_events = 0
     g_total_flapped = g_flap_rewritten = 0  # 本輪新增（做法 2 抖動標記），見 annotate_flaps()
+    g_total_renamed = 0  # 第五階段新增（2026-09-08，任務 0908-1）：RENAMED 事件計數
     any_group_source = False
     for source, scfg in GROUP_SOURCES.items():
         any_group_source = True
@@ -2896,10 +3426,12 @@ def main():
             n_delisted = sum(1 for e in fresh if e["event"] == "DELISTED")
             n_reappeared = sum(1 for e in fresh if e["event"] == "REAPPEARED")
             n_status = sum(1 for e in fresh if e["event"] == "STATUS_CHANGED")
+            n_renamed = sum(1 for e in fresh if e["event"] == "RENAMED")
             g_total_listed += n_listed
             g_total_delisted += n_delisted
             g_total_reappeared += n_reappeared
             g_total_status += n_status
+            g_total_renamed += n_renamed
             judged_summary = ",".join("%s=%s" % (g, gr["judged"]) for g, gr in group_results.items())
             for gr in group_results.values():
                 if gr["judged"] == "GATE_FAIL":
@@ -2915,6 +3447,13 @@ def main():
             print("%s: %s->%s [%s] 新事件 listed=%d delisted=%d reappeared=%d status_changed=%d%s"
                   % (source, d_old, d_new, judged_summary, n_listed, n_delisted, n_reappeared, n_status,
                      "  [ALERT-DELIST.md 已寫入]" if alert_written else ""))
+            # 第五階段新增（2026-09-08，任務 0908-1）：改名是罕見事件，用**獨立的一行**
+            # 印出來，刻意不塞進上面那行既有格式——上面那行的字面格式自第二階段起未變，
+            # 下游若有人在 grep 它，本輪不承擔打壞它的風險。只有真的有改名的日子才會多印
+            # 這一行（實測 12 組配對只有 2026-09-06 一天會印），其餘日子 stdout 逐位元組不變。
+            if n_renamed:
+                print("%s: %s->%s 上游改名 %d 筆，已寫入 events.jsonl（事件型別 RENAMED）"
+                      % (source, d_old, d_new, n_renamed))
             all_index_entries.extend(entries)
         # 本輪新增（2026-09-07，做法 2 抖動標記）：本來源的全歷史配對跑完之後，對這份
         # events.jsonl 重算一次抖動標記並回寫。放在這裡而不是每組配對之後，是因為抖動要
@@ -2951,6 +3490,9 @@ def main():
           "status_filtered=%d filter_log=%s"
           % (g_total_flapped, g_flap_rewritten, FLAP_WINDOW_DAYS,
              len(load_status_filter_seen(refresh=True)), STATUS_FILTER_LOG))
+    # 第五階段新增（2026-09-08，任務 0908-1）：獨立一行，格式與既有四行 SUMMARY 同構，
+    # 既有四行逐字元未動。
+    print("SUMMARY(RENAMED) renamed_events=%d" % g_total_renamed)
     return 0
 
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-scripts/hf_sync.py — 把軌一 4 個大型來源的歷史快照同步備份到 Hugging Face 私有 dataset
+scripts/hf_sync.py — 把軌一 5 個大型來源的歷史快照同步備份到 Hugging Face 私有 dataset
 
 ## 背景
-`.gitignore` 排除了 4 個軌一大型來源的快照檔（*.json.gz)：
-x402_bazaar、cex_symbols、mcp_registry、vast_gpu（累積 3 個月後才考慮改發布到
-Hugging Face Datasets）。這 4 個來源的原始快照因此只存在 VPS 單一副本，
-VPS 毀損就永久遺失。本程式把這 4 個來源目錄的**全部檔案**（.json.gz 快照、
+`.gitignore` 排除了 5 個軌一大型來源的快照檔（*.json.gz)：
+x402_bazaar、cex_symbols、mcp_registry、vast_gpu、mcp_smithery（累積 3 個月後才
+考慮改發布到 Hugging Face Datasets）。這 5 個來源的原始快照因此只存在 VPS 單一副本，
+VPS 毀損就永久遺失。本程式把這 5 個來源目錄的**全部檔案**（.json.gz 快照、
 .stats.json、事件日誌等）以及 track-crypto/data/_manifest/ 同步到一個
 Hugging Face **私有** dataset repo，當作第三副本（異地備份），不涉及對外公開。
 
@@ -28,7 +28,11 @@ Hugging Face **私有** dataset repo，當作第三副本（異地備份），�
    絕不整段印出；任何要印出的錯誤訊息都會先做 token 字面值的遮蔽處理。
    任何要印出的祕密資訊，一律只印「長度」「前 3 碼」「sha256 前 16 碼」。
 6. **失敗要響**：任何一步失敗都印清楚的錯誤訊息到 stderr 並以非 0 結束碼結束，
-   方便日後掛進 push.sh 用 `$?` 判斷（本程式目前**尚未**掛進 push.sh）。
+   供 push.sh 用 `$?` 判斷。
+   （2026-09-08 更正：原文寫「本程式目前**尚未**掛進 push.sh」已不成立——
+   commit 2f60aff（2026-09-04）新增本程式的同一個 commit 就已把它掛進
+   `scripts/push.sh` 第 4d 步，每日 11:30 隨 push 執行，最後一次成功為
+   2026-09-08 11:33，見 logs/hf_sync.log。）
 
 ## 用法
     python3 scripts/hf_sync.py                    # 一般同步（增量、冪等）
@@ -76,7 +80,16 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 # 常數
 # ---------------------------------------------------------------------------
 
-SOURCE_SUBDIRS = ["x402_bazaar", "cex_symbols", "mcp_registry", "vast_gpu"]
+# ⚠️ 本清單必須與專案根目錄 .gitignore 排除的 `track-crypto/data/<來源>/*.json.gz`
+# 逐項對應。.gitignore 排除掉的來源在 GitHub 上就沒有第二份副本，只有列在這裡才有
+# Hugging Face 私有 dataset 的異地備份；漏列 = 該來源只剩 VPS 單一副本（單點風險）。
+# 2026-09-08 新增 mcp_smithery（使用者裁示「4. 按照建議」）：該來源 adapter 於
+# 2026-09-07 修好覆蓋率後每日快照由 83 KB 變成 2.85 MB，同日一併加入 .gitignore，
+# 因此必須同時加入本清單。加入前實測遠端 0 個 mcp_smithery 檔案，回補 12 天
+# （24 檔，3,772,118 B）後 HF repo 由 114.51 MB 增至約 118.28 MB；HF 免費帳號
+# 私有 dataset 上限 100 GB（https://huggingface.co/docs/hub/storage-limits，
+# 2026-09-08 查），年增約 1.04 GB，容量不構成限制。
+SOURCE_SUBDIRS = ["x402_bazaar", "cex_symbols", "mcp_registry", "vast_gpu", "mcp_smithery"]
 MANIFEST_SUBDIR = "_manifest"
 DATA_REL = "track-crypto/data"
 STATE_PATH_IN_REPO = "_sync_state/sha256_manifest.json"
@@ -98,8 +111,8 @@ license: unknown
 **這是私有 dataset，不是公開發布。**
 
 本 repo 是 `public-api-timeseries` 專案（VPS 每日快照）的**第三副本異地備份**，
-只包含 `.gitignore` 排除、未進 GitHub 的 4 個軌一大型來源歷史快照
-（`x402_bazaar`、`cex_symbols`、`mcp_registry`、`vast_gpu`）以及
+只包含 `.gitignore` 排除、未進 GitHub 的 5 個軌一大型來源歷史快照
+（`x402_bazaar`、`cex_symbols`、`mcp_registry`、`vast_gpu`、`mcp_smithery`）以及
 `track-crypto/data/_manifest/`（每日執行證明）。
 
 - 由 `scripts/hf_sync.py` 產生與維護（增量、冪等，只上傳遠端沒有或雜湊不同的檔案）。
@@ -209,7 +222,7 @@ def iter_scope_dirs(repo_root: Path):
 
 
 def build_local_index(repo_root: Path, log=print) -> "dict[str, LocalFile]":
-    """列舉 4 個來源目錄＋_manifest 目錄底下的『所有檔案』（不遞迴子目錄，
+    """列舉 SOURCE_SUBDIRS 全部來源目錄＋_manifest 目錄底下的『所有檔案』（不遞迴子目錄，
     這些目錄本身就是平的），計算 sha256。回傳 relpath -> LocalFile。"""
     index: "dict[str, LocalFile]" = {}
     for name, d in iter_scope_dirs(repo_root):

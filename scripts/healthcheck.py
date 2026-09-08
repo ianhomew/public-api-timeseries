@@ -711,7 +711,7 @@ def check_delist_gate_fail():
     ] + [
         "",
         ("以上來源（或子集合）本次轉換的自清單消失／新增判定**已跳過**（不寫 LISTED／"
-         "DELISTED／REAPPEARED／STATUS_CHANGED），原始快照本身仍照常保存，只是這次轉換"
+         "DELISTED／REAPPEARED／RENAMED／STATUS_CHANGED），原始快照本身仍照常保存，只是這次轉換"
          "不參與比對。人類可讀細節見對應 `changes/<source>/%s.md`。" % TODAY),
         "",
         ("排查建議：檢查對應來源的 adapter 是否變更或暫時性故障"

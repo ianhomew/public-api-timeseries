@@ -38,6 +38,11 @@ mut_dd_reappeared 錨點不唯一問題、新增第二階段（GROUP_SOURCES 多
                          預設 /tmp/selftest/selftest-run-<timestamp>-<pid>。
   SELFTEST_SKIP_MUTANTS  設為 1 時只跑「正常檢查」，略過「破壞驗證」（加速用；
                          預設兩者都跑，見 docs/selftest.md 的時間預算實測）。
+  SELFTEST_KEEP          設為 1 時不論全數 PASS 或有 FAIL，一律保留 WORKDIR。
+                         預設行為（2026-09-08 新增）：全數 PASS 時執行結束自動
+                         shutil.rmtree(WORKDIR)；有 FAIL 時本來就會保留供除錯，
+                         不受這個旗標影響。這個旗標是給「PASS 也想留著手動核對
+                         沙盒內容」的情境，見 docs/selftest.md「WORKDIR 自清」一節。
 """
 import argparse
 import contextlib
@@ -74,6 +79,7 @@ TARGET_REL = {
     "daily_report":      "scripts/daily_report.py",
     "snap_gov":          "track-gov/scripts/snap_gov.py",   # 輔助：揮發性欄位守門實作位置見 docs/selftest.md
     "snap_crypto":       "track-crypto/scripts/snap_crypto.py",  # SPEC-manifest-fields.md，2026-09-03 新增
+    "selftest":          "scripts/selftest.py",  # 2026-09-08 新增：WORKDIR 自清防呆的自測用（見檔案尾端）
 }
 
 
@@ -3946,6 +3952,1149 @@ def chk_dd_x402_gate_legacy_range(is_mutant):
                   "區間外 n=100 judged=%s(期望 GATE_FAIL)"
                   % (lo, hi, n_in, judged_in, judged_out))
 
+# ==========================================================================
+# 第 5 種事件型別 RENAMED（2026-09-08 新增，任務 0908-1）
+#
+# 背景：任務 B（2026-09-07）加了「上游改名抵銷層」，讓改名不再被誤判成
+# DELISTED＋LISTED，但刻意**不寫任何事件**——代價是 events.jsonl 對改名完全沉默，
+# 只讀事件流的下游會看到「一個主鍵無聲消失、另一個主鍵無聲出現」
+# （docs/0907-B-rename-key-report.md §9.4 第 1 項自陳）。使用者裁示「要看到改名」，
+# 因此本輪把改名升格為第 5 種事件型別 RENAMED。
+#
+# 以下 4 條檢查鎖住的 4 件事：
+#   1. renamed_event                改名必須真的產生 RENAMED 事件（而且不產生假 DELISTED／LISTED）
+#   2. renamed_event_key_direction  key／from_key 是**舊**主鍵、to_key 是**新**主鍵（方向不可反）
+#   3. renamed_event.real_replay    真實歷史快照（2026-09-06 Stake DAO）產生剛好 2 筆，
+#                                   且真實消失（MORE Markets）不會被誤記成 RENAMED
+#   4. renamed_event_append_safety  RENAMED 對 write_events() 冪等，且 annotate_flaps()
+#                                   一個位元組都不會動到 RENAMED 的行
+# ==========================================================================
+
+def mut_dd_renamed_event(text):
+    """目標：build_group_events() 裡把 renamed_pairs 轉成 RENAMED 事件的迴圈
+（第五階段新增）。把迭代對象換成空 tuple，等於「改名又變回不寫事件」——
+精確重現任務 B 的舊行為，也就是本輪要修掉的那個缺口。
+
+刻意只改 for 那一行、保留整個迴圈本體：這樣突變後語法仍然合法、
+其餘程式碼逐字元不動，破壞驗證停在「事件沒被產生」這個要測的行為上。
+
+錨點唯一性：`for k_old, k_new, sid in (` 這個字面在 detect_delistings.py 裡
+只有 build_group_events() 這一處（reconcile_renames() 內部用的是
+`for k_old in removed_keys:`，字面不同），實測 count==1。"""
+    return apply_mutation(
+        text,
+        '    for k_old, k_new, sid in (r.get("renamed_pairs") or ()):',
+        '    for k_old, k_new, sid in ():  # [selftest mutant] RENAMED emission disabled',
+        "dd_renamed_event")
+
+
+def mut_dd_renamed_direction(text):
+    """目標：RENAMED 事件的**方向欄位**。把 from_key／to_key 對調，模擬
+「新舊主鍵寫反」這種讀起來完全合理、但語意整個顛倒的迴歸。
+
+為什麼這件事值得一條專屬破壞驗證：events.jsonl 的 key 欄位語意本來就隨
+event 型別而異（DELISTED＝消失的鍵、LISTED＝出現的鍵、STATUS_CHANGED＝續存的鍵），
+RENAMED 一次牽涉兩個鍵，方向寫反的話下游會把「改名前」當成「改名後」，
+而且因為兩個字串都存在、格式也都合法，**不會有任何例外或型別錯誤**——
+只能靠不變量把它釘住。"""
+    return apply_mutation(
+        text,
+        '                            "from_key": k_old, "to_key": k_new, "stable_id": sid,',
+        '                            "from_key": k_new, "to_key": k_old, "stable_id": sid,'
+        '  # [selftest mutant] rename direction swapped',
+        "dd_renamed_direction")
+
+
+def mut_dd_flap_skips_non_status(text):
+    """目標：annotate_flaps() 的「非 STATUS_CHANGED 的行原樣保留」保護
+（該函式 docstring 第 2 點自陳的三層保護之一）。拿掉 event 型別判斷之後，
+RENAMED（以及未來任何新型別）的行會一起走進「重算標記並重新序列化」的路徑。
+
+錨點唯一性：flap_marks() 裡也有一句 `e.get("event") != "STATUS_CHANGED"`，
+但它的下一行是 `continue`，不是 `out_lines.append(ln)`——本錨點含這兩行後續，
+只會精確命中 annotate_flaps() 那一處，實測 count==1。
+（比照 docs/selftest-fix-report.md §2.1 的教訓：平行函式共用同一句判斷式時，
+錨點必須延伸到足以區分兩者的後續行。）"""
+    return apply_mutation(
+        text,
+        '        if not isinstance(e, dict) or e.get("event") != "STATUS_CHANGED":\n'
+        '            out_lines.append(ln)\n'
+        '            continue',
+        '        if not isinstance(e, dict):'
+        '  # [selftest mutant] non-STATUS_CHANGED rows no longer protected\n'
+        '            out_lines.append(ln)\n'
+        '            continue',
+        "dd_flap_skips_non_status")
+
+
+_RENAME_GCFG = {"path": ("items",), "shape": "list", "key_field": ("name", "date"),
+                "desc_field": "name", "completeness": "total_match", "total_fields": ("count",),
+                "status_fields": (), "breaker_pct": 50.0, "abs_floor": 5,
+                "stable_id_fields": ("defillamaId", "date")}
+
+
+def _rename_pair_data():
+    """兩份合成快照：共同的 8 筆不動，第 9 筆被上游改名（穩定識別不變），
+    另有 1 筆是當日真正的新增（沒有 defillamaId，不可能被抵銷）。"""
+    common = [{"name": "P%d" % i, "date": 100 + i, "defillamaId": str(700 + i)} for i in range(8)]
+    old = common + [{"name": "Stake DAO", "date": 900, "defillamaId": "249"}]
+    new = common + [{"name": "Stake DAO Yield", "date": 900, "defillamaId": "249"},
+                    {"name": "Brand New", "date": 901, "defillamaId": None}]
+    return ({"items": old, "count": len(old)}, {"items": new, "count": len(new)})
+
+
+@check("detect_delistings.renamed_event", mutate_target="detect_delistings",
+       mutate=mut_dd_renamed_event)
+def chk_dd_renamed_event(is_mutant):
+    """核心不變量：被抵銷層判定為「上游改名」的一組主鍵，**必須**在事件流裡
+    留下剛好一筆 RENAMED，而且**不可以**同時留下 DELISTED 或 LISTED。
+
+    同一組資料裡刻意混一筆真正的新增（Brand New，沒有 defillamaId 所以
+    stable_identity() 回 None、不可能被抵銷），用來確認本輪的新迴圈沒有把
+    正常的 LISTED 路徑弄壞——「該寫的照寫、不該寫的不寫」兩個方向同時驗。
+
+    欄位層級一併驗完整：from／to 必須是改名前後的人類可讀描述，
+    stable_id 必須等於判定用的穩定識別，stable_id_fields 必須如實記下
+    是用哪些欄位判定的（讓每一筆 RENAMED 都能被獨立複核）。"""
+    sandbox = new_sandbox("dd_renamed_mut" if is_mutant else "dd_renamed")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_renamed_event(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    d_old, d_new = _rename_pair_data()
+    r = mod.compare_group("selftest_rename_src", "grp", _RENAME_GCFG, d_old, d_new)
+    judged = mod.judge(r, _RENAME_GCFG)
+    events, _ = mod.build_group_events("selftest_rename_src", "grp", _RENAME_GCFG, r, judged,
+                                        "2030-08-02", {})
+    ren = [e for e in events if e["event"] == "RENAMED"]
+    listed = [e for e in events if e["event"] == "LISTED"]
+    delisted = [e for e in events if e["event"] == "DELISTED"]
+    fields_ok = False
+    if len(ren) == 1:
+        e = ren[0]
+        fields_ok = (e["date"] == "2030-08-02" and e["source"] == "selftest_rename_src"
+                     and e["group"] == "grp"
+                     and e["from"] == "Stake DAO" and e["to"] == "Stake DAO Yield"
+                     and e["stable_id"] == "249\x1f900"
+                     and e["stable_id_fields"] == ["defillamaId", "date"])
+    guard_active = (judged == "NORMAL" and len(ren) == 1 and fields_ok
+                    and len(delisted) == 0 and len(listed) == 1
+                    and listed[0]["key"] == "brand new\x1f901")
+    return Result(guard_active,
+                  "judged=%s(期望NORMAL) RENAMED=%d(期望1) DELISTED=%d(期望0) LISTED=%d(期望1，"
+                  "只有真正新增的 Brand New) 欄位齊全=%r(期望True) RENAMED內容=%r"
+                  % (judged, len(ren), len(delisted), len(listed), fields_ok, ren))
+
+
+@check("detect_delistings.renamed_event_key_direction", mutate_target="detect_delistings",
+       mutate=mut_dd_renamed_direction)
+def chk_dd_renamed_event_key_direction(is_mutant):
+    """核心不變量：RENAMED 的 key／from_key 必須是**舊**主鍵、to_key 必須是**新**主鍵。
+
+    不是用字串字面去比對（那只會鎖死測試資料），而是回到兩份快照的**事實**去驗：
+      - from_key 必須「在前日快照裡、且不在當日快照裡」（＝真的消失了）
+      - to_key   必須「在當日快照裡、且不在前日快照裡」（＝真的是新出現的）
+      - key == from_key（本欄位的既有語意：DELISTED 也是放消失的那個鍵）
+    這三條同時成立，方向就不可能寫反。
+
+    為什麼 key 取舊主鍵：舊主鍵才是從當日快照消失的那一個，追蹤它的下游
+    若查不到任何事件就會誤判為資料靜默遺失——那正是本輪要修掉的失效模式。"""
+    sandbox = new_sandbox("dd_rendir_mut" if is_mutant else "dd_rendir")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_renamed_direction(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    d_old, d_new = _rename_pair_data()
+    r = mod.compare_group("selftest_rename_src", "grp", _RENAME_GCFG, d_old, d_new)
+    judged = mod.judge(r, _RENAME_GCFG)
+    events, _ = mod.build_group_events("selftest_rename_src", "grp", _RENAME_GCFG, r, judged,
+                                        "2030-08-02", {})
+    ren = [e for e in events if e["event"] == "RENAMED"]
+    ko, kn = set(r["keyed_old"]), set(r["keyed_new"])
+    ok_from = ok_to = ok_key = False
+    if len(ren) == 1:
+        e = ren[0]
+        ok_from = (e["from_key"] in ko) and (e["from_key"] not in kn)
+        ok_to = (e["to_key"] in kn) and (e["to_key"] not in ko)
+        ok_key = (e["key"] == e["from_key"])
+    guard_active = (len(ren) == 1 and ok_from and ok_to and ok_key)
+    return Result(guard_active,
+                  "RENAMED=%d(期望1) from_key只在前日快照=%r(期望True) "
+                  "to_key只在當日快照=%r(期望True) key==from_key=%r(期望True) 實際=%r"
+                  % (len(ren), ok_from, ok_to, ok_key,
+                     [(e.get("key"), e.get("from_key"), e.get("to_key")) for e in ren]))
+
+
+@check("detect_delistings.renamed_event.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_renamed_event)
+def chk_dd_renamed_event_real_replay(is_mutant):
+    """real-replay：crypto_project_liveness 真實歷史快照（VPS 正式資料，唯讀複製），
+    用真實 GROUP_SOURCES 設定，把「事件流看得見改名」這件事釘在真實資料上。
+
+    (a) 2026-09-05→09-06：真實發生過的 Stake DAO → Stake DAO Yield（defillamaId
+        兩天都是 "249"，兩筆 date 1773273600／1779840000）必須產生**剛好 2 筆**
+        RENAMED，且兩筆的 to_key 都指向 "stake dao yield"、stable_id 都是 249＋date。
+        同一天真正新增的 2 筆（Dream Health Chain／Reddio RedSonic）仍是 LISTED。
+
+    (b) 2026-09-01→09-02：真實發生過的**唯一一次真實消失**（MORE Markets）
+        必須是 1 筆 DELISTED、**0 筆 RENAMED**——真實消失不可以被誤記成改名。
+        這一半在突變後仍會通過，刻意與 (a) 綁在同一條檢查裡，讓「改名看得見」與
+        「消失不會被改名吃掉」是同一個驗收單位，不會日後被人各自放寬
+        （手法比照既有 detect_delistings.rename_reconcile.real_replay）。"""
+    sandbox = new_sandbox("dd_renreal_mut" if is_mutant else "dd_renreal")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_renamed_event(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES["crypto_project_liveness"]["groups"]["_hacks"]
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/crypto_project_liveness")
+    need = ["2026-09-05.json.gz", "2026-09-06.json.gz", "2026-09-01.json.gz", "2026-09-02.json.gz"]
+    if not all(os.path.exists(os.path.join(src_dir, n)) for n in need):
+        return Result(False, "找不到真實 crypto_project_liveness 歷史快照，無法做 real-replay 驗證")
+    paths = [install_binary_copy(os.path.join(src_dir, n), sandbox, n) for n in need]
+    j05, j06, j01, j02 = [mod.load(p) for p in paths]
+
+    r_a = mod.compare_group("crypto_project_liveness", "_hacks", gcfg, j05["data"], j06["data"])
+    ev_a, _ = mod.build_group_events("crypto_project_liveness", "_hacks", gcfg, r_a,
+                                      mod.judge(r_a, gcfg), "2026-09-06", {})
+    ren_a = [e for e in ev_a if e["event"] == "RENAMED"]
+    listed_a = [e for e in ev_a if e["event"] == "LISTED"]
+    delisted_a = [e for e in ev_a if e["event"] == "DELISTED"]
+    sids_a = sorted(e["stable_id"] for e in ren_a)
+    to_ok = all(isinstance(e.get("to_key"), str)
+                and e["to_key"].split("\x1f")[0] == "stake dao yield" for e in ren_a)
+    from_ok = all(isinstance(e.get("from_key"), str)
+                  and e["from_key"].split("\x1f")[0] == "stake dao" for e in ren_a)
+
+    r_b = mod.compare_group("crypto_project_liveness", "_hacks", gcfg, j01["data"], j02["data"])
+    ev_b, _ = mod.build_group_events("crypto_project_liveness", "_hacks", gcfg, r_b,
+                                      mod.judge(r_b, gcfg), "2026-09-02", {})
+    ren_b = [e for e in ev_b if e["event"] == "RENAMED"]
+    del_b = [e for e in ev_b if e["event"] == "DELISTED"]
+    mm_ok = (len(del_b) == 1 and del_b[0]["key"].split("\x1f")[0] == "more markets")
+
+    guard_active = (len(ren_a) == 2 and sids_a == ["249\x1f1773273600", "249\x1f1779840000"]
+                    and to_ok and from_ok and len(delisted_a) == 0 and len(listed_a) == 2
+                    and len(ren_b) == 0 and mm_ok)
+    return Result(guard_active,
+                  "(a)09-05->09-06：RENAMED=%d(期望2) stable_id=%r(期望249+兩個date) "
+                  "to_key全指向stake dao yield=%r(期望True) from_key全是stake dao=%r(期望True) "
+                  "DELISTED=%d(期望0) LISTED=%d(期望2)；"
+                  "(b)09-01->09-02：RENAMED=%d(期望0) DELISTED=1且為more markets=%r(期望True)"
+                  % (len(ren_a), sids_a, to_ok, from_ok, len(delisted_a), len(listed_a),
+                     len(ren_b), mm_ok))
+
+
+@check("detect_delistings.renamed_event_append_safety", mutate_target="detect_delistings",
+       mutate=mut_dd_flap_skips_non_status)
+def chk_dd_renamed_event_append_safety(is_mutant):
+    """RENAMED 加進事件流之後，**不可以**破壞既有的兩條「只追加」保證：
+
+    (1) write_events() 冪等：同一筆 RENAMED 重跑不得重複寫入。去重鍵是
+        (date, source, group, key, event)，RENAMED 沿用不改——這裡實測驗一次，
+        因為 RENAMED 的 key 是舊主鍵，與同一天可能存在的其他事件共用鍵空間。
+
+    (2) annotate_flaps() 不得動到 RENAMED 的行。抖動標記是本程式**唯一**一處
+        非附加寫入（會整份重寫 events.jsonl），它的契約是「非 STATUS_CHANGED 的行
+        原樣保留」。這裡刻意在 RENAMED 那一行放一個**不該存在**的 flapped 欄位：
+        契約成立時該行連同這個多餘欄位一起被逐位元組保留（抖動邏輯根本不該碰它）；
+        契約被破壞時該行會被重新序列化、flapped 被清掉，位元組隨即改變。
+        用「多餘欄位」而不是「正常行」當探針，是因為正常行重新序列化後
+        位元組可能剛好相同，測不出保護是否還在。
+
+    同時驗 STATUS_CHANGED 那一對**仍然**被正常標記——避免有人為了讓本檢查通過
+    而把整個抖動功能關掉。"""
+    sandbox = new_sandbox("dd_renappend_mut" if is_mutant else "dd_renappend")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_flap_skips_non_status(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+
+    # (1) write_events() 冪等
+    jp = os.path.join(sandbox, "track-crypto/data/selftest_rename_src/events.jsonl")
+    os.makedirs(os.path.dirname(jp), exist_ok=True)
+    d_old, d_new = _rename_pair_data()
+    r = mod.compare_group("selftest_rename_src", "grp", _RENAME_GCFG, d_old, d_new)
+    judged = mod.judge(r, _RENAME_GCFG)
+    evs, _ = mod.build_group_events("selftest_rename_src", "grp", _RENAME_GCFG, r, judged,
+                                     "2030-08-02", {})
+    seen = mod.load_seen(jp)
+    fresh1 = mod.write_events(jp, evs, seen)
+    seen.update((e["date"], e["source"], e["group"], e["key"], e["event"]) for e in fresh1)
+    fresh2 = mod.write_events(jp, evs, seen)
+    seen3 = mod.load_seen(jp)          # 重新從檔案載入，模擬下一次排程執行
+    fresh3 = mod.write_events(jp, evs, seen3)
+    n_ren1 = sum(1 for e in fresh1 if e["event"] == "RENAMED")
+    idem_ok = (n_ren1 == 1 and len(fresh2) == 0 and len(fresh3) == 0)
+
+    # (2) annotate_flaps() 不得動到 RENAMED 的行
+    fp = os.path.join(sandbox, "track-crypto/data/selftest_flapren_src/events.jsonl")
+    os.makedirs(os.path.dirname(fp), exist_ok=True)
+    ren_line = ('{"date": "2030-01-01", "source": "S", "group": "g", "key": "OLD",'
+                ' "event": "RENAMED", "from": "Old", "to": "New", "from_key": "OLD",'
+                ' "to_key": "NEW", "stable_id": "sid1", "stable_id_fields": ["id"],'
+                ' "flapped": true}')
+    sc1 = ('{"date": "2030-01-01", "source": "S", "group": "g", "key": "K1",'
+           ' "event": "STATUS_CHANGED", "from": {"f": false}, "to": {"f": true}}')
+    sc2 = ('{"date": "2030-01-02", "source": "S", "group": "g", "key": "K1",'
+           ' "event": "STATUS_CHANGED", "from": {"f": true}, "to": {"f": false}}')
+    with open(fp, "w", encoding="utf-8") as f:
+        f.write(ren_line + "\n" + sc1 + "\n" + sc2 + "\n")
+    n_marks, n_rewritten = mod.annotate_flaps(fp)
+    after = open(fp, encoding="utf-8").read().split("\n")
+    ren_intact = (after[0] == ren_line)
+    sc_marked = sum(1 for ln in after if ln.strip()
+                    and json.loads(ln).get("event") == "STATUS_CHANGED"
+                    and json.loads(ln).get("flapped") is True)
+
+    guard_active = (idem_ok and ren_intact and n_marks == 2 and sc_marked == 2)
+    return Result(guard_active,
+                  "(1)冪等：首次RENAMED=%d(期望1) 第2次新事件=%d(期望0) 重載後第3次=%d(期望0)；"
+                  "(2)annotate_flaps：RENAMED該行逐位元組不變=%r(期望True) "
+                  "抖動標記數=%d(期望2) 被標記的STATUS_CHANGED=%d(期望2) 改寫行數=%d"
+                  % (n_ren1, len(fresh2), len(fresh3), ren_intact, n_marks, sc_marked, n_rewritten))
+
+
+
+# ==========================================================================
+# WORKDIR 自清（2026-09-08 新增，原 G 報告 tmp 清理建議之一：selftest.py 每次
+# 執行都會在 /tmp/selftest/ 建一個新 WORKDIR，先前無論成敗都不清理，是 /tmp
+# 累積量最大的單一來源（見 docs/0908-2-alert-selftest-report.md、
+# docs/0907-G-tmp-cleanup.md）。只在全數 PASS 時自動清除；FAIL 時保留供除錯；
+# SELFTEST_KEEP=1 可強制保留（不論成敗）。見 docs/selftest.md「WORKDIR 自清」一節。
+# ==========================================================================
+
+_WORKDIR_DANGEROUS_PATHS = {
+    "/", "/root", "/home", "/tmp", "/etc", "/usr", "/bin", "/var", "/opt",
+    "/srv", "/boot", "/dev", "/lib", "/lib64", "/proc", "/sbin", "/sys",
+    "/mnt", "/media", os.path.expanduser("~"),
+}
+
+
+def _workdir_is_safe_to_delete(path):
+    """純判斷（唯讀，不刪除任何東西、不做任何檔案系統寫入）：這個路徑能不能被
+    WORKDIR 自清機制自動 shutil.rmtree()。四層防呆，任何一層不通過就整體回傳
+    (False, 理由字串)：
+      1. 路徑無法正規化，或正規化後為空字串／等於系統根目錄 "/"。
+      2. 命中系統層級目錄黑名單（常見掛載點、家目錄，含 "/tmp" 本身——WORKDIR
+         必須是 /tmp 底下的子目錄，絕不能是 /tmp 這一層本身，否則等於清空
+         整個 /tmp）。
+      3. 正規化後路徑深度 < 2 層（例如 "/tmp"，雙重防護，即使黑名單漏列也擋得住）。
+      4. 不是以 "/tmp/" 開頭——selftest.py 的沙盒契約是「所有輸出一律寫在 /tmp
+         底下」（見模組 docstring「設計原則」第 1 點），自動清除只信任這個範圍
+         內的路徑；呼叫端若把 SELFTEST_WORKDIR 指到 /tmp 之外，自動清除會直接
+         放棄並在輸出說明原因，需要的話自行清理，不會嘗試刪除。
+
+    全部通過才回傳 (True, 正規化後路徑)。本函式完全不觸碰檔案系統（只有
+    os.path.abspath 字串運算），可以放心對任意路徑字串呼叫，不必擔心副作用——
+    真正的刪除動作只會在 _safe_rmtree_workdir() 裡、且是本函式回傳 True 之後
+    才會發生。"""
+    try:
+        ap = os.path.abspath(path)
+    except Exception:
+        return False, "路徑無法正規化"
+    if not ap or ap == os.sep:
+        return False, "路徑為空或等於根目錄"
+    if ap in _WORKDIR_DANGEROUS_PATHS:
+        return False, "路徑命中系統目錄黑名單: %s" % ap
+    parts = [p for p in ap.split(os.sep) if p]
+    if len(parts) < 2:
+        return False, "路徑深度不足（%d 層）: %s" % (len(parts), ap)
+    if not ap.startswith("/tmp" + os.sep):
+        return False, "路徑不在 /tmp 底下，基於安全考量不自動清除: %s" % ap
+    return True, ap
+
+
+def _safe_rmtree_workdir(path):
+    """實際清除 WORKDIR：先呼叫 _workdir_is_safe_to_delete() 做唯讀判斷，只有
+    通過、且該路徑確實是既存目錄，才呼叫 shutil.rmtree()。任何一關不過就整個
+    放棄刪除（寧可少清，不可誤刪）。刪除本身失敗（例如權限問題）也不拋出例外，
+    只回報失敗——清理是錦上添花，不該讓一次全數 PASS 的執行因為清理失敗而回報
+    非 0 結束碼。回傳 (是否已清除, 說明字串)。"""
+    ok, info = _workdir_is_safe_to_delete(path)
+    if not ok:
+        return False, info
+    if not os.path.isdir(info):
+        return False, "路徑不是既存目錄，無需清除: %s" % info
+    try:
+        shutil.rmtree(info)
+    except Exception as e:
+        return False, "shutil.rmtree 失敗（%s），WORKDIR 保留" % e
+    return True, info
+
+
+def _finalize_workdir(any_fail):
+    """WORKDIR 收尾決策：全數 PASS 時自動清除，FAIL 時保留（供除錯），
+    SELFTEST_KEEP=1 時不論成敗一律保留。回傳 (動作, 說明文字)，
+    動作 in {"cleaned", "kept"}；由呼叫端（main()）決定要不要印出，方便自測
+    直接呼叫、檢查回傳值即可，不必攔截 stdout。"""
+    keep_forced = os.environ.get("SELFTEST_KEEP") == "1"
+    if any_fail:
+        return "kept", "WORKDIR 保留（有 FAIL，供除錯）：%s" % WORKDIR_ROOT
+    if keep_forced:
+        return "kept", "WORKDIR 保留（SELFTEST_KEEP=1 強制保留）：%s" % WORKDIR_ROOT
+    cleaned, info = _safe_rmtree_workdir(WORKDIR_ROOT)
+    if cleaned:
+        return "cleaned", "WORKDIR 已清除（全數 PASS）：%s" % info
+    return "kept", "WORKDIR 未清除（%s）：%s" % (info, WORKDIR_ROOT)
+
+
+def _install_st(sandbox, text):
+    """selftest.py 用 __file__ 動態推算 HERE/REPO_SELF，放在 <sandbox>/scripts/
+    底下，路徑結構與正式部署位置一致（比照全檔案一致的安裝慣例；本檢查實際上
+    只呼叫模組內的純函式，不執行 main()/run_all()，不受這個路徑推算影響）。"""
+    return install_text(sandbox, "scripts/selftest.py", text)
+
+
+def mut_st_workdir_guard(text):
+    """關掉 WORKDIR 自清防呆的「必須在 /tmp 底下」這一關，模擬這道防線被誤刪／
+    改壞的情況。對應檢查 selftest.workdir_cleanup_guard。
+    本檢查全程只呼叫唯讀的判斷函式，即使在 #mutant（防呆被拆掉）的情況下，也
+    絕對不會真的對危險路徑呼叫 shutil.rmtree()——只驗證「決策」，不驗證「動作」，
+    見 chk_st_workdir_cleanup_guard() docstring。
+
+    錨點文字刻意拆成兩段字串相加組出來（執行期串接後與目標行完全相同），避免
+    這個 apply_mutation() 呼叫的原始碼本身（也在 scripts/selftest.py 這個檔案裡）
+    被 text.count(anchor) 算成第二個相符——這是本檔第一支「測試對象是
+    selftest.py 自己」的 mutation，read_source("selftest") 讀到的是整個檔案，
+    包含本函式自己的原始碼；若錨點字串在這裡完整連續出現，就會撞見
+    apply_mutation() 的「錨點必須唯一」保護（本輪實測就先撞過一次這個問題，
+    見 docs/0908-2-alert-selftest-report.md）。其餘既有 mut_* 都是測試外部程式
+    （detect_changes.py／detect_delistings.py／cex_events.py／healthcheck.py／
+    daily_report.py），錨點文字與被搜尋的檔案是不同檔案，不會有這個問題。"""
+    anchor = '    if not ap.startswith("/tmp" ' + '+ os.sep):'
+    return apply_mutation(
+        text, anchor,
+        '    if False:  # [selftest mutant] /tmp-only workdir guard disabled',
+        "st_workdir_guard")
+
+
+@check("selftest.workdir_cleanup_guard", mutate_target="selftest", mutate=mut_st_workdir_guard)
+def chk_st_workdir_cleanup_guard(is_mutant):
+    """鎖住 WORKDIR 自清機制的安全防呆（2026-09-08 新增：selftest.py 只在全數
+    PASS 時自動 shutil.rmtree(WORKDIR_ROOT)，FAIL 時保留供除錯，SELFTEST_KEEP=1
+    可強制保留）。任務書要求「路徑要嚴格檢查，不能有 rm -rf 打到 / 的可能」。
+
+    本檢查**只呼叫唯讀的判斷函式** _workdir_is_safe_to_delete()，全程不對危險
+    路徑呼叫真正會刪除檔案的 _safe_rmtree_workdir()／shutil.rmtree()——即使在
+    #mutant（防呆被刻意拆掉）的情況下，也絕對不能真的對 "/etc"「/」這類系統
+    路徑下手，否則自測程式本身就會變成破壞 VPS 的工具。這是刻意的設計取捨：
+    只驗證「決策」，不驗證「危險情況下的動作」。
+
+    危險路徑（判斷應該一律 False，不能自動清除）：
+      "/"、"/etc"、"/home"、"/tmp"（等於 WORKDIR 的上一層，不是 WORKDIR 本身）、
+      家目錄、以及兩個「深度夠、不在黑名單裡，但不在 /tmp 底下」的探針路徑
+      （專門測第 4 關「必須以 /tmp/ 開頭」，不會被前面幾關提早攔下，才能真正
+      證明是這一關在把關，而不是其他關卡湊巧也擋住）。
+    安全路徑（判斷應該一律 True，可以自動清除）：
+      預設格式 "/tmp/selftest/run-xxx-xxx" 與呼叫端自訂名稱 "/tmp/<任意名稱>/..."
+      （只要在 /tmp 底下就該放行，不限定目錄名稱格式）。
+
+    另外用本次檢查自己的 sandbox（一定在 /tmp 底下）建一個一次性用完即丟的
+    目錄，直接呼叫**真正會刪除**的 _safe_rmtree_workdir()，確認判斷通過後
+    真的會清乾淨——不是只有防呆邏輯正確、但刪除機制本身沒接上。這一段用的
+    路徑保證安全，normal／mutant 兩種模式下都跑，不受這次 mutation 影響
+    （mutation 只影響「/tmp 以外」的路徑判斷）。
+
+    #mutant 把「必須以 /tmp/ 開頭」這一行判斷式改成永遠不成立，兩個探針路徑
+    就會被誤判為安全，本檢查隨即翻盤成 FAIL，證明這一行判斷式真的是這道防線
+    的關鍵。
+    """
+    sandbox = new_sandbox("st_guard_mut" if is_mutant else "st_guard")
+    text = read_source("selftest")
+    if is_mutant:
+        text = mut_st_workdir_guard(text)
+    script_path = _install_st(sandbox, text)
+    mod = load_module(script_path)
+
+    dangerous_cases = ["/", "/etc", "/home", "/tmp", os.path.expanduser("~"),
+                        "/var/log/selftest-probe-should-not-exist",
+                        "/opt/nested/selftest-probe-should-not-exist"]
+    safe_cases = ["/tmp/selftest/run-20300101-000000-1",
+                  "/tmp/selftest-caller-picked-name/subdir"]
+    dangerous_results = {p: mod._workdir_is_safe_to_delete(p)[0] for p in dangerous_cases}
+    safe_results = {p: mod._workdir_is_safe_to_delete(p)[0] for p in safe_cases}
+    all_dangerous_rejected = all(v is False for v in dangerous_results.values())
+    all_safe_accepted = all(v is True for v in safe_results.values())
+
+    disposable = os.path.join(sandbox, "disposable-marker-dir")
+    os.makedirs(disposable, exist_ok=True)
+    with open(os.path.join(disposable, "marker.txt"), "w", encoding="utf-8") as f:
+        f.write("selftest disposable marker\n")
+    cleaned_ok, _ = mod._safe_rmtree_workdir(disposable)
+    really_gone = not os.path.exists(disposable)
+
+    guard_active = all_dangerous_rejected and all_safe_accepted and cleaned_ok and really_gone
+    return Result(guard_active,
+                  "危險路徑判斷=%r（期望全部 False）；安全路徑判斷=%r（期望全部 True）；"
+                  "真實清除自己 sandbox 內的暫存目錄=%s 且確實消失=%s（期望皆 True）"
+                  % (dangerous_results, safe_results, cleaned_ok, really_gone))
+
+
+# ==========================================================================
+# track-crypto/scripts/detect_delistings.py 第五階段新增 — 5 條新檢查
+# （2026-09-08，mcp_smithery 納入下架偵測；本機 docs/0908-3-smithery-detect-report.md）
+#
+# 涵蓋本輪新增的三個機制：
+#   (1) completeness_group() 的 full_flag_tolerant_total_match 分支（is_full 旗標
+#       + total_count_reported 相對誤差），且證明它**不是恆真式**；
+#   (2) parser_version_floor_check()（min_parser_version 版本下限守門），
+#       合成端到端 + 真實歷史快照 real-replay 兩條；
+#   (3) mcp_smithery 正式設定值本身（熔斷門檻在正式規模下的行為）。
+# ==========================================================================
+
+MCPS_SRC = "mcp_smithery"
+MCPS_GRP = "_servers"
+
+
+def mut_dd_smithery_tautological_gate(text):
+    """把 mcp_smithery 的完整性守門比對對象從上游自報總數 total_count_reported
+    換成 adapter 自己算的 total_returned（= len(servers)），也就是把守門變回
+    **恆真式**（被檢查的數字＝自報的數字）——重現 0907-D 在 x402_bazaar 抓到的
+    同一類缺陷。對應檢查 detect_delistings.smithery_gate_not_tautological。"""
+    return apply_mutation(
+        text,
+        '                "total_field": "total_count_reported",',
+        '                "total_field": "total_returned",  # [selftest mutant] 恆真式守門重現',
+        "dd_smithery_tautological_gate")
+
+
+def mut_dd_smithery_full_flag(text):
+    """關掉 full_flag_tolerant_total_match 分支對 is_full 旗標的 fail-closed 檢查。
+    對應檢查 detect_delistings.smithery_gate_full_flag。"""
+    return apply_mutation(
+        text,
+        '        if ff_val is not True:',
+        '        if False:  # [selftest mutant] mcp_smithery is_full 旗標守門停用',
+        "dd_smithery_full_flag")
+
+
+def mut_dd_smithery_pv_floor(text):
+    """把 parser_version_floor_check() 的下限讀取改成永遠 None，等於整道
+    版本下限守門停用（未設定 min_parser_version 的既有子集合本來就是這個行為）。
+    對應檢查 detect_delistings.smithery_parser_version_floor。"""
+    return apply_mutation(
+        text,
+        '    floor = gcfg.get("min_parser_version")',
+        '    floor = None  # [selftest mutant] parser_version 版本下限守門停用',
+        "dd_smithery_pv_floor")
+
+
+def mut_dd_smithery_tolerance(text):
+    """關掉 full_flag_tolerant_total_match 分支的第二個子條件（自報總數與實得筆數的
+    相對誤差容忍度）。錨點刻意帶到分支結尾那行 return，因為
+    `if gap_pct > tol:` 這一行在 tolerant_total_match（第三階段）分支裡逐字相同，
+    只有加上分支專屬的 return 文字才唯一（本檔案已因錨點不唯一吃過虧，
+    見 docs/selftest-fix-report.md 教訓 3）。"""
+    return apply_mutation(
+        text,
+        '        if gap_pct > tol:\n'
+        '            return False, n_raw, ("%s(%r) 與原始筆數(%d) 相對誤差 %.4f%% 超過容忍度 %.2f%%"\n'
+        '                                   % (total_field, total, n_raw, gap_pct, tol))\n'
+        '        return True, n_raw, ("full_flag_tolerant_total_match(gap=%.4f%%,tol=%.2f%%)"',
+        '        if False:  # [selftest mutant] mcp_smithery 相對誤差容忍度守門停用\n'
+        '            return False, n_raw, ("%s(%r) 與原始筆數(%d) 相對誤差 %.4f%% 超過容忍度 %.2f%%"\n'
+        '                                   % (total_field, total, n_raw, gap_pct, tol))\n'
+        '        return True, n_raw, ("full_flag_tolerant_total_match(gap=%.4f%%,tol=%.2f%%)"',
+        "dd_smithery_tolerance")
+
+
+def mut_dd_smithery_both_layers(text):
+    """同時停用**兩層**防線：版本下限守門，以及完整性守門的**兩個**子條件
+    （is_full 旗標 + 相對誤差容忍度）。
+
+    為什麼必須三個一起關：real-replay 檢查要主張的是「兩層各自獨立都擋得住」，
+    只關其中一項時另一項仍會正確擋下（那正是本檢查要證明的事），破壞驗證就翻不了盤。
+    實測（2026-09-08）：只關版本下限＋is_full 旗標時，2026-09-07 快照的
+    total_count_reported=11,771 vs 實得 272 相對誤差 97.69% 仍然超過容忍度 0.3%，
+    judged 還是 GATE_FAIL，#mutant 條目會 FAIL。設計理由與第三階段
+    mut_dd_group_tolerant_total_match 的「兩個子條件一起關」完全相同。
+    對應檢查 detect_delistings.smithery_parser_version_floor.real_replay。"""
+    return mut_dd_smithery_tolerance(
+        mut_dd_smithery_full_flag(mut_dd_smithery_pv_floor(text)))
+
+
+def mut_dd_smithery_breaker_pct(text):
+    """把 mcp_smithery 的熔斷門檻從 1.0% 放寬到 50%，讓正式規模下的
+    120 筆移除（1.007%）不再觸發熔斷。對應檢查 detect_delistings.smithery_breaker_pct。"""
+    return apply_mutation(
+        text,
+        '                "breaker_pct": 1.0, "abs_floor": 20,',
+        '                "breaker_pct": 50.0, "abs_floor": 20,  # [selftest mutant] 熔斷門檻放寬',
+        "dd_smithery_breaker_pct")
+
+
+def _mcps_data(n_items, total_count_reported, is_full=True, start=0, unlisted=False, inactive=False):
+    """比照 track-crypto/data/mcp_smithery 快照 data 節點的實測 schema
+    （欄位名逐一核對自 VPS 2026-09-08 正式快照）：
+      {"servers":[...], "total_returned": len(servers), "total_count_reported": <上游自報>,
+       "pages_fetched":.., "dup_skipped":.., "stop_reason":.., "is_full": bool, "coverage_note":..}
+    total_returned 一律寫成 len(servers)——這正是正式 adapter 的行為，也是本組檢查
+    要證明「守門沒有拿它來比對」的關鍵。"""
+    servers = [
+        {"id": "00000000-0000-4000-8000-%012d" % (start + i),
+         "qualifiedName": "ns%d/srv%d" % ((start + i) % 7, start + i),
+         "namespace": "ns%d" % ((start + i) % 7), "slug": "srv%d" % (start + i),
+         "displayName": "Server %d" % (start + i), "description": "selftest synthetic %d" % (start + i),
+         "useCount": 100 + (start + i), "verified": False, "remote": True, "isDeployed": True,
+         "unlisted": unlisted, "inactive": inactive, "bySmithery": False,
+         "createdAt": "2030-01-01T00:00:00.000Z",
+         "homepage": "https://example.invalid/selftest/%d" % (start + i),
+         "iconUrl": None, "owner": "org_selftest", "score": None}
+        for i in range(n_items)
+    ]
+    return {"servers": servers, "total_returned": len(servers),
+            "total_count_reported": total_count_reported,
+            "pages_fetched": max(1, (n_items // 100) + 1), "dup_skipped": 0,
+            "stop_reason": "exhausted" if is_full else "deadline",
+            "is_full": is_full, "coverage_note": "selftest synthetic"}
+
+
+@check("detect_delistings.smithery_gate_not_tautological", mutate_target="detect_delistings",
+       mutate=mut_dd_smithery_tautological_gate)
+def chk_dd_smithery_gate_not_tautological(is_mutant):
+    """第五階段新增：mcp_smithery 的完整性守門必須比對**上游自報總數**
+    （data.total_count_reported，來自回應的 pagination.totalCount），
+    不是 adapter 自己算出來的 data.total_returned（＝len(servers)，恆真式）。
+    這是 0907-D 在 x402_bazaar 抓到的同一類缺陷，本輪不能再犯一次。
+
+    兩組情境，兩個欄位刻意給出相反的結論：
+      甲：total_returned 與 len(servers) 完全自我一致（都是 98），但上游自報
+          total_count_reported=598 → 只抓到 16.4%，必須 GATE_FAIL。
+      乙：total_returned 故意寫成 598（說謊），但 total_count_reported=98
+          與 len(servers) 相符 → 必須 NORMAL（證明守門讀的不是 total_returned）。
+    另外直接斷言正式設定的 total_field 不等於 "total_returned"。
+    mutant 把 total_field 換成 total_returned，甲會翻成 NORMAL，本檢查 FAIL。"""
+    sandbox = new_sandbox("dd_mcps_taut_mut" if is_mutant else "dd_mcps_taut")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_smithery_tautological_gate(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES[MCPS_SRC]["groups"][MCPS_GRP]
+
+    d_old = _mcps_data(100, 100)                     # 前一日：乾淨
+    d_a = _mcps_data(98, 598)                        # 甲：自報 598、實得 98
+    d_b = _mcps_data(98, 98)                         # 乙：自報 98、實得 98
+    d_b["total_returned"] = 598                      # 但 total_returned 說謊
+    r_a = mod.compare_group(MCPS_SRC, MCPS_GRP, gcfg, d_old, d_a)
+    r_b = mod.compare_group(MCPS_SRC, MCPS_GRP, gcfg, d_old, d_b)
+    j_a, j_b = mod.judge(r_a, gcfg), mod.judge(r_b, gcfg)
+    field_ok = gcfg["total_field"] == "total_count_reported" != "total_returned"
+    guard_active = (j_a == "GATE_FAIL") and (j_b == "NORMAL") and field_ok
+    return Result(guard_active,
+                  "甲(total_returned=98==len(servers)=98 但 total_count_reported=598)judged=%s(期望 GATE_FAIL)；"
+                  "乙(total_returned=598 說謊 但 total_count_reported=98==len(servers))judged=%s(期望 NORMAL)；"
+                  "正式設定 total_field=%r（期望 'total_count_reported'）-> %s；理由=%r/%r"
+                  % (j_a, j_b, gcfg["total_field"], field_ok, r_a["reason_new"], r_b["reason_new"]))
+
+
+@check("detect_delistings.smithery_gate_full_flag", mutate_target="detect_delistings",
+       mutate=mut_dd_smithery_full_flag)
+def chk_dd_smithery_gate_full_flag(is_mutant):
+    """第五階段新增：full_flag_tolerant_total_match 的第一個子條件——
+    adapter 一手旗標 data.is_full 必須明確是布林 True，缺失／None／False
+    一律 fail-closed（極性與 agent_virtuals 的 truncated 相反，見該分支註解）。
+
+    三組情境（三組的 total_count_reported 都與 len(servers) 完全相符，
+    所以擋下它們的一定是旗標，不是誤差容忍度）：
+      (a) is_full=True  → 應通過；
+      (b) is_full=False → 應擋下；
+      (c) 整個 is_full 欄位缺失（模擬 2026-09-07 之前的舊快照 schema）→ 應擋下。
+    另加一組 (d)：is_full=True 但相對誤差 1.0%（> 容忍度 0.3%）→ 應擋下，
+    確認第二個子條件也還在。"""
+    sandbox = new_sandbox("dd_mcps_full_mut" if is_mutant else "dd_mcps_full")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_smithery_full_flag(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES[MCPS_SRC]["groups"][MCPS_GRP]
+
+    ok_a, _, rs_a = mod.completeness_group(_mcps_data(1000, 1000, is_full=True), gcfg)
+    ok_b, _, rs_b = mod.completeness_group(_mcps_data(1000, 1000, is_full=False), gcfg)
+    d_c = _mcps_data(1000, 1000, is_full=True)
+    del d_c["is_full"]
+    ok_c, _, rs_c = mod.completeness_group(d_c, gcfg)
+    ok_d, _, rs_d = mod.completeness_group(_mcps_data(1000, 1010, is_full=True), gcfg)  # gap≈0.99%
+    guard_active = (ok_a is True) and (ok_b is False) and (ok_c is False) and (ok_d is False)
+    return Result(guard_active,
+                  "(a)is_full=True,gap=0%%->ok=%r(期望True) (b)is_full=False->ok=%r(期望False) "
+                  "(c)is_full 欄位缺失->ok=%r(期望False，fail-closed) "
+                  "(d)is_full=True 但 gap=0.99%%>容忍度0.30%%->ok=%r(期望False) reasons=%r/%r/%r/%r"
+                  % (ok_a, ok_b, ok_c, ok_d, rs_a, rs_b, rs_c, rs_d))
+
+
+@check("detect_delistings.smithery_parser_version_floor", mutate_target="detect_delistings",
+       mutate=mut_dd_smithery_pv_floor)
+def chk_dd_smithery_parser_version_floor(is_mutant):
+    """第五階段新增：parser_version 版本下限守門（min_parser_version）。
+
+    三組情境的**快照資料完全相同**（兩側都是乾淨的、完整性守門一定通過），
+    唯一變因是 manifest 裡的 parser_version，證明擋下來的是版本守門本身：
+      (a) 兩側都是 v3（>= 下限 3、且相同）→ NORMAL，LISTED 事件照常寫入；
+      (b) 兩側都是 v2（低於下限）→ GATE_FAIL 且 events.jsonl 零新增；
+      (c) v2 → v3（改版當天）→ GATE_FAIL 且 events.jsonl 零新增。
+    另外驗證 (d)：完全沒有 manifest → fail-closed，同樣 GATE_FAIL。
+    也一併確認其餘子集合不受影響：未設定 min_parser_version 的 gcfg
+    呼叫 parser_version_floor_check() 必須原樣回 (True, "")。"""
+    sandbox = new_sandbox("dd_mcps_pv_mut" if is_mutant else "dd_mcps_pv")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_smithery_pv_floor(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    scfg = mod.GROUP_SOURCES[MCPS_SRC]
+
+    old = gs_snapshot(_mcps_data(100, 100, start=0))
+    new = gs_snapshot(_mcps_data(105, 105, start=0))   # 新增 5 筆、移除 0 筆
+    f_old = write_gz_json(os.path.join(sandbox, "track-crypto/data/%s/2030-05-01.json.gz" % MCPS_SRC), old)
+    f_new = write_gz_json(os.path.join(sandbox, "track-crypto/data/%s/2030-05-02.json.gz" % MCPS_SRC), new)
+
+    def _run(tag):
+        seen, last = set(), {}
+        gr, fresh, _e, _a = mod.process_group_source_pair(MCPS_SRC, scfg, f_old, f_new, seen, last)
+        # 每組情境用自己的 events.jsonl，避免前一組寫進去的事件影響下一組的去重判斷
+        jp = os.path.join(sandbox, "track-crypto/data/%s/events.jsonl" % MCPS_SRC)
+        if os.path.exists(jp):
+            os.rename(jp, jp + "." + tag)
+        return gr[MCPS_GRP]["judged"], len(fresh)
+
+    # (d) 先跑「沒有 manifest」的情境（此時 _manifest 目錄還不存在）
+    j_d, n_d = _run("d")
+    _dd_manifest(sandbox, ["2030-05-01", "2030-05-02"], source=MCPS_SRC, parser_version=3)
+    j_a, n_a = _run("a")
+    _dd_manifest(sandbox, ["2030-05-01", "2030-05-02"], source=MCPS_SRC, parser_version=2)
+    j_b, n_b = _run("b")
+    _dd_manifest(sandbox, ["2030-05-01"], source=MCPS_SRC, parser_version=2)
+    _dd_manifest(sandbox, ["2030-05-02"], source=MCPS_SRC, parser_version=3)
+    j_c, n_c = _run("c")
+
+    other = mod.GROUP_SOURCES["oracle_feed_directory"]["groups"]["pyth"]
+    noop_ok, noop_reason = mod.parser_version_floor_check("oracle_feed_directory", other,
+                                                          "2030-05-01", "2030-05-02")
+    guard_active = (j_a == "NORMAL" and n_a == 5
+                    and j_b == "GATE_FAIL" and n_b == 0
+                    and j_c == "GATE_FAIL" and n_c == 0
+                    and j_d == "GATE_FAIL" and n_d == 0
+                    and noop_ok is True and noop_reason == "")
+    return Result(guard_active,
+                  "(a)v3->v3 judged=%s 事件=%d(期望 NORMAL/5) (b)v2->v2 judged=%s 事件=%d(期望 GATE_FAIL/0) "
+                  "(c)v2->v3 judged=%s 事件=%d(期望 GATE_FAIL/0) (d)無 manifest judged=%s 事件=%d"
+                  "(期望 GATE_FAIL/0，fail-closed)；未設定 min_parser_version 的 pyth 子集合 "
+                  "no-op=(%r,%r)（期望 (True,'')）"
+                  % (j_a, n_a, j_b, n_b, j_c, n_c, j_d, n_d, noop_ok, noop_reason))
+
+
+@check("detect_delistings.smithery_parser_version_floor.real_replay", mutate_target="detect_delistings",
+       mutate=mut_dd_smithery_both_layers)
+def chk_dd_smithery_pv_floor_real_replay(is_mutant):
+    """real-replay：mcp_smithery 真實歷史快照（VPS 正式資料，唯讀複製）
+    2026-09-07（舊 adapter，272 筆、is_full=False、parser_version=2）→
+    2026-09-08（新 adapter，11,917 筆、is_full=True、parser_version=3）。
+
+    這一組配對如果被放行，會一次寫進 **11,645 筆假 LISTED 事件**
+    （實測 added=11,645、removed=0），而 events.jsonl 不在 .gitignore 排除範圍內，
+    會永久污染 git 歷史。本檢查同時驗證兩件事：
+      1. 正式程式碼對這組配對判 GATE_FAIL，且 events.jsonl 零新增；
+      2. **兩層防線各自獨立**都擋得住——把版本下限守門單獨關掉（完整性守門仍在），
+         以及把完整性守門的 is_full 旗標單獨關掉（版本下限守門仍在），
+         兩種情況都仍然是 GATE_FAIL。
+    兩層的獨立變體一律用**未經 mutation 的原始碼**衍生，所以 mutant 只影響第 1 點：
+    mutant 把版本下限守門與完整性守門的兩個子條件一起關掉，第 1 點翻成 NORMAL，
+    本檢查 FAIL（只關其中一項翻不了盤，見 mut_dd_smithery_both_layers docstring）。"""
+    sandbox = new_sandbox("dd_mcps_real_mut" if is_mutant else "dd_mcps_real")
+    base_text = read_source("detect_delistings")
+    text = mut_dd_smithery_both_layers(base_text) if is_mutant else base_text
+
+    src_dir = os.path.join(SOURCE_REPO, "track-crypto/data/%s" % MCPS_SRC)
+    man_dir = os.path.join(SOURCE_REPO, "track-crypto/data/_manifest")
+    need = ["2026-09-07.json.gz", "2026-09-08.json.gz"]
+    man_need = ["2026-09-07.json", "2026-09-08.json"]
+    if not all(os.path.exists(os.path.join(src_dir, n)) for n in need) or \
+       not all(os.path.exists(os.path.join(man_dir, n)) for n in man_need):
+        return Result(False, "找不到真實 mcp_smithery 歷史快照或 _manifest，無法做 real-replay 驗證")
+    paths = {n: install_binary_copy(os.path.join(src_dir, n), sandbox,
+                                     "track-crypto/data/%s/%s" % (MCPS_SRC, n)) for n in need}
+    for n in man_need:
+        install_binary_copy(os.path.join(man_dir, n), sandbox, "track-crypto/data/_manifest/%s" % n)
+
+    def _judge_with(t, tag):
+        p = _install_dd(new_sandbox(tag), t)
+        # 版本下限守門讀的是 <TRACK_CRYPTO>/data/_manifest/，所以每個變體都要自己一份資料
+        m = load_module(p)
+        vs = os.path.dirname(os.path.dirname(os.path.dirname(p)))
+        for n in need:
+            install_binary_copy(paths[n], vs, "track-crypto/data/%s/%s" % (MCPS_SRC, n))
+        for n in man_need:
+            install_binary_copy(os.path.join(man_dir, n), vs, "track-crypto/data/_manifest/%s" % n)
+        f1 = os.path.join(vs, "track-crypto/data/%s/%s" % (MCPS_SRC, need[0]))
+        f2 = os.path.join(vs, "track-crypto/data/%s/%s" % (MCPS_SRC, need[1]))
+        seen, last = set(), {}
+        gr, fresh, _e, _a = m.process_group_source_pair(MCPS_SRC, m.GROUP_SOURCES[MCPS_SRC],
+                                                        f1, f2, seen, last)
+        return gr[MCPS_GRP]["judged"], len(fresh), len(gr[MCPS_GRP]["r"]["added_keys"]), \
+            len(gr[MCPS_GRP]["r"]["removed_keys"])
+
+    j_main, n_main, added, removed = _judge_with(text, "dd_mcps_real_main")
+    j_nopv, n_nopv, _, _ = _judge_with(mut_dd_smithery_pv_floor(base_text), "dd_mcps_real_nopv")
+    j_nofull, n_nofull, _, _ = _judge_with(mut_dd_smithery_full_flag(base_text), "dd_mcps_real_nofull")
+
+    guard_active = (j_main == "GATE_FAIL" and n_main == 0
+                    and j_nopv == "GATE_FAIL" and n_nopv == 0
+                    and j_nofull == "GATE_FAIL" and n_nofull == 0
+                    and added == 11645 and removed == 0)
+    return Result(guard_active,
+                  "真實 2026-09-07(272筆,v2,is_full=False)->2026-09-08(11917筆,v3,is_full=True)："
+                  "正式程式碼 judged=%s 事件=%d(期望 GATE_FAIL/0)；"
+                  "單獨關掉版本下限守門 judged=%s 事件=%d(期望 GATE_FAIL/0，完整性守門獨立擋下)；"
+                  "單獨關掉 is_full 旗標 judged=%s 事件=%d(期望 GATE_FAIL/0，版本下限守門獨立擋下)；"
+                  "被擋下的集合差 added=%d removed=%d(期望 11645/0，這就是避免掉的假 LISTED 數量)"
+                  % (j_main, n_main, j_nopv, n_nopv, j_nofull, n_nofull, added, removed))
+
+
+@check("detect_delistings.smithery_breaker_pct", mutate_target="detect_delistings",
+       mutate=mut_dd_smithery_breaker_pct)
+def chk_dd_smithery_breaker_pct(is_mutant):
+    """第五階段新增：把 mcp_smithery 的熔斷門檻**在正式規模下**釘住。
+    設定 breaker_pct=1.0%、abs_floor=20，前一日 11,917 筆時
+    門檻 = max(20, 1.0% × 11917) = 119.17 筆：
+      (a) 移除 119 筆（1.0000%）→ 不觸發，NORMAL；
+      (b) 移除 120 筆（1.0070%）→ 觸發，BREAKER。
+    兩組資料的完整性守門都通過（is_full=True、自報總數與實得筆數相符），
+    所以判定差異來自熔斷門檻本身。順帶斷言 abs_floor 在現行規模下是惰性的
+    （119.17 > 20），與設定表註解的主張一致。
+    mutant 把門檻放寬到 50%，(b) 翻成 NORMAL，本檢查 FAIL。"""
+    sandbox = new_sandbox("dd_mcps_brk_mut" if is_mutant else "dd_mcps_brk")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_smithery_breaker_pct(text)
+    script_path = _install_dd(sandbox, text)
+    mod = load_module(script_path)
+    gcfg = mod.GROUP_SOURCES[MCPS_SRC]["groups"][MCPS_GRP]
+
+    N = 11917
+    d_old = _mcps_data(N, N)
+    d_119 = _mcps_data(N - 119, N - 119)
+    d_120 = _mcps_data(N - 120, N - 120)
+    r_a = mod.compare_group(MCPS_SRC, MCPS_GRP, gcfg, d_old, d_119)
+    r_b = mod.compare_group(MCPS_SRC, MCPS_GRP, gcfg, d_old, d_120)
+    j_a, j_b = mod.judge(r_a, gcfg), mod.judge(r_b, gcfg)
+    floor_inert = r_a["threshold_count"] > gcfg["abs_floor"]
+    guard_active = (j_a == "NORMAL" and j_b == "BREAKER" and floor_inert
+                    and len(r_a["removed_keys"]) == 119 and len(r_b["removed_keys"]) == 120)
+    return Result(guard_active,
+                  "前日 n=%d 門檻=%.2f 筆（breaker_pct=%.2f%%, abs_floor=%d）；"
+                  "(a)移除119筆(%.4f%%) judged=%s(期望 NORMAL) (b)移除120筆(%.4f%%) judged=%s(期望 BREAKER)；"
+                  "abs_floor 在現行規模下惰性(門檻>abs_floor)=%s"
+                  % (N, r_a["threshold_count"], gcfg["breaker_pct"], gcfg["abs_floor"],
+                     r_a["removed_rate"], j_a, r_b["removed_rate"], j_b, floor_inert))
+
+
+# ==========================================================================
+# GROUP_SOURCES 剩下的 3 個「恆真式」完整性守門（2026-09-08 第五階段新增，
+# 見 track-crypto/scripts/detect_delistings.py 第五階段說明區塊、
+# 本機 docs/0908-4-tautological-gates-report.md）
+#
+# 背景：任務 D 修掉 SOURCES["x402_bazaar"] 之後，GROUP_SOURCES 裡還有 3 個子集合
+# 用同一個壞掉的寫法——比對的 count 就是 adapter 自己算的 len(...)，判斷式恆為假、
+# 守門恆為真。本輪逐一親打上游後：ofac_sanctions_crypto 改比對上游 SDN.XML 檔頭的
+# Record_Count（reported_total_match）；openrouter_providers 與
+# crypto_project_liveness 上游確認沒有任何總數可比，改用 range_check。
+# 以下 5 條檢查把「這 3 個守門都不可以再是恆真式」鎖住，破壞驗證一律是
+# **把設定改回恆真式**（＝重現本輪修掉的那個 bug），與任務 D 的手法一致。
+# ==========================================================================
+
+_TAUT_MUT_TAIL = "  # [selftest mutant] 恆真式守門重現"
+
+
+def mut_dd_ofac_tautological_gate(text):
+    """把 ofac_sanctions_crypto 的守門設定改回恆真式（比對 adapter 自算的 count）。
+    對應檢查 detect_delistings.ofac_gate_not_tautological。"""
+    return apply_mutation(
+        text,
+        '                "completeness": "reported_total_match",\n'
+        '                "reported_total_field": "reported_total",',
+        '                "completeness": "total_match", "total_fields": ("count",),' + _TAUT_MUT_TAIL + '\n'
+        '                "reported_total_field": "reported_total",',
+        "dd_ofac_tautological_gate")
+
+
+def mut_dd_ofac_legacy_range(text):
+    """關掉 completeness_group() 的 reported_total_match 舊快照相容分支的區間比較，
+    讓任何筆數都算通過。對應檢查 detect_delistings.ofac_gate_legacy_range。"""
+    return apply_mutation(
+        text,
+        '            if n_raw < lo_g or n_raw > hi_g:',
+        '            if False:  # [selftest mutant] reported_total_match legacy range disabled',
+        "dd_ofac_legacy_range")
+
+
+def mut_dd_openrouter_providers_tautological_gate(text):
+    """把 openrouter_providers 的守門設定改回恆真式。
+    對應檢查 detect_delistings.openrouter_providers_gate_not_tautological。"""
+    return apply_mutation(
+        text,
+        '                "completeness": "range_check", "range": (92, 117),',
+        '                "completeness": "total_match", "total_fields": ("count",),' + _TAUT_MUT_TAIL,
+        "dd_openrouter_providers_tautological_gate")
+
+
+def mut_dd_crypto_project_liveness_tautological_gate(text):
+    """把 crypto_project_liveness 的守門設定改回恆真式。
+    對應檢查 detect_delistings.crypto_project_liveness_gate_not_tautological。"""
+    return apply_mutation(
+        text,
+        '                "completeness": "range_check", "range": (1115, 1383),',
+        '                "completeness": "total_match", "total_fields": ("count",),' + _TAUT_MUT_TAIL,
+        "dd_crypto_project_liveness_tautological_gate")
+
+
+def _taut_pair(mod, source, group, data_old, data_new):
+    """跑一組相鄰快照（直接餵 data 物件，不落地檔案——GROUP_SOURCES 路徑的
+    compare_group() 本來就吃 data 物件，比照既有 chk_dd_group_integrity_gate 的用法）。"""
+    gcfg = mod.GROUP_SOURCES[source]["groups"][group]
+    r = mod.compare_group(source, group, gcfg, data_old, data_new)
+    return mod.judge(r, gcfg), r
+
+
+@check("detect_delistings.ofac_gate_not_tautological",
+       mutate_target="detect_delistings", mutate=mut_dd_ofac_tautological_gate)
+def chk_dd_ofac_gate_not_tautological(is_mutant):
+    """核心不變量：ofac_sanctions_crypto 的完整性守門**不可以**是恆真式。
+
+    用互為反例的兩組資料，把守門釘在「上游 SDN.XML 檔頭自報的 Record_Count」上：
+
+      甲、data.count 與 len(items) 完全自我一致（都是 98），但上游說有 598 筆
+          -> **必須** GATE_FAIL。恆真式守門在這裡會放行。
+      乙、data.count 故意說謊（宣稱 598，實際 98），但上游自報總數與 len(items)
+          相符（都是 98）-> **必須** NORMAL。恆真式守門在這裡會誤擋。
+
+    兩組的移除量都是 2 筆／100 筆，熔斷門檻 max(abs_floor=5, 1.0%×100=1)=5，
+    刻意壓在門檻之下，確保這條檢查只測完整性守門本身（比照既有
+    detect_delistings.x402_gate_not_tautological 的設計）。
+    #mutant 把設定改回 total_match+count（＝重現本輪修掉的 bug），甲案會放行，本檢查翻盤。
+    """
+    sandbox = new_sandbox("dd_ofac_taut_mut" if is_mutant else "dd_ofac_taut")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_ofac_tautological_gate(text)
+    mod = load_module(_install_dd(sandbox, text))
+    gcfg = mod.GROUP_SOURCES["ofac_sanctions_crypto"]["groups"]["_items"]
+
+    items100 = [gs_item("uid", "U%d" % i, "sdn_name", "n%d" % i) for i in range(100)]
+    items98 = items100[:98]
+    base = {"count": 100, "reported_total": 100, "items": items100}
+
+    # 甲：自我一致但上游說更多（模擬 CSV 只下載到一半）
+    judged_a, _ = _taut_pair(mod, "ofac_sanctions_crypto", "_items",
+                             base, {"count": 98, "reported_total": 598, "items": items98})
+    # 乙：adapter 自算欄位說謊，但上游自報總數與實得筆數相符
+    judged_b, _ = _taut_pair(mod, "ofac_sanctions_crypto", "_items",
+                             base, {"count": 598, "reported_total": 98, "items": items98})
+    # 丙：只差 1 筆也必須擋下來——本來源的容忍度是 0（嚴格相等），
+    #     這一條把「不可以偷偷放寬成容忍幾筆」也釘住（實測依據見 GROUP_SOURCES 設定註解：
+    #     OFAC 單次發布變動量可達 +65 列，任何非零容忍度都是兩頭不討好）。
+    judged_c, _ = _taut_pair(mod, "ofac_sanctions_crypto", "_items",
+                             base, {"count": 98, "reported_total": 99, "items": items98})
+
+    # 設定表本身也一併釘住：不可以再有 total_fields，且自報欄位不可以指回 adapter 自算的 count。
+    cfg_clean = ("total_fields" not in gcfg) and (gcfg.get("reported_total_field") not in ("count", "total"))
+
+    guard_active = ((judged_a == "GATE_FAIL") and (judged_b == "NORMAL")
+                    and (judged_c == "GATE_FAIL") and cfg_clean)
+    return Result(guard_active,
+                  "甲(count=98==len=98 但 reported_total=598)judged=%s(期望 GATE_FAIL)；"
+                  "乙(count=598 說謊 但 reported_total=98==len)judged=%s(期望 NORMAL)；"
+                  "丙(reported_total=99 vs len=98，只差 1 筆)judged=%s(期望 GATE_FAIL，容忍度=0)；"
+                  "GROUP_SOURCES 無 total_fields 且 reported_total_field=%r -> %s"
+                  % (judged_a, judged_b, judged_c, gcfg.get("reported_total_field"), cfg_clean))
+
+
+@check("detect_delistings.ofac_gate_legacy_range",
+       mutate_target="detect_delistings", mutate=mut_dd_ofac_legacy_range)
+def chk_dd_ofac_gate_legacy_range(is_mutant):
+    """舊快照相容分支：adapter PARSER_VERSION 1（2026-09-08 之前）的快照沒有
+    reported_total 欄位，守門退回 legacy_range_check（筆數是否落在實測歷史區間）。
+
+    兩個方向都驗：
+      甲、區間內（19,000 筆，區間 [17387,21262]）-> 必須 NORMAL。這一條同時保證
+          「12 份既有快照重放不會整批變成 GATE_FAIL」這個相容性要求。
+      乙、區間外（100 筆）-> 必須 GATE_FAIL。這一條保證相容分支**不是**放行一切的
+          空殼（否則只是把恆真式換個地方留著）。
+    #mutant 關掉區間比較後乙案會放行，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("dd_ofac_legacy_mut" if is_mutant else "dd_ofac_legacy")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_ofac_legacy_range(text)
+    mod = load_module(_install_dd(sandbox, text))
+    gcfg = mod.GROUP_SOURCES["ofac_sanctions_crypto"]["groups"]["_items"]
+    lo, hi = gcfg["legacy_range"]
+
+    n_in = 19000  # 落在 [17387, 21262] 內
+    big = [gs_item("uid", "U%d" % i, "sdn_name", "n%d" % i) for i in range(n_in)]
+    # 舊格式：data 完全沒有 reported_total 這個鍵
+    judged_in, _ = _taut_pair(mod, "ofac_sanctions_crypto", "_items",
+                              {"count": n_in, "items": big},
+                              {"count": n_in - 20, "items": big[:n_in - 20]})
+    small = [gs_item("uid", "U%d" % i, "sdn_name", "n%d" % i) for i in range(100)]
+    judged_out, _ = _taut_pair(mod, "ofac_sanctions_crypto", "_items",
+                               {"count": 100, "items": small},
+                               {"count": 98, "items": small[:98]})
+
+    guard_active = (judged_in == "NORMAL") and (judged_out == "GATE_FAIL")
+    return Result(guard_active,
+                  "legacy_range=[%d,%d]；區間內 n=%d judged=%s(期望 NORMAL)；"
+                  "區間外 n=100 judged=%s(期望 GATE_FAIL)"
+                  % (lo, hi, n_in - 20, judged_in, judged_out))
+
+
+@check("detect_delistings.openrouter_providers_gate_not_tautological",
+       mutate_target="detect_delistings", mutate=mut_dd_openrouter_providers_tautological_gate)
+def chk_dd_openrouter_providers_gate_not_tautological(is_mutant):
+    """核心不變量：openrouter_providers 的完整性守門**不可以**是恆真式。
+
+    上游（2026-09-08 親驗）回應頂層只有 data 一個鍵、沒有任何總數，因此改用
+    range_check[92,117]。用互為反例的兩組資料證明守門讀的是「筆數落在區間內」
+    而不是 adapter 自算的 count：
+
+      甲、count 與 len(providers) 完全自我一致（都是 91），但 91 跌破區間下界 92
+          -> **必須** GATE_FAIL。恆真式守門在這裡會放行。
+      乙、count 故意說謊（宣稱 598，實際 93 筆、落在區間內）-> **必須** NORMAL。
+          恆真式守門在這裡會誤擋。
+
+    兩組移除量分別是 4 筆／2 筆（前日 95 筆），熔斷門檻 max(5, 1.0%×95=0.95)=5，
+    都壓在門檻之下，確保只測守門本身。
+    #mutant 把設定改回 total_match+count，甲案會放行，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("dd_orp_taut_mut" if is_mutant else "dd_orp_taut")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_openrouter_providers_tautological_gate(text)
+    mod = load_module(_install_dd(sandbox, text))
+    gcfg = mod.GROUP_SOURCES["openrouter_providers"]["groups"]["_providers"]
+    # 注意：#mutant 會把整行設定換成 total_match，"range" 鍵會消失，所以這裡用
+    # gcfg.get()，不可以直接索引（否則破壞驗證會變成 EXCEPTION 而不是「翻盤成 FAIL」）。
+    rng = gcfg.get("range")
+
+    prov = [gs_item("slug", "p%d" % i, "name", "P%d" % i) for i in range(95)]
+    old = {"count": 95, "providers": prov}
+    judged_a, _ = _taut_pair(mod, "openrouter_providers", "_providers",
+                             old, {"count": 91, "providers": prov[:91]})
+    judged_b, _ = _taut_pair(mod, "openrouter_providers", "_providers",
+                             old, {"count": 598, "providers": prov[:93]})
+
+    cfg_clean = ("total_fields" not in gcfg) and (gcfg["completeness"] != "total_match")
+    guard_active = (judged_a == "GATE_FAIL") and (judged_b == "NORMAL") and cfg_clean
+    return Result(guard_active,
+                  "range=%r；甲(count=91==len=91，跌破下界)judged=%s(期望 GATE_FAIL)；"
+                  "乙(count=598 說謊 但 len=93 在區間內)judged=%s(期望 NORMAL)；"
+                  "設定無 total_fields 且 completeness=%r -> %s"
+                  % (rng, judged_a, judged_b, gcfg["completeness"], cfg_clean))
+
+
+@check("detect_delistings.crypto_project_liveness_gate_not_tautological",
+       mutate_target="detect_delistings", mutate=mut_dd_crypto_project_liveness_tautological_gate)
+def chk_dd_crypto_project_liveness_gate_not_tautological(is_mutant):
+    """核心不變量：crypto_project_liveness 的完整性守門**不可以**是恆真式。
+
+    上游（2026-09-08 親驗）回傳裸 JSON 陣列、沒有任何中繼欄位，因此改用
+    range_check[1115,1383]。互為反例的兩組資料（主鍵是 (name, date) 複合鍵）：
+
+      甲、count 與 len(hacks) 自我一致（都是 1114），但 1114 跌破區間下界 1115
+          -> **必須** GATE_FAIL。恆真式守門在這裡會放行。
+      乙、count 故意說謊（宣稱 9999，實際 1116 筆、落在區間內）-> **必須** NORMAL。
+
+    兩組移除量分別是 6 筆／4 筆（前日 1120 筆），熔斷門檻 max(5, 1.0%×1120=11.2)=11.2，
+    都壓在門檻之下。合成項目不含 defillamaId，因此第四階段（任務 B）新增的
+    reconcile_renames() 抵銷層 stable_identity() 一律回 None、不會被觸發，
+    本檢查與該機制互不干擾。
+    #mutant 把設定改回 total_match+count，甲案會放行，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("dd_cpl_taut_mut" if is_mutant else "dd_cpl_taut")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_crypto_project_liveness_tautological_gate(text)
+    mod = load_module(_install_dd(sandbox, text))
+    gcfg = mod.GROUP_SOURCES["crypto_project_liveness"]["groups"]["_hacks"]
+    # 同上：#mutant 之後 "range" 鍵不存在，必須用 gcfg.get()。
+    rng = gcfg.get("range")
+
+    hacks = [{"name": "H%d" % i, "date": 1700000000 + i} for i in range(1120)]
+    old = {"count": 1120, "hacks": hacks}
+    judged_a, _ = _taut_pair(mod, "crypto_project_liveness", "_hacks",
+                             old, {"count": 1114, "hacks": hacks[:1114]})
+    judged_b, _ = _taut_pair(mod, "crypto_project_liveness", "_hacks",
+                             old, {"count": 9999, "hacks": hacks[:1116]})
+
+    cfg_clean = ("total_fields" not in gcfg) and (gcfg["completeness"] != "total_match")
+    guard_active = (judged_a == "GATE_FAIL") and (judged_b == "NORMAL") and cfg_clean
+    return Result(guard_active,
+                  "range=%r；甲(count=1114==len=1114，跌破下界)judged=%s(期望 GATE_FAIL)；"
+                  "乙(count=9999 說謊 但 len=1116 在區間內)judged=%s(期望 NORMAL)；"
+                  "設定無 total_fields 且 completeness=%r -> %s"
+                  % (rng, judged_a, judged_b, gcfg["completeness"], cfg_clean))
+
+
+@check("detect_delistings.tautological_gates_real_replay",
+       mutate_target="detect_delistings", mutate=mut_dd_group_integrity_gate)
+def chk_dd_tautological_gates_real_replay(is_mutant):
+    """real-replay：用 VPS 正式資料的**真實歷史快照**（唯讀複製，2026-09-07）驗證
+    本輪三個新守門在真實 schema 上的行為，避免只靠合成資料。
+
+      (a) 三個來源的真實完整資料自我比對 -> 全部 NORMAL（保證歷史重放不會整批
+          變成 GATE_FAIL）。
+      (b) 保留真實欄位形狀、只動一個地方：
+            ofac                    ：注入 reported_total = 真實筆數 + 500
+                                      （模擬「CSV 少收 500 筆」）-> 必須 GATE_FAIL
+            openrouter_providers    ：清單截斷到 50 筆（< 下界 92）-> 必須 GATE_FAIL
+            crypto_project_liveness ：清單截斷到 500 筆（< 下界 1115）-> 必須 GATE_FAIL
+    真實資料本身從未跌出校準區間（區間即以此校準），純粹重放測不到「跌出區間」
+    分支，因此沿用既有 detect_delistings.oracle_pyth_range_check_real_replay 的
+    「真實 schema + 人為破壞」混合手法。
+    #mutant 沿用既有 mut_dd_group_integrity_gate（關掉 range_check 比較），
+    兩個 range_check 來源的破壞案會變成放行，本檢查翻盤成 FAIL。
+    """
+    sandbox = new_sandbox("dd_taut_real_mut" if is_mutant else "dd_taut_real")
+    text = read_source("detect_delistings")
+    if is_mutant:
+        text = mut_dd_group_integrity_gate(text)
+    mod = load_module(_install_dd(sandbox, text))
+
+    date = "2026-09-07"
+    specs = [
+        ("ofac_sanctions_crypto", "_items", "items", None),
+        ("openrouter_providers", "_providers", "providers", 50),
+        ("crypto_project_liveness", "_hacks", "hacks", 500),
+    ]
+    detail = []
+    ok_all = True
+    for source, group, path_key, cut in specs:
+        real_file = os.path.join(SOURCE_REPO, "track-crypto/data", source, date + ".json.gz")
+        if not os.path.exists(real_file):
+            return Result(False, "找不到真實歷史快照 %s，無法做 real-replay 驗證" % real_file)
+        f_real = install_binary_copy(real_file, sandbox, "%s_real.json.gz" % source)
+        data_full = mod.load(f_real)["data"]
+        n_real = len(data_full[path_key])
+        judged_full, _ = _taut_pair(mod, source, group, data_full, data_full)
+        bad = dict(data_full)
+        if cut is None:
+            bad["reported_total"] = n_real + 500          # 真實 schema，只多注入上游自報總數
+        else:
+            bad = dict(data_full, **{path_key: data_full[path_key][:cut]})
+        judged_bad, _ = _taut_pair(mod, source, group, data_full, bad)
+        ok = (judged_full == "NORMAL") and (judged_bad == "GATE_FAIL")
+        ok_all = ok_all and ok
+        detail.append("%s(真實 n=%d 自我比對=%s，破壞案=%s)" % (source, n_real, judged_full, judged_bad))
+
+    return Result(ok_all, "%s 真實快照：%s（各案期望 NORMAL / GATE_FAIL）" % (date, "；".join(detail)))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="離線回歸自測（見 docs/selftest.md）")
     parser.add_argument("--filter", default=None, help="只跑名稱包含此子字串的檢查")
@@ -3976,6 +5125,8 @@ def main(argv=None):
           % (len(results), n_pass, n_fail, elapsed, WORKDIR_ROOT))
     if elapsed > 120:
         print("WARNING 執行時間超過 2 分鐘預算（SPEC-selftest.md 第 5 點），請檢視是否有檢查變慢")
+    _, finalize_msg = _finalize_workdir(any_fail)
+    print(finalize_msg)
     return 1 if any_fail else 0
 
 

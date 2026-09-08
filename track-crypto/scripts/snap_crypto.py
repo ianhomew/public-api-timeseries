@@ -228,7 +228,15 @@ def _path_get(root, path):
 # agent_virtuals 的 total_returned／total_reported 案例）。多個候選同時存在時，
 # 依此優先序取第一個命中的欄位名（agent_virtuals→total_reported、
 # mcp_smithery→total_count_reported、openrouter_models→total_count 優先於 count）。
-_TOTAL_PRIORITY = ("total", "total_count", "total_reported", "reported_total", "total_count_reported")
+# 2026-09-08（任務 0908-4）調整順序：把「上游自報」的欄位名排在 adapter 自算的
+# "total"／"count" **之前**。原順序 "total" 排第一，會讓 x402_bazaar 這種同時有
+# data.total（adapter 自算的 len(items)）與 data.reported_total（上游 pagination.total）
+# 的來源，在 manifest 層又退回恆真式判定（自己比自己，恆為 complete=true）。
+# 本行原為任務 D 的「選用補丁」，2026-09-07 整合時未收；0908-4 實測（見
+# docs/0908-4-tautological-gates-report.md §6）：對 27 個來源今日快照為 no-op
+# （0 個來源結果改變），但對「掉一整頁」的 x402 資料，現行順序仍判 complete=true、
+# 本順序正確判 complete=false，因此建議收下。
+_TOTAL_PRIORITY = ("reported_total", "total_count_reported", "total_reported", "total_count", "total")
 
 
 def _find_reported_total(container):

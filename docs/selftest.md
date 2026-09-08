@@ -8,10 +8,14 @@
 | 程式 | 涵蓋的不變量 |
 |---|---|
 | `scripts/detect_changes.py` | 解析器版本不同時跳過比對／截斷時不判定下架／滾動視窗尾端移出不算下架／揮發性欄位不進正文比對（實作於 `track-gov/scripts/snap_gov.py`，見下方「歸屬澄清」） |
-| `track-crypto/scripts/detect_delistings.py` | 完整性守門（`total != len(items)` 要跳過）／熔斷門檻／`REAPPEARED` 判定／冪等性（同區間重跑零新事件） |
+| `track-crypto/scripts/detect_delistings.py` | 完整性守門（`total != len(items)` 要跳過）／熔斷門檻／`REAPPEARED` 判定／`RENAMED` 上游改名抵銷與事件寫入（含新舊主鍵方向）／冪等性（同區間重跑零新事件） |
 | `scripts/cex_events.py` | 每日只取最後一份／交易所級失敗守門／異常規模熔斷註記 |
 | `scripts/healthcheck.py` | 連續截斷告警 N=2／排程寬限（排程未到不算缺檔） |
 | `scripts/daily_report.py` | 42 個來源全列（不漏列）／異常數與 `ALERT.md` 一致 |
+
+（另有 1 條 `selftest.workdir_cleanup_guard` 檢查，2026-09-08 新增，測試對象是
+`scripts/selftest.py` 自己的 WORKDIR 自清安全防呆，不屬於上述 5 支正式程式，
+見下方「WORKDIR 自清」一節。）
 
 **它不是**「跑一次歷史資料看有沒有報錯」的煙霧測試。每一條不變量都有對應的合成測試資料，
 故意打造「截斷」「來源失敗」「同日重跑」「暫時消失又恢復」這類情境，斷言保護機制**確實會被觸發**——
@@ -27,7 +31,11 @@ python3 scripts/selftest.py
 
 不需要任何參數或環境變數。全程唯讀正式程式碼與 `adapters/*.py`／少數幾份既有歷史快照，
 所有輸出（合成快照、程式副本、沙盒執行結果）都寫在 `/tmp/selftest/run-<時間戳記>-<pid>/`，
-不會寫到任何正式目錄，不連外網，正常情況下 **約 15 秒（2026-09-04 實測 86 條 15.6s；早期 19 條版本約 3～5 秒）內跑完**（遠低於 2 分鐘預算）。
+不會寫到任何正式目錄，不連外網。**全數 PASS 時，執行結束會自動清掉這個 WORKDIR**；
+有 FAIL 時保留供除錯；`SELFTEST_KEEP=1` 可強制保留（不論成敗），見下方「WORKDIR 自清」
+一節。耗時隨檢查數量增加持續成長，**2026-09-09 正式目錄實測 160 條 37.4s**（2026-09-08 的
+138 條 44.3s、132 條 41.6s、130 條 40.2s，早期 86 條 15.6s、19 條約 3～5 秒為歷史數字，
+僅供對照成長趨勢，請以最新實測為準），仍遠低於 2 分鐘預算。
 
 可用旗標：
 - `--filter <關鍵字>`：只跑名稱包含這個關鍵字的檢查（開發單一項目時用），例如
@@ -40,6 +48,36 @@ python3 scripts/selftest.py
 - `SELFTEST_WORKDIR`：本檔所有輸出的根目錄，預設 `/tmp/selftest/run-<時間戳記>-<pid>`。
 - `SELFTEST_SKIP_MUTANTS=1`：只跑「正常檢查」，略過「破壞驗證」（見下）。一般不需要設定，
   兩者一起跑也在秒級完成；只有在單獨除錯某條「正常檢查」、想先排除破壞驗證的雜訊時才用。
+- `SELFTEST_KEEP=1`：不論全數 PASS 或有 FAIL，一律保留 WORKDIR（見下方「WORKDIR 自清」
+  一節）。全數 PASS 但想留著手動核對沙盒內容時才需要設定，一般不用。
+
+## WORKDIR 自清（2026-09-08 新增）
+
+`scripts/selftest.py` 每次執行都會在 `SELFTEST_WORKDIR`（預設 `/tmp/selftest/
+run-<時間戳記>-<pid>`）底下建立合成快照、程式副本與沙盒執行結果。**2026-09-08 之前
+無論成敗都不清理**，長期是 `/tmp` 累積量最大的單一來源（見 `docs/0907-G-tmp-cleanup.md`
+估計佔比 55%、`docs/0908-2-alert-selftest-report.md` 的實測驗證）。
+
+現行規則：
+
+| 情況 | 行為 |
+|---|---|
+| 全數 PASS | 執行結束自動 `shutil.rmtree(WORKDIR)`，並印一行 `WORKDIR 已清除（全數 PASS）：...` |
+| 有 FAIL | WORKDIR **保留**，供除錯，並印一行 `WORKDIR 保留（有 FAIL，供除錯）：...` |
+| `SELFTEST_KEEP=1` | 不論全數 PASS 或有 FAIL，**一律保留**，印一行 `WORKDIR 保留（SELFTEST_KEEP=1 強制保留）：...` |
+
+安全設計（`_workdir_is_safe_to_delete()`，`scripts/selftest.py` 檔案尾端）：自動清除前會先
+做四層唯讀防呆判斷——路徑正規化失敗／為空／等於 `/` 一律拒絕；命中系統目錄黑名單
+（常見掛載點、家目錄，**含 `/tmp` 本身**）一律拒絕；路徑深度 `< 2` 層一律拒絕；**不是以
+`/tmp/` 開頭一律拒絕**。四關都通過、且該路徑確實是既存目錄，才會呼叫 `shutil.rmtree()`。
+任何一關不過就整個放棄刪除（寧可少清，不可誤刪），並在輸出說明放棄的原因，不會靜默略過。
+這道防呆本身有 1 條自測鎖住（`selftest.workdir_cleanup_guard`，含 `#mutant`），
+只驗證「決策」不驗證「危險情況下的動作」——即使防呆被破壞驗證刻意拆掉，也絕對不會真的
+對 `/etc`、`/` 這類系統路徑呼叫 `shutil.rmtree()`，細節見該檢查的 docstring。
+
+若要保留 WORKDIR 手動核對沙盒內容（例如 `sandbox-NNN-*/` 底下的 `changes/*.md`、
+`ALERT.md`、`events.jsonl` 等實際產生的檔案），設定 `SELFTEST_KEEP=1` 即可，不必等到
+剛好有檢查 FAIL。
 
 ## 輸出怎麼看
 

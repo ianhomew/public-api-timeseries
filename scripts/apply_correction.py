@@ -8,9 +8,18 @@
 
 為什麼不直接在 events.jsonl 裡加一種新的 event 類型（例如 "CORRECTED"）：
   見 docs/cex-events-audit.md §5.1 的完整理由，摘要三點：
-  1. events.jsonl 的 schema（event ∈ {LISTED,DELISTED,STATUS_CHANGED}）已公開在 CC BY 4.0 的
-     repo 裡，可能已有外部消費者依賴這個封閉集合；憑空加第 4 種事件类型等於是「沒有預告」地
-     改變一個已發布的公開介面。
+  1. events.jsonl 的 event 欄位是**已公開在 CC BY 4.0 repo 的封閉集合**
+     （cex_events 流：{LISTED, DELISTED, STATUS_CHANGED}；track-crypto 逐來源流：
+     {LISTED, DELISTED, REAPPEARED, STATUS_CHANGED, RENAMED}），可能已有外部消費者
+     依賴它；**未經預告**地新增事件型別，等於是「沒有預告」地改變一個已發布的公開介面。
+
+     ⚠️ 注意本條反對的是「未經預告」，不是「永遠不得新增」。本專案已經有過兩次
+     經裁示後新增型別的先例（REAPPEARED、STATUS_CHANGED），2026-09-08 又新增了
+     RENAMED（第 5 種，只作用於 track-crypto 逐來源流）。新增型別的既定程序是：
+     (a) 由使用者／父代理明確裁示；(b) 舊型別的語意、欄位、產生條件一律不變，
+     既有事件行一行都不刪改（只增不減）；(c) 在 docs/operations.md 的
+     「型別集合變更史」表留下公告紀錄。**更正判定仍然不走這條路**——理由是下面
+     第 2、3 點（認知類別不同、本專案偏好附加檔案），與型別數量無關。
   2. cex_events.py 檔頭明講「本工具只記錄事實，不做任何解讀或建議」；而「更正判定」本質上是
      人／稽核流程的判斷，跟「這一刻資料源真的回傳了什麼」是不同的認知類別，混在同一個檔案裡
      會讓「事實串流」與「事後判斷」的界線變模糊。
@@ -34,7 +43,17 @@ correction 紀錄 schema（每行一個 JSON object）：
     "targets": [                                          # 指回一或多筆原始事件，逐筆精確比對四個鍵值
       {"date": "...", "exchange": "...", "symbol": "...", "event": "DELISTED"}
     ],
-    "verdict":        "false_event",                      # false_event｜confirmed_true 二選一
+    "verdict":        "false_event",                      # false_event｜confirmed_true｜superseded_by_rule
+                                                          #   false_event        判定為假事件（資料源根本沒有發生這件事，
+                                                          #                      或是我方程式的判定瑕疵造出來的）
+                                                          #   confirmed_true     複核後仍確認為真（不更正，只留下複核紀錄）
+                                                          #   superseded_by_rule 事實為真（資料源確實回報了這個變化），
+                                                          #                      但依**後來才上線的**發布規則，這一筆已不再
+                                                          #                      屬於會被發布的事件。2026-09-08 新增，用於
+                                                          #                      任務 E 語意過濾上線前既已產生的存量事件。
+                                                          #                      刻意不用 false_event：那會把「上游真的回報過
+                                                          #                      的觀測」誤記成「沒發生過」，違反本專案
+                                                          #                      「只陳述事實」的立場。
     "reason_code":    "SAME_DAY_RERUN_ARTIFACT",           # 簡短分類代碼，供程式化篩選
     "evidence":       "一句話講清楚依據，通常引用稽核報告裡的依據代碼",
     "audit_ref":      "docs/cex-events-audit.md#xxx",      # 對應完整稽核報告位置，可查完整脈絡
@@ -156,7 +175,8 @@ def render_md(rows, events_path, stream_label="cex_events"):
     lines.append("|---|---|---|---|---|---|---|")
     for i, r in enumerate(rows, 1):
         targets = "; ".join(render_target_text(t) for t in r["targets"])
-        verdict_zh = {"false_event": "**判定為假事件**", "confirmed_true": "複核後仍確認為真"}.get(
+        verdict_zh = {"false_event": "**判定為假事件**", "confirmed_true": "複核後仍確認為真",
+                      "superseded_by_rule": "**依現行規則不再發布**（事實為真）"}.get(
             r["verdict"], r["verdict"]
         )
         lines.append(
@@ -174,7 +194,8 @@ def main():
     ap.add_argument("--out-md", required=True, help="events-corrections.md 路徑（整份重算重寫）")
     ap.add_argument("--target", action="append", required=True,
                      help="JSON 字串，可重複給多次，指向一或多筆原始事件")
-    ap.add_argument("--verdict", required=True, choices=["false_event", "confirmed_true"])
+    ap.add_argument("--verdict", required=True,
+                     choices=["false_event", "confirmed_true", "superseded_by_rule"])
     ap.add_argument("--reason-code", required=True)
     ap.add_argument("--evidence", required=True)
     ap.add_argument("--audit-ref", required=True)

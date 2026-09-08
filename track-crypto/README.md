@@ -131,6 +131,27 @@ Circle 官方另有 CCTP／Wallets／xReserve／StableFX 等產品各自獨立�
 
 `event` 為 `LISTED` / `DELISTED` / `STATUS_CHANGED`。本檔只記錄事實，不含任何解讀、預測或建議。
 
+## `data/<source>/events.jsonl`（與上一節是**兩條不同的事件流**）
+
+`scripts/detect_delistings.py` 逐日比對各來源的相鄰快照，把差異累積寫入各來源自己的
+`events.jsonl`（只追加）。schema 是 `{date, source, group, key, event, from, to}`，
+去重鍵為 `(date, source, group, key, event)`：
+
+```json
+{"date":"2026-09-06","source":"crypto_project_liveness","group":"_hacks","key":"stake dao\u001f1773273600","event":"RENAMED","from":"Stake DAO","to":"Stake DAO Yield","from_key":"stake dao\u001f1773273600","to_key":"stake dao yield\u001f1773273600","stable_id":"249\u001f1773273600","stable_id_fields":["defillamaId","date"]}
+```
+
+`event` 是封閉集合，目前 5 種：`LISTED`（今日新出現）／`DELISTED`（今日消失）／
+`REAPPEARED`（先前消失的又出現）／`STATUS_CHANGED`（主鍵還在但被追蹤欄位變了）／
+`RENAMED`（上游改名：主鍵字串變了，但來源端的穩定識別不變）。
+
+`RENAMED` 的 `key` 放的是**改名前**的舊主鍵，改名後的新主鍵放在 `to_key`；
+`stable_id` 與 `stable_id_fields` 記下判定「是同一個東西」的依據，可獨立複核。
+
+欄位表、型別集合變更史與各型別的精確語意
+→ [docs/operations.md](../docs/operations.md#軌一逐來源事件流與上一節的交易所事件流是兩條不同的流)。
+本檔只記錄事實，不含任何解讀、預測或建議。
+
 ## 架構
 
 一個來源一支 adapter，放在 `adapters/<key>.py`，至少提供：
@@ -165,7 +186,9 @@ def collect(fetch) -> dict/list:
 ```
 data/<source>/YYYY-MM-DD.json.gz    {"_meta":{...},"data":{...}}
 data/_manifest/YYYY-MM-DD.json      當日各來源成敗、大小、耗時、parser_version
-data/cex_events/events.jsonl        上／下架事件流
+data/cex_events/events.jsonl        交易所上／下架事件流（{date,exchange,symbol,event,...}，3 種型別）
+data/<source>/events.jsonl          軌一逐來源事件流（{date,source,group,key,event,...}，
+                                    5 種型別：LISTED/DELISTED/REAPPEARED/STATUS_CHANGED/RENAMED）
 adapters/<key>.py                   各來源抓取規則（一個來源一支，會被自動探索／排程）
 retired_adapters/<key>.py           已停抓來源的 adapter 原始碼（保留備查，不會被自動探索）
 manual_adapters/<key>.py            人工不定期手動執行的 adapter（不在每日 cron 排程內）

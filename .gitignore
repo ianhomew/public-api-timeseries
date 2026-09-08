@@ -11,6 +11,13 @@ track-crypto/data/x402_bazaar/*.json.gz
 track-crypto/data/cex_symbols/*.json.gz
 track-crypto/data/mcp_registry/*.json.gz
 track-crypto/data/vast_gpu/*.json.gz
+# 2026-09-08 新增（使用者裁示「4. 按照建議」）：mcp_smithery 的 adapter 於 2026-09-07
+# 修好覆蓋率（272 → 11,917 筆，見 docs/0907-A-smithery-rootcause.md），每日快照由
+# 83 KB 變成 2.85 MB（年約 1.0 GB），比照上面 4 個大型來源排除出 GitHub。
+# ⚠️ 這一行與 scripts/hf_sync.py 的 SOURCE_SUBDIRS 必須同時維護：本清單排除的來源
+#    在 GitHub 上就沒有第二份副本，只有被 SOURCE_SUBDIRS 涵蓋才有 Hugging Face
+#    私有 dataset 的異地備份。兩份清單目前一一對應（5 對 5）。
+track-crypto/data/mcp_smithery/*.json.gz
 # _manifest 保留：體積小，可證明每日排程確實執行
 __pycache__/
 *.pyc
