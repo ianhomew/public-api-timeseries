@@ -20,3 +20,10 @@
 {"date": "2026-09-05", "source": "cex_symbols_ext", "group": "kraken", "key": "XBTSOFID", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
 {"date": "2026-09-08", "source": "cex_symbols_ext", "group": "upbit", "key": "KRW-BONK", "event": "DELISTED", "from": "Bonk", "to": null}
 {"date": "2026-09-08", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-BONK", "event": "DELISTED", "from": "Bonk", "to": null}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "upbit", "key": "BTC-CP", "event": "LISTED", "from": null, "to": "Cluster Protocol"}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "upbit", "key": "BTC-USELESS", "event": "LISTED", "from": null, "to": "Useless Coin"}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "upbit", "key": "KRW-CP", "event": "LISTED", "from": null, "to": "Cluster Protocol"}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-CP", "event": "LISTED", "from": null, "to": "Cluster Protocol"}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-USELESS", "event": "LISTED", "from": null, "to": "Useless Coin"}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "kraken", "key": "LAPTOPUSD", "event": "LISTED", "from": null, "to": "LAPTOP/USD"}
+{"date": "2026-09-09", "source": "cex_symbols_ext", "group": "kraken", "key": "TCSUSD", "event": "LISTED", "from": null, "to": "TCS/USD"}

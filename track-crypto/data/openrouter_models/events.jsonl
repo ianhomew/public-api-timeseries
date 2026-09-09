@@ -82,3 +82,13 @@
 {"date": "2026-09-08", "source": "openrouter_models", "group": "_models", "key": "minimax/minimax-m2.7:free", "event": "DELISTED", "from": "MiniMax: MiniMax M2.7 (free)", "to": null}
 {"date": "2026-09-08", "source": "openrouter_models", "group": "_models", "key": "minimax/minimax-m3:free", "event": "DELISTED", "from": "MiniMax: MiniMax M3 (free)", "to": null}
 {"date": "2026-09-08", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.7-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": "2026-09-10"}, "to": {"expiration_date": null}}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "inception/mercury-2.5-preview", "event": "DELISTED", "from": "Inception: Mercury 2.5 Preview", "to": null}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "nex-agi/nex-n2-mini", "event": "DELISTED", "from": "Nex AGI: Nex-N2-Mini", "to": null}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "nex-agi/nex-n2-pro", "event": "DELISTED", "from": "Nex AGI: Nex-N2-Pro", "to": null}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "deepseek/deepseek-v4-flash-vision-exp:batch", "event": "LISTED", "from": null, "to": "DeepSeek: DeepSeek V4 Flash Vision Exp (batch)"}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "inception/mercury-2.5", "event": "LISTED", "from": null, "to": "Inception: Mercury 2.5"}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "nex-agi/nex-n2.5-mini:free", "event": "LISTED", "from": null, "to": "Nex AGI: Nex-N2.5-Mini (free)"}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "nex-agi/nex-n2.5-pro:free", "event": "LISTED", "from": null, "to": "Nex AGI: Nex-N2.5-Pro (free)"}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.2:batch", "event": "LISTED", "from": null, "to": "Z.ai: GLM 5.2 (batch)"}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3:batch", "event": "LISTED", "from": null, "to": "Z.ai: GLM 5.3 (batch)"}
+{"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.5v", "event": "STATUS_CHANGED", "from": {"expiration_date": "2026-12-31"}, "to": {"expiration_date": null}}

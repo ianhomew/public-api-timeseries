@@ -1,3 +1,6 @@
 {"date": "2026-08-29", "source": "openrouter_providers", "group": "_providers", "key": "cosine", "event": "LISTED", "from": null, "to": "Cosine"}
 {"date": "2026-08-29", "source": "openrouter_providers", "group": "_providers", "key": "ollama", "event": "LISTED", "from": null, "to": "Ollama"}
 {"date": "2026-09-04", "source": "openrouter_providers", "group": "_providers", "key": "prime-intellect", "event": "LISTED", "from": null, "to": "PrimeIntellect"}
+{"date": "2026-09-09", "source": "openrouter_providers", "group": "_providers", "key": "ncompass", "event": "DELISTED", "from": "NCompass", "to": null}
+{"date": "2026-09-09", "source": "openrouter_providers", "group": "_providers", "key": "prime-intellect", "event": "DELISTED", "from": "PrimeIntellect", "to": null}
+{"date": "2026-09-09", "source": "openrouter_providers", "group": "_providers", "key": "primeintellect", "event": "LISTED", "from": null, "to": "PrimeIntellect"}

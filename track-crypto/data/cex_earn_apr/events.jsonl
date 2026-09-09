@@ -27,3 +27,4 @@
 {"date": "2026-09-05", "source": "cex_earn_apr", "group": "okx", "key": "TAO", "event": "LISTED", "from": null, "to": ""}
 {"date": "2026-09-08", "source": "cex_earn_apr", "group": "bybit", "key": "262", "event": "DELISTED", "from": "ZIL", "to": null}
 {"date": "2026-09-08", "source": "cex_earn_apr", "group": "bybit", "key": "661", "event": "DELISTED", "from": "ICX", "to": null}
+{"date": "2026-09-09", "source": "cex_earn_apr", "group": "bybit", "key": "267", "event": "DELISTED", "from": "HFT", "to": null}

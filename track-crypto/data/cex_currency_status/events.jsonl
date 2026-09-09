@@ -474,7 +474,7 @@
 {"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "XRT", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-06"]}
 {"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "ZKS3", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-06"]}
 {"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "ZTG", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-06"]}
-{"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "牛来", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-06"]}
+{"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "牛来", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-06", "2026-09-09"]}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "BEN", "event": "LISTED", "from": null, "to": "BEN"}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "BREW", "event": "LISTED", "from": null, "to": "BREW"}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "CNPY", "event": "LISTED", "from": null, "to": "Canopy"}
@@ -482,7 +482,15 @@
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "STONKBROKER", "event": "LISTED", "from": null, "to": "StonkBroker"}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "ZCAT", "event": "LISTED", "from": null, "to": "Anonymous Cat"}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "ELF", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
-{"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "GAS", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "GAS", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-09"]}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "SAND", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "SHM", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
 {"date": "2026-09-08", "source": "cex_currency_status", "group": "gate", "key": "哈基米", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "4STOCK", "event": "LISTED", "from": null, "to": "4Stock"}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "PYBOBOOLD", "event": "LISTED", "from": null, "to": "PYBOBOOLD"}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "CNPY", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "GAS", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-08"]}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "INJ", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "STONKBROKER", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "XRD", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "牛来", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-07"]}

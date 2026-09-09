@@ -1,0 +1,211 @@
+{
+ "date": "2026-09-09",
+ "channels": {
+  "cbc_press": {
+   "ok": true,
+   "n": 99,
+   "bytes": 47065,
+   "errors": 0,
+   "secs": 206.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "ey_press": {
+   "ok": true,
+   "n": 99,
+   "bytes": 174695,
+   "errors": 0,
+   "secs": 253.5,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fda_clarify": {
+   "ok": true,
+   "n": 50,
+   "bytes": 21086,
+   "errors": 0,
+   "secs": 184.2,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fsc_clarification": {
+   "ok": true,
+   "n": 50,
+   "bytes": 38427,
+   "errors": 0,
+   "secs": 102.2,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fsc_lawnotice": {
+   "ok": true,
+   "n": 100,
+   "bytes": 25473,
+   "errors": 0,
+   "secs": 186.1,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "fsc_penalty": {
+   "ok": true,
+   "n": 100,
+   "bytes": 140028,
+   "errors": 0,
+   "secs": 192.4,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "ftc_decision": {
+   "ok": true,
+   "n": 100,
+   "bytes": 17344,
+   "errors": 0,
+   "secs": 54.2,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moda_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 98055,
+   "errors": 0,
+   "secs": 106.5,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moe_clarify": {
+   "ok": true,
+   "n": 81,
+   "bytes": 73831,
+   "errors": 0,
+   "secs": 274.4,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moe_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 125707,
+   "errors": 0,
+   "secs": 322.8,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moea_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 124343,
+   "errors": 0,
+   "secs": 222.5,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "mof_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 88261,
+   "errors": 0,
+   "secs": 274.1,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "mohw_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 126873,
+   "errors": 0,
+   "secs": 217.9,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moi_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 98983,
+   "errors": 0,
+   "secs": 299.0,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "moj_press": {
+   "ok": true,
+   "n": 50,
+   "bytes": 56398,
+   "errors": 0,
+   "secs": 118.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "mol_press": {
+   "ok": true,
+   "n": 100,
+   "bytes": 130664,
+   "errors": 0,
+   "secs": 294.8,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "pres_news": {
+   "ok": true,
+   "n": 100,
+   "bytes": 182493,
+   "errors": 0,
+   "secs": 188.3,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  },
+  "tpe_clarify": {
+   "ok": true,
+   "n": 50,
+   "bytes": 35471,
+   "errors": 0,
+   "secs": 111.8,
+   "attempts": 1,
+   "truncated": false,
+   "parse_failed": 0
+  }
+ },
+ "fetched_at": "2026-09-09T01:30:05.227491+00:00",
+ "runs": [
+  {
+   "at": "2026-09-09T01:30:05.227491+00:00",
+   "channels": [
+    "cbc_press",
+    "ey_press",
+    "fda_clarify",
+    "fsc_clarification",
+    "fsc_lawnotice",
+    "fsc_penalty",
+    "ftc_decision",
+    "moda_press",
+    "moe_clarify",
+    "moe_press",
+    "moea_press",
+    "mof_press",
+    "mohw_press",
+    "moi_press",
+    "moj_press",
+    "mol_press",
+    "pres_news",
+    "tpe_clarify"
+   ]
+  }
+ ]
+}

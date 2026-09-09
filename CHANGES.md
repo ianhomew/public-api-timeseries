@@ -4,6 +4,20 @@
 
 | 日期 | 來源 | 改寫 | 下架 | 新增 | 紀錄 |
 |---|---|---|---|---|---|
+| 2026-09-09 | `track-crypto/x402_bazaar` | — | 598 | 288（含 22 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/oracle_feed_directory` | — | 0 | 7 | [紀錄](changes/oracle_feed_directory/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/openrouter_providers` | — | 2 | 1 | [紀錄](changes/openrouter_providers/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/openrouter_models` | — | 3；狀態變化 1 | 6 | [紀錄](changes/openrouter_models/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/ofac_sanctions_crypto` | — | 0 | 36 | [紀錄](changes/ofac_sanctions_crypto/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/mcp_smithery` | — | 34 | 351 | [紀錄](changes/mcp_smithery/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/crypto_project_liveness` | — | 1 | 5 | [紀錄](changes/crypto_project_liveness/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/cex_symbols_ext` | — | 0 | 7 | [紀錄](changes/cex_symbols_ext/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/cex_earn_apr` | — | 1 | 0 | [紀錄](changes/cex_earn_apr/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/cex_currency_status` | — | 0；狀態變化 6 | 2 | [紀錄](changes/cex_currency_status/2026-09-09.md) |
+| 2026-09-09 | `track-crypto/agent_virtuals` | — | 1 | 137 | [紀錄](changes/agent_virtuals/2026-09-09.md) |
+| 2026-09-09 | `moea_press` | **1** | 0 | 1 | [紀錄](changes/moea_press/2026-09-09.md) |
+| 2026-09-09 | `moe_press` | **1** | 0 | 4 | [紀錄](changes/moe_press/2026-09-09.md) |
+| 2026-09-09 | `fsc_lawnotice` | **0** | 1 | 1 | [紀錄](changes/fsc_lawnotice/2026-09-09.md) |
 | 2026-09-08 | `track-crypto/x402_bazaar` | — | 1042（熔斷，已隔離） | 236（熔斷，已隔離） | [紀錄](changes/x402_bazaar/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/oracle_feed_directory` | — | 1 | 0 | [紀錄](changes/oracle_feed_directory/2026-09-08.md) |
 | 2026-09-08 | `track-crypto/openrouter_models` | — | 2；狀態變化 1 | 0 | [紀錄](changes/openrouter_models/2026-09-08.md) |
