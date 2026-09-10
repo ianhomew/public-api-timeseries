@@ -92,3 +92,5 @@
 {"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.2:batch", "event": "LISTED", "from": null, "to": "Z.ai: GLM 5.2 (batch)"}
 {"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3:batch", "event": "LISTED", "from": null, "to": "Z.ai: GLM 5.3 (batch)"}
 {"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.5v", "event": "STATUS_CHANGED", "from": {"expiration_date": "2026-12-31"}, "to": {"expiration_date": null}}
+{"date": "2026-09-10", "source": "openrouter_models", "group": "_models", "key": "nousresearch/hermes-4-70b", "event": "DELISTED", "from": "Nous: Hermes 4 70B", "to": null}
+{"date": "2026-09-10", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}

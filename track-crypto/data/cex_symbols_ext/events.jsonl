@@ -27,3 +27,6 @@
 {"date": "2026-09-09", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-USELESS", "event": "LISTED", "from": null, "to": "Useless Coin"}
 {"date": "2026-09-09", "source": "cex_symbols_ext", "group": "kraken", "key": "LAPTOPUSD", "event": "LISTED", "from": null, "to": "LAPTOP/USD"}
 {"date": "2026-09-09", "source": "cex_symbols_ext", "group": "kraken", "key": "TCSUSD", "event": "LISTED", "from": null, "to": "TCS/USD"}
+{"date": "2026-09-10", "source": "cex_symbols_ext", "group": "kraken", "key": "ONEUSD", "event": "LISTED", "from": null, "to": "ONE/USD"}
+{"date": "2026-09-10", "source": "cex_symbols_ext", "group": "kraken", "key": "LAPTOPUSD", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
+{"date": "2026-09-10", "source": "cex_symbols_ext", "group": "kraken", "key": "TCSUSD", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}

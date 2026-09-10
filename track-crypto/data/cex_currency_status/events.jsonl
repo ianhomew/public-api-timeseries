@@ -494,3 +494,23 @@
 {"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "STONKBROKER", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
 {"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "XRD", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
 {"date": "2026-09-09", "source": "cex_currency_status", "group": "gate", "key": "牛来", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}, "flapped": true, "flap_fields": ["withdraw_disabled"], "flap_with": ["2026-09-07"]}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "AAOI3L", "event": "LISTED", "from": null, "to": "AAOI3xLong"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "AAOI3S", "event": "LISTED", "from": null, "to": "AAOI3xShort"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "B200", "event": "LISTED", "from": null, "to": "NVIDIA B200 GPU Rental Price Index"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "CRWV3L", "event": "LISTED", "from": null, "to": "CRWV3xLong"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "CRWV3S", "event": "LISTED", "from": null, "to": "CRWV3xShort"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "H100", "event": "LISTED", "from": null, "to": "NVIDIA H100 GPU Rental Price Index"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "KORU3L", "event": "LISTED", "from": null, "to": "KORU3xLong"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "KORU3S", "event": "LISTED", "from": null, "to": "KORU3xShort"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "LAPTOP", "event": "LISTED", "from": null, "to": "Hunter Biden's Laptop"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "MCAT", "event": "LISTED", "from": null, "to": "MarsCat"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "MINIMAX3L", "event": "LISTED", "from": null, "to": "MINIMAX3xLong"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "MINIMAX3S", "event": "LISTED", "from": null, "to": "MINIMAX3xShort"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "USD", "event": "LISTED", "from": null, "to": "US Dollar"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "ZZZOLD", "event": "LISTED", "from": null, "to": "Gosleep"}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "4STOCK", "event": "STATUS_CHANGED", "from": {"trade_disabled": true}, "to": {"trade_disabled": false}}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "GLMR", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "MOVR", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "NFLXX", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "POOLX", "event": "STATUS_CHANGED", "from": {"trade_disabled": false}, "to": {"trade_disabled": true}}
+{"date": "2026-09-10", "source": "cex_currency_status", "group": "gate", "key": "ZZZ", "event": "STATUS_CHANGED", "from": {"delisted": true, "withdraw_disabled": false}, "to": {"delisted": false, "withdraw_disabled": true}}

@@ -46,3 +46,7 @@
 {"date": "2026-09-09", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58535", "event": "LISTED", "from": null, "to": "NASIM AIR"}
 {"date": "2026-09-09", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58537", "event": "LISTED", "from": null, "to": "PARS OGHYANOUS KISH COMPANY"}
 {"date": "2026-09-09", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58538", "event": "LISTED", "from": null, "to": "RAIMON AIRWAYS"}
+{"date": "2026-09-10", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58005", "event": "LISTED", "from": null, "to": "LOS TIGUERONES"}
+{"date": "2026-09-10", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58361", "event": "LISTED", "from": null, "to": "XINBI GUARANTEE"}
+{"date": "2026-09-10", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58362", "event": "LISTED", "from": null, "to": "ANWEN TECHNOLOGY CO., LTD."}
+{"date": "2026-09-10", "source": "ofac_sanctions_crypto", "group": "_items", "key": "58365", "event": "LISTED", "from": null, "to": "SAFEW TECHNOLOGY CO., LTD."}

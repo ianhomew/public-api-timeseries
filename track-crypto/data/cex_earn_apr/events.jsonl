@@ -28,3 +28,8 @@
 {"date": "2026-09-08", "source": "cex_earn_apr", "group": "bybit", "key": "262", "event": "DELISTED", "from": "ZIL", "to": null}
 {"date": "2026-09-08", "source": "cex_earn_apr", "group": "bybit", "key": "661", "event": "DELISTED", "from": "ICX", "to": null}
 {"date": "2026-09-09", "source": "cex_earn_apr", "group": "bybit", "key": "267", "event": "DELISTED", "from": "HFT", "to": null}
+{"date": "2026-09-10", "source": "cex_earn_apr", "group": "bybit", "key": "1237", "event": "LISTED", "from": null, "to": "VVV"}
+{"date": "2026-09-10", "source": "cex_earn_apr", "group": "bybit", "key": "1238", "event": "LISTED", "from": null, "to": "YB"}
+{"date": "2026-09-10", "source": "cex_earn_apr", "group": "bybit", "key": "1239", "event": "LISTED", "from": null, "to": "ZBT"}
+{"date": "2026-09-10", "source": "cex_earn_apr", "group": "bybit", "key": "1240", "event": "LISTED", "from": null, "to": "WAXP"}
+{"date": "2026-09-10", "source": "cex_earn_apr", "group": "bybit", "key": "1241", "event": "LISTED", "from": null, "to": "ZIG"}
