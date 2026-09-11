@@ -93,4 +93,17 @@
 {"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3:batch", "event": "LISTED", "from": null, "to": "Z.ai: GLM 5.3 (batch)"}
 {"date": "2026-09-09", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-4.5v", "event": "STATUS_CHANGED", "from": {"expiration_date": "2026-12-31"}, "to": {"expiration_date": null}}
 {"date": "2026-09-10", "source": "openrouter_models", "group": "_models", "key": "nousresearch/hermes-4-70b", "event": "DELISTED", "from": "Nous: Hermes 4 70B", "to": null}
-{"date": "2026-09-10", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}}
+{"date": "2026-09-10", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": "2098-12-31"}, "to": {"expiration_date": null}, "flapped": true, "flap_fields": ["expiration_date"], "flap_with": ["2026-09-11"]}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "deepseek/deepseek-v4.1-flash", "event": "LISTED", "from": null, "to": "DeepSeek: DeepSeek V4.1 Flash"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "inclusionai/ling-3.0-flash-vl:free", "event": "LISTED", "from": null, "to": "inclusionAI: Ling 3.0 Flash VL (free)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/codestral-2508:batch", "event": "LISTED", "from": null, "to": "Mistral: Codestral 2508 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/codestral-2508:batch", "event": "REAPPEARED", "from": "2026-09-02", "to": "Mistral: Codestral 2508 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/ministral-8b-2512:batch", "event": "LISTED", "from": null, "to": "Mistral: Ministral 3 8B 2512 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/ministral-8b-2512:batch", "event": "REAPPEARED", "from": "2026-09-02", "to": "Mistral: Ministral 3 8B 2512 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-large-2512:batch", "event": "LISTED", "from": null, "to": "Mistral: Mistral Large 3 2512 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-large-2512:batch", "event": "REAPPEARED", "from": "2026-09-02", "to": "Mistral: Mistral Large 3 2512 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-medium-3.1:batch", "event": "LISTED", "from": null, "to": "Mistral: Mistral Medium 3.1 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-medium-3.1:batch", "event": "REAPPEARED", "from": "2026-09-02", "to": "Mistral: Mistral Medium 3.1 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-small-2603:batch", "event": "LISTED", "from": null, "to": "Mistral: Mistral Small 4 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-small-2603:batch", "event": "REAPPEARED", "from": "2026-09-02", "to": "Mistral: Mistral Small 4 (batch)"}
+{"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2098-12-31"}, "flapped": true, "flap_fields": ["expiration_date"], "flap_with": ["2026-09-10"]}

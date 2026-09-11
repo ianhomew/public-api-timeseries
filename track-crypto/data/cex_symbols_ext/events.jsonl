@@ -30,3 +30,6 @@
 {"date": "2026-09-10", "source": "cex_symbols_ext", "group": "kraken", "key": "ONEUSD", "event": "LISTED", "from": null, "to": "ONE/USD"}
 {"date": "2026-09-10", "source": "cex_symbols_ext", "group": "kraken", "key": "LAPTOPUSD", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
 {"date": "2026-09-10", "source": "cex_symbols_ext", "group": "kraken", "key": "TCSUSD", "event": "STATUS_CHANGED", "from": {"status": "post_only"}, "to": {"status": "online"}}
+{"date": "2026-09-11", "source": "cex_symbols_ext", "group": "upbit", "key": "KRW-BFC", "event": "LISTED", "from": null, "to": "Bifrost"}
+{"date": "2026-09-11", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-BFC", "event": "LISTED", "from": null, "to": "Bifrost"}
+{"date": "2026-09-11", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-REZ", "event": "LISTED", "from": null, "to": "Renzo"}

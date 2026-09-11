@@ -4,3 +4,4 @@
 {"date": "2026-09-09", "source": "openrouter_providers", "group": "_providers", "key": "ncompass", "event": "DELISTED", "from": "NCompass", "to": null}
 {"date": "2026-09-09", "source": "openrouter_providers", "group": "_providers", "key": "prime-intellect", "event": "DELISTED", "from": "PrimeIntellect", "to": null}
 {"date": "2026-09-09", "source": "openrouter_providers", "group": "_providers", "key": "primeintellect", "event": "LISTED", "from": null, "to": "PrimeIntellect"}
+{"date": "2026-09-11", "source": "openrouter_providers", "group": "_providers", "key": "near-ai", "event": "LISTED", "from": null, "to": "Near AI"}

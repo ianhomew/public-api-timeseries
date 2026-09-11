@@ -249,3 +249,6 @@
 {"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "XPLL", "field": "withdraw_disabled", "from": false, "to": true, "reason": "delisted_dominates_withdraw_disabled"}
 {"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "ZKS3", "field": "withdraw_disabled", "from": false, "to": true, "reason": "delisted_dominates_withdraw_disabled"}
 {"date": "2026-09-07", "source": "cex_currency_status", "group": "gate", "key": "ZTG", "field": "withdraw_disabled", "from": false, "to": true, "reason": "delisted_dominates_withdraw_disabled"}
+{"date": "2026-09-11", "source": "cex_currency_status", "group": "gate", "key": "ELY", "field": "withdraw_disabled", "from": false, "to": true, "reason": "delisted_dominates_withdraw_disabled"}
+{"date": "2026-09-11", "source": "cex_currency_status", "group": "gate", "key": "PRIMAL", "field": "withdraw_disabled", "from": true, "to": false, "reason": "delisted_dominates_withdraw_disabled"}
+{"date": "2026-09-11", "source": "cex_currency_status", "group": "gate", "key": "STOS", "field": "withdraw_disabled", "from": false, "to": true, "reason": "delisted_dominates_withdraw_disabled"}

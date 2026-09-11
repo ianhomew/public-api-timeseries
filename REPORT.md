@@ -1,6 +1,6 @@
 # 每日資料蒐集報告
 
-產生時間：2026-09-10 03:33:13 UTC（台北時間 2026-09-10 11:33:13 UTC+8）
+產生時間：2026-09-11 03:33:40 UTC（台北時間 2026-09-11 11:33:40 UTC+8）
 
 ## 一句話結論
 
@@ -12,48 +12,48 @@
 
 | 軌 | 來源 | 中文名 | 今日筆數 | 昨日筆數 | 增減 | 今日體積 | 體積增減% | 耗時 | 嘗試 | 截斷 | 解析失敗 | 備註 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 軌一 | agent_virtuals | Virtuals Protocol agent 清單 | — | — | — | 1,864,929 B | +0.1% | 2159.5s | 1 | 否 | — |  |
-| 軌一 | airdrop_claim_pages | 空投資格規則頁 | — | — | — | 927 B | +0.2% | 0.2s | 1 | 否 | — |  |
-| 軌一 | audit_registry_certik | CertiK Skynet 首頁「Recently Audited」最新審計清單 | — | — | — | 677 B | +0.1% | 0.2s | 1 | 否 | — |  |
-| 軌一 | cex_announcements | 交易所公告 | — | — | — | 7,102 B | +0.9% | 15.6s | 1 | 否 | — |  |
-| 軌一 | cex_currency_status | 交易所幣種層級狀態旗標 | — | — | — | 294,345 B | +0.2% | 4.2s | 1 | 否 | — |  |
-| 軌一 | cex_earn_apr | CEX 理財年化率 | — | — | — | 9,315 B | +1.7% | 2.2s | 1 | 否 | — |  |
-| 軌一 | cex_symbols | 7 家 CEX 交易對／幣種狀態 | 10,730 | 10,711 | +19 | 406,683 B | +0.2% | 12.7s | 1 | 否 | — |  |
-| 軌一 | cex_symbols_ext | 新增 3 家交易所 | — | — | — | 58,108 B | -0.1% | 5.2s | 1 | 否 | — |  |
-| 軌一 | cex_withdrawal_limits | KuCoin 幣種提幣費與最低提幣額 | — | — | — | 142,350 B | +0.1% | 0.5s | 1 | 否 | — |  |
-| 軌一 | crypto_project_liveness | DefiLlama 駭客事件清單 | — | — | — | 33,900 B | +0.2% | 0.1s | 1 | 否 | — |  |
-| 軌一 | dao_proposal_snapshot | Snapshot DAO 提案中繼資料快照 | — | — | — | 397,083 B | +0.0% | 10.1s | 1 | 否 | — |  |
-| 軌一 | defi_yield_rates | LST/LRT 質押與 DeFi 借貸利率 | — | — | — | 1,488 B | -0.7% | 3.4s | 1 | 否 | — |  |
-| 軌一 | eth_validator_queue | 以太坊驗證者進出隊列各狀態筆數 | — | — | — | 217 B | +2.8% | 4.3s | 1 | 否 | — |  |
-| 軌一 | hf_trending_models | HuggingFace trending 模型清單 | — | — | — | 107,976 B | -0.4% | 0.4s | 1 | 否 | — |  |
-| 軌一 | mcp_smithery | MCP Smithery 註冊表 | — | — | — | 3,019,394 B | +4.4% | 290.8s | 1 | 否 | — |  |
-| 軌一 | ofac_sanctions_crypto | OFAC SDN 制裁名單 | — | — | — | 937,500 B | +0.1% | 15.4s | 1 | 否 | — |  |
-| 軌一 | openrouter_models | OpenRouter 全模型清單與定價 | — | — | — | 71,401 B | -0.2% | 0.1s | 1 | 否 | — |  |
-| 軌一 | openrouter_providers | OpenRouter 供應商清單 | — | — | — | 3,665 B | +0.1% | 0.0s | 1 | 否 | — |  |
-| 軌一 | oracle_feed_directory | Chainlink／Pyth 價格餵送目錄 | — | — | — | 168,628 B | +0.4% | 1.8s | 1 | 否 | — |  |
-| 軌一 | payment_pricing_pages | Circle 官方開發者文件 Gateway 產品費率頁 | — | — | — | 808 B | +0.2% | 0.1s | 1 | 否 | — |  |
-| 軌一 | payment_protocol_repos | 支付協議規格版本 GitHub Repo 中繼資料 | — | — | — | 556 B | +0.2% | 0.7s | 1 | 否 | — |  |
-| 軌一 | project_tokenomics_docs | 專案官方 tokenomics 文件頁 | — | — | — | 751 B | +0.1% | 0.3s | 1 | 否 | — |  |
-| 軌一 | vast_gpu | Vast.ai GPU 租賃市場報價 | 512 | 512 | +0 | 174,192 B | -0.9% | 1.7s | 1 | 否 | — |  |
-| 軌一 | x402_bazaar | x402 Bazaar 全量掛牌 | 14,651 | 14,464 | +187 | 6,235,143 B | +1.9% | 41.3s | 1 | 否 | — |  |
-| 軌二 | cbc_press | 中央銀行新聞稿 | 99 | 99 | +0 | 47,067 B | +0.0% | 206.1s | 1 | 否 | 否 |  |
-| 軌二 | ey_press | 行政院本院新聞 | 95 | 99 | -4 | 169,110 B | -3.2% | 252.5s | 1 | 否 | 否 |  |
-| 軌二 | fda_clarify | 食藥署 食藥闢謠專區 | 50 | 50 | +0 | 21,087 B | +0.0% | 126.6s | 1 | 否 | 否 |  |
-| 軌二 | fsc_clarification | 金管會即時新聞澄清 | 50 | 50 | +0 | 38,428 B | +0.0% | 102.2s | 1 | 否 | 否 |  |
-| 軌二 | fsc_lawnotice | 金管會法規草案預告 | 100 | 100 | +0 | 25,474 B | +0.0% | 238.2s | 1 | 否 | 否 |  |
-| 軌二 | fsc_penalty | 金管會裁罰案件 | 100 | 100 | +0 | 140,030 B | +0.0% | 180.2s | 1 | 否 | 否 |  |
-| 軌二 | ftc_decision | 公平交易委員會 本會行政決定 | 100 | 100 | +0 | 17,345 B | +0.0% | 54.0s | 1 | 否 | 否 |  |
-| 軌二 | moda_press | 數位發展部新聞發布 | 100 | 100 | +0 | 98,058 B | +0.0% | 106.3s | 1 | 否 | 否 |  |
-| 軌二 | moe_clarify | 教育部即時新聞澄清 | 81 | 81 | +0 | 73,832 B | +0.0% | 287.6s | 1 | 否 | 否 |  |
-| 軌二 | moe_press | 教育部即時新聞 | 100 | 100 | +0 | 125,548 B | -0.1% | 353.1s | 1 | 否 | 否 |  |
-| 軌二 | moea_press | 經濟部本部新聞 | 100 | 100 | +0 | 125,069 B | +0.6% | 217.7s | 1 | 否 | 否 |  |
-| 軌二 | mof_press | 財政部本部新聞 | 100 | 100 | +0 | 87,999 B | -0.3% | 268.1s | 1 | 否 | 否 |  |
-| 軌二 | mohw_press | 衛生福利部焦點新聞 | 100 | 100 | +0 | 127,277 B | +0.3% | 206.6s | 1 | 否 | 否 |  |
-| 軌二 | moi_press | 內政部新聞稿 | 100 | 100 | +0 | 100,064 B | +1.1% | 266.4s | 1 | 否 | 否 |  |
-| 軌二 | moj_press | 法務部新聞發布 | 50 | 50 | +0 | 56,400 B | +0.0% | 119.1s | 1 | 否 | 否 |  |
-| 軌二 | mol_press | 勞動部新聞稿 | 100 | 100 | +0 | 130,667 B | +0.0% | 298.9s | 1 | 否 | 否 |  |
-| 軌二 | pres_news | 總統府新聞 | 100 | 100 | +0 | 184,809 B | +1.3% | 198.3s | 1 | 否 | 否 |  |
-| 軌二 | tpe_clarify | 台北市政府即時新聞澄清 | 50 | 50 | +0 | 35,471 B | +0.0% | 102.7s | 1 | 否 | 否 |  |
+| 軌一 | agent_virtuals | Virtuals Protocol agent 清單 | — | — | — | 1,865,976 B | +0.1% | 1518.0s | 1 | 否 | — |  |
+| 軌一 | airdrop_claim_pages | 空投資格規則頁 | — | — | — | 927 B | +0.0% | 0.7s | 1 | 否 | — |  |
+| 軌一 | audit_registry_certik | CertiK Skynet 首頁「Recently Audited」最新審計清單 | — | — | — | 677 B | +0.0% | 0.1s | 1 | 否 | — |  |
+| 軌一 | cex_announcements | 交易所公告 | — | — | — | 6,969 B | -1.9% | 16.1s | 1 | 否 | — |  |
+| 軌一 | cex_currency_status | 交易所幣種層級狀態旗標 | — | — | — | 294,494 B | +0.1% | 4.4s | 1 | 否 | — |  |
+| 軌一 | cex_earn_apr | CEX 理財年化率 | — | — | — | 9,283 B | -0.3% | 2.1s | 1 | 否 | — |  |
+| 軌一 | cex_symbols | 7 家 CEX 交易對／幣種狀態 | 11,192 | 10,730 | +462 | 414,030 B | +1.8% | 12.9s | 1 | 否 | — |  |
+| 軌一 | cex_symbols_ext | 新增 3 家交易所 | — | — | — | 58,166 B | +0.1% | 5.2s | 1 | 否 | — |  |
+| 軌一 | cex_withdrawal_limits | KuCoin 幣種提幣費與最低提幣額 | — | — | — | 142,394 B | +0.0% | 0.6s | 1 | 否 | — |  |
+| 軌一 | crypto_project_liveness | DefiLlama 駭客事件清單 | — | — | — | 33,901 B | +0.0% | 0.1s | 1 | 否 | — |  |
+| 軌一 | dao_proposal_snapshot | Snapshot DAO 提案中繼資料快照 | — | — | — | 397,485 B | +0.1% | 10.0s | 1 | 否 | — |  |
+| 軌一 | defi_yield_rates | LST/LRT 質押與 DeFi 借貸利率 | — | — | — | 1,501 B | +0.9% | 3.9s | 1 | 否 | — |  |
+| 軌一 | eth_validator_queue | 以太坊驗證者進出隊列各狀態筆數 | — | — | — | 214 B | -1.4% | 4.3s | 1 | 否 | — |  |
+| 軌一 | hf_trending_models | HuggingFace trending 模型清單 | — | — | — | 109,220 B | +1.2% | 0.5s | 1 | 否 | — |  |
+| 軌一 | mcp_smithery | MCP Smithery 註冊表 | — | — | — | 3,038,593 B | +0.6% | 263.0s | 1 | 否 | — |  |
+| 軌一 | ofac_sanctions_crypto | OFAC SDN 制裁名單 | — | — | — | 938,818 B | +0.1% | 62.8s | 1 | 否 | — |  |
+| 軌一 | openrouter_models | OpenRouter 全模型清單與定價 | — | — | — | 72,564 B | +1.6% | 0.1s | 1 | 否 | — |  |
+| 軌一 | openrouter_providers | OpenRouter 供應商清單 | — | — | — | 3,683 B | +0.5% | 0.0s | 1 | 否 | — |  |
+| 軌一 | oracle_feed_directory | Chainlink／Pyth 價格餵送目錄 | — | — | — | 169,349 B | +0.4% | 1.6s | 1 | 否 | — |  |
+| 軌一 | payment_pricing_pages | Circle 官方開發者文件 Gateway 產品費率頁 | — | — | — | 809 B | +0.1% | 0.1s | 1 | 否 | — |  |
+| 軌一 | payment_protocol_repos | 支付協議規格版本 GitHub Repo 中繼資料 | — | — | — | 557 B | +0.2% | 0.7s | 1 | 否 | — |  |
+| 軌一 | project_tokenomics_docs | 專案官方 tokenomics 文件頁 | — | — | — | 751 B | +0.0% | 0.1s | 1 | 否 | — |  |
+| 軌一 | vast_gpu | Vast.ai GPU 租賃市場報價 | 512 | 512 | +0 | 173,777 B | -0.2% | 1.8s | 1 | 否 | — |  |
+| 軌一 | x402_bazaar | x402 Bazaar 全量掛牌 | 14,259 | 14,651 | -392 | 6,135,722 B | -1.6% | 40.9s | 1 | 否 | — |  |
+| 軌二 | cbc_press | 中央銀行新聞稿 | 99 | 99 | +0 | 47,066 B | -0.0% | 201.9s | 1 | 否 | 否 |  |
+| 軌二 | ey_press | 行政院本院新聞 | 96 | 95 | +1 | 168,853 B | -0.2% | 260.3s | 1 | 否 | 否 |  |
+| 軌二 | fda_clarify | 食藥署 食藥闢謠專區 | 50 | 50 | +0 | 21,087 B | +0.0% | 124.8s | 1 | 否 | 否 |  |
+| 軌二 | fsc_clarification | 金管會即時新聞澄清 | 50 | 50 | +0 | 38,427 B | -0.0% | 100.0s | 1 | 否 | 否 |  |
+| 軌二 | fsc_lawnotice | 金管會法規草案預告 | 100 | 100 | +0 | 25,474 B | +0.0% | 182.0s | 1 | 否 | 否 |  |
+| 軌二 | fsc_penalty | 金管會裁罰案件 | 100 | 100 | +0 | 140,030 B | +0.0% | 180.4s | 1 | 否 | 否 |  |
+| 軌二 | ftc_decision | 公平交易委員會 本會行政決定 | 100 | 100 | +0 | 17,344 B | -0.0% | 52.1s | 1 | 否 | 否 |  |
+| 軌二 | moda_press | 數位發展部新聞發布 | 100 | 100 | +0 | 98,648 B | +0.6% | 107.4s | 1 | 否 | 否 |  |
+| 軌二 | moe_clarify | 教育部即時新聞澄清 | 81 | 81 | +0 | 73,832 B | +0.0% | 283.0s | 1 | 否 | 否 |  |
+| 軌二 | moe_press | 教育部即時新聞 | 100 | 100 | +0 | 123,145 B | -1.9% | 340.1s | 1 | 否 | 否 |  |
+| 軌二 | moea_press | 經濟部本部新聞 | 100 | 100 | +0 | 124,836 B | -0.2% | 222.4s | 1 | 否 | 否 |  |
+| 軌二 | mof_press | 財政部本部新聞 | 100 | 100 | +0 | 88,455 B | +0.5% | 215.6s | 1 | 否 | 否 |  |
+| 軌二 | mohw_press | 衛生福利部焦點新聞 | 100 | 100 | +0 | 129,341 B | +1.6% | 211.2s | 1 | 否 | 否 |  |
+| 軌二 | moi_press | 內政部新聞稿 | 100 | 100 | +0 | 99,472 B | -0.6% | 335.5s | 1 | 否 | 否 |  |
+| 軌二 | moj_press | 法務部新聞發布 | 50 | 50 | +0 | 56,400 B | +0.0% | 107.9s | 1 | 否 | 否 |  |
+| 軌二 | mol_press | 勞動部新聞稿 | 100 | 100 | +0 | 130,124 B | -0.4% | 244.6s | 1 | 否 | 否 |  |
+| 軌二 | pres_news | 總統府新聞 | 100 | 100 | +0 | 186,270 B | +0.8% | 188.2s | 1 | 否 | 否 |  |
+| 軌二 | tpe_clarify | 台北市政府即時新聞澄清 | 50 | 50 | +0 | 35,472 B | +0.0% | 106.7s | 1 | 否 | 否 |  |
 
 註：本表「截斷」「解析失敗」欄位標記的來源屬於資料品質提示；官方異常總數以下方〈異常摘要〉為準，避免同一件事重複計數。
 
@@ -63,27 +63,27 @@
 
 | 來源 | 區間 | 改寫 | 下架 | 新增 | 滾動移出 |
 |---|---|---|---|---|---|
-| cbc_press | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| ey_press | 2026-09-09→2026-09-10 | 0 | 2 | 0 | 2 |
-| fda_clarify | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| fsc_clarification | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| fsc_lawnotice | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| fsc_penalty | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| ftc_decision | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| moda_press | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| moe_clarify | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| moe_press | 2026-09-09→2026-09-10 | 0 | 0 | 3 | 3 |
-| moea_press | 2026-09-09→2026-09-10 | 0 | 0 | 6 | 6 |
-| mof_press | 2026-09-09→2026-09-10 | 0 | 0 | 6 | 6 |
-| mohw_press | 2026-09-09→2026-09-10 | 0 | 0 | 2 | 2 |
-| moi_press | 2026-09-09→2026-09-10 | 0 | 0 | 3 | 3 |
-| moj_press | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| mol_press | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| pres_news | 2026-09-09→2026-09-10 | 1 | 0 | 3 | 3 |
-| tpe_clarify | 2026-09-09→2026-09-10 | 0 | 0 | 0 | 0 |
-| **總計** |  | 1 | 2 | 23 | 25 |
+| cbc_press | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| ey_press | 2026-09-10→2026-09-11 | 0 | 0 | 5 | 4 |
+| fda_clarify | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| fsc_clarification | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| fsc_lawnotice | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| fsc_penalty | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| ftc_decision | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| moda_press | 2026-09-10→2026-09-11 | 0 | 0 | 1 | 1 |
+| moe_clarify | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| moe_press | 2026-09-10→2026-09-11 | 1 | 0 | 3 | 3 |
+| moea_press | 2026-09-10→2026-09-11 | 1 | 0 | 4 | 4 |
+| mof_press | 2026-09-10→2026-09-11 | 0 | 0 | 4 | 4 |
+| mohw_press | 2026-09-10→2026-09-11 | 0 | 0 | 3 | 3 |
+| moi_press | 2026-09-10→2026-09-11 | 0 | 0 | 2 | 2 |
+| moj_press | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| mol_press | 2026-09-10→2026-09-11 | 0 | 0 | 1 | 1 |
+| pres_news | 2026-09-10→2026-09-11 | 0 | 0 | 1 | 1 |
+| tpe_clarify | 2026-09-10→2026-09-11 | 0 | 0 | 0 | 0 |
+| **總計** |  | 2 | 0 | 24 | 23 |
 
-本輪彙總：changed=1，removed=2。
+本輪彙總：changed=2，removed=0。
 
 `changes/` 目錄下有 19 個來源目錄記錄改寫內容：
 - agent_virtuals
@@ -110,39 +110,41 @@
 
 ## 交易所事件流
 
-今日（2026-09-10）共 21 筆事件，依交易所與事件類型分組：
+今日（2026-09-11）共 487 筆事件，依交易所與事件類型分組：
 
-- bitget / LISTED：6 筆
-  - RDLLLUSDT：None → online
-  - RHONUSDT：None → online
-  - RLGHLUSDT：None → halt
-  - RMVLLUSDT：None → online
-  - RNVDLUSDT：None → online
-- gateio / LISTED：10 筆
-  - 4STOCK_USDT：None → sellable
-  - AAOI3L_USDT：None → tradable
-  - AAOI3S_USDT：None → tradable
-  - CRWV3L_USDT：None → tradable
-  - CRWV3S_USDT：None → tradable
-- gateio / STATUS_CHANGED：1 筆
-  - POOLX_USDT：tradable → untradable
-- htx / LISTED：1 筆
-  - 4stockusdt：None → online
-- kucoin / LISTED：2 筆
-  - 4STOCK-USDT：None → True
-  - LAPTOP-USDT：None → True
-- mexc / STATUS_CHANGED：1 筆
-  - PFPUSDT：2 → 1
+- bitget / LISTED：469 筆
+  - MCATUSDT：None → online
+  - RAAONUSDT：None → online
+  - RABEVUSDT：None → online
+  - RABVXUSDT：None → online
+  - RACGLUSDT：None → online
+- bitget / STATUS_CHANGED：1 筆
+  - RLGHLUSDT：halt → online
+- gateio / STATUS_CHANGED：2 筆
+  - 4STOCK_USDT：sellable → tradable
+  - MCAT_USDT：sellable → tradable
+- kucoin / LISTED：1 筆
+  - MCAT-USDT：None → True
+- mexc / DELISTED：11 筆
+  - AASTUSDT：1 → None
+  - CLSUSDT：1 → None
+  - ECHELONUSDT：1 → None
+  - IRUSDT：1 → None
+  - PIGGYUSDT：1 → None
+- mexc / LISTED：3 筆
+  - KNOTSUSD1：None → 1
+  - KNOTSUSDT：None → 1
+  - MCATUSDT：None → 1
 
 ## 排程執行狀況
 
 **軌一（track-crypto）**（自動探索到 24 個來源）：
-- 今日已執行（依 manifest `fetched_at`=2026-09-10 判斷），manifest 記錄 24 個來源。
+- 今日已執行（依 manifest `fetched_at`=2026-09-11 判斷），manifest 記錄 24 個來源。
 - manifest 由 1 次執行合併寫入（`runs` 陣列）。
 - cron.log 最近一次摘要（僅供耗時／歷史參考）：24/24 成功
 - 近 7 次執行成功率（cron.log 歷史）：24/24、24/24、24/24、24/24、24/24、24/24、24/24
 **軌二（track-gov）**（自動探索到 18 個來源）：
-- 今日已執行（依 manifest `fetched_at`=2026-09-10 判斷），manifest 記錄 18 個來源。
+- 今日已執行（依 manifest `fetched_at`=2026-09-11 判斷），manifest 記錄 18 個來源。
 - manifest 由 1 次執行合併寫入（`runs` 陣列）。
 - cron.log 最近一次摘要（僅供耗時／歷史參考）：18/18 成功
 - 近 7 次執行成功率（cron.log 歷史）：18/18、18/18、18/18、18/18、18/18、18/18、18/18
@@ -164,14 +166,15 @@
 - SHA256SUMS-2026-09-08.txt：有 對應 `.ots`
 - SHA256SUMS-2026-09-09.txt：有 對應 `.ots`
 - SHA256SUMS-2026-09-10.txt：有 對應 `.ots`
+- SHA256SUMS-2026-09-11.txt：有 對應 `.ots`
 
 ## 累積統計
 
-- 資料起訖日期：2026-08-26 ～ 2026-09-10（共 16 天，實際有紀錄 16 天）
-- track-crypto 累積體積：180,125,482 B（16 天有 manifest）
-  - 依現速率推算：1 年約 3.8 GB，5 年約 19.1 GB
-- track-gov 累積體積：22,820,915 B（15 天有 manifest）
-  - 依現速率推算：1 年約 529.6 MB，5 年約 2.6 GB
+- 資料起訖日期：2026-08-26 ～ 2026-09-11（共 17 天，實際有紀錄 17 天）
+- track-crypto 累積體積：193,995,342 B（17 天有 manifest）
+  - 依現速率推算：1 年約 3.9 GB，5 年約 19.4 GB
+- track-gov 累積體積：24,425,191 B（16 天有 manifest）
+  - 依現速率推算：1 年約 531.4 MB，5 年約 2.6 GB
 
 ## 異常摘要
 
@@ -218,9 +221,9 @@
 
 | 來源 | parser_version 變化 | 進度（第幾天／共幾天） |
 |---|---|---|
-| `track-crypto/mcp_smithery` | 2 → 3 | 第 2／7 天 |
-| `track-crypto/ofac_sanctions_crypto` | 1 → 2 | 第 1／7 天 |
-| `track-crypto/x402_bazaar` | 1 → 2 | 第 2／7 天 |
+| `track-crypto/mcp_smithery` | 2 → 3 | 第 3／7 天 |
+| `track-crypto/ofac_sanctions_crypto` | 1 → 2 | 第 2／7 天 |
+| `track-crypto/x402_bazaar` | 1 → 2 | 第 3／7 天 |
 
 
 ---
