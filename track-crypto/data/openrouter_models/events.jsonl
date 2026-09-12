@@ -107,3 +107,11 @@
 {"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-small-2603:batch", "event": "LISTED", "from": null, "to": "Mistral: Mistral Small 4 (batch)"}
 {"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "mistralai/mistral-small-2603:batch", "event": "REAPPEARED", "from": "2026-09-02", "to": "Mistral: Mistral Small 4 (batch)"}
 {"date": "2026-09-11", "source": "openrouter_models", "group": "_models", "key": "z-ai/glm-5.3-flash", "event": "STATUS_CHANGED", "from": {"expiration_date": null}, "to": {"expiration_date": "2098-12-31"}, "flapped": true, "flap_fields": ["expiration_date"], "flap_with": ["2026-09-10"]}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-latest", "event": "DELISTED", "from": "OpenAI GPT Latest", "to": null}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "inclusionai/ling-3.0-flash-vl", "event": "LISTED", "from": null, "to": "inclusionAI: Ling 3.0 Flash VL"}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "sakana/fugu-max", "event": "LISTED", "from": null, "to": "Sakana: Fugu Max"}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "sakana/fugu-ultra-v2", "event": "LISTED", "from": null, "to": "Sakana: Fugu Ultra v2"}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-astra-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Astra Latest"}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-luna-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Luna Latest"}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-sol-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Sol Latest"}
+{"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-terra-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Terra Latest"}

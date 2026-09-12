@@ -33,3 +33,43 @@
 {"date": "2026-09-11", "source": "cex_symbols_ext", "group": "upbit", "key": "KRW-BFC", "event": "LISTED", "from": null, "to": "Bifrost"}
 {"date": "2026-09-11", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-BFC", "event": "LISTED", "from": null, "to": "Bifrost"}
 {"date": "2026-09-11", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-REZ", "event": "LISTED", "from": null, "to": "Renzo"}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "ACAEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "ACAUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "BKSEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "BKSUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "BNCEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "BNCUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "CQTEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "CQTUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "CXTEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "CXTUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "EPTEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "EPTUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "GAIAEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "GAIAUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "HDXEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "HDXUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "IREUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "IRUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "JUNOEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "JUNOUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MATEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MATUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MIREUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MIRUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MULTIEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MULTIUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "MUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "RBCUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "RIZEEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "RIZEUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "SBREUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "SBRUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "SCAUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "VANRYEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "VANRYUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "VULTEUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "VULTUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "XTEREUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "XTERUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}

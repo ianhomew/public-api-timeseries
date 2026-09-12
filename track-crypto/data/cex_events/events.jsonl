@@ -920,3 +920,46 @@
 {"date": "2026-09-11", "exchange": "mexc", "symbol": "SQGROWUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-11", "exchange": "mexc", "symbol": "XRUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-11", "exchange": "mexc", "symbol": "YURUUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "AIXBTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "ALTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "BANUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "BLASTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "BLURUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "BROCCOLIUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "CESSUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "EGLDUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "FIDAUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "FTTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "GRTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "JELLYJELLYUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "LPTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "MAKUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "RUNEUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "SATSUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "VERTUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "VICUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "bitget", "symbol": "WAVESUSDT", "event": "DELISTED", "from": "online", "to": null, "note": "anomalous_scale", "removed_pct": 1.0674, "breaker_tripped": true, "breaker_threshold": 17.8}
+{"date": "2026-09-12", "exchange": "kucoin", "symbol": "BB-USDT", "event": "LISTED", "from": null, "to": "True"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "CMEUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "CMEUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "EMBERUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "EMBERUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "FLYBRAINUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "FLYBRAINUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "NEARKATUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "NEARKATUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "114514USDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "BLASTUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "EPIKUSD1", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "EPIKUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "FAKTUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "GOCHUUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "KETUSD1", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "KETUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "LAYOOOUSD1", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "LAYOOOUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "SALUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "SWFTCUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "UFDUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "WISHBONEUSD1", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-12", "exchange": "mexc", "symbol": "WISHBONEUSDT", "event": "DELISTED", "from": "1", "to": null}
