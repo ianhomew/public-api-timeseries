@@ -115,3 +115,5 @@
 {"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-luna-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Luna Latest"}
 {"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-sol-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Sol Latest"}
 {"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-terra-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Terra Latest"}
+{"date": "2026-09-13", "source": "openrouter_models", "group": "_models", "key": "inference-net/schematron-v2-small", "event": "LISTED", "from": null, "to": "Inference.net: Schematron V2 Small"}
+{"date": "2026-09-13", "source": "openrouter_models", "group": "_models", "key": "inference-net/schematron-v2-turbo", "event": "LISTED", "from": null, "to": "Inference.net: Schematron V2 Turbo"}

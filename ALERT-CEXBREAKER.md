@@ -51,3 +51,22 @@
 | 處置 | **標記但不否決**：事件已寫入 `track-crypto/data/cex_events/events.jsonl` |
 
 本組轉換產生的每一筆事件（LISTED／DELISTED／STATUS_CHANGED）都已帶 `note:"anomalous_scale"`、`breaker_tripped:true`、`removed_pct`、`breaker_threshold` 四個欄位，**需要人工複核**。本程式不對成因下判斷（零觀點鐵律）：可能是抓取異常，也可能是真的有大量交易對同時下架。若複核後判定為假事件，請用 `scripts/apply_correction.py` 更正，不要手動編輯事件流。
+
+## 🔴 cex_events／mexc 上下架規模異常熔斷警報（2026-09-13）
+
+<!-- cex_events:mexc:2026-09-13 -->
+
+檢查時間（UTC）：2026-09-13T03:30:26+00:00
+
+| 項目 | 值 |
+|---|---|
+| 交易所 | `mexc` |
+| 比對區間 | `2026-09-12` → `2026-09-13` |
+| 前日筆數 | 2065 |
+| 當日 DELISTED 筆數 | 58（2.81%） |
+| 熔斷門檻（筆數） | 20.6＝max(10, 1.0%×前日筆數) |
+| 同組 LISTED／STATUS_CHANGED | 0／0 |
+| 分頁截斷指紋 tail_cover | 0.0000（參考值，門檻 0.50；本來源不用它否決，見 BREAKER_TRUNCATION_QUARANTINE） |
+| 處置 | **標記但不否決**：事件已寫入 `track-crypto/data/cex_events/events.jsonl` |
+
+本組轉換產生的每一筆事件（LISTED／DELISTED／STATUS_CHANGED）都已帶 `note:"anomalous_scale"`、`breaker_tripped:true`、`removed_pct`、`breaker_threshold` 四個欄位，**需要人工複核**。本程式不對成因下判斷（零觀點鐵律）：可能是抓取異常，也可能是真的有大量交易對同時下架。若複核後判定為假事件，請用 `scripts/apply_correction.py` 更正，不要手動編輯事件流。

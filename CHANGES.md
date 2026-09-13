@@ -4,6 +4,11 @@
 
 | 日期 | 來源 | 改寫 | 下架 | 新增 | 紀錄 |
 |---|---|---|---|---|---|
+| 2026-09-13 | `track-crypto/x402_bazaar` | — | 202 | 261（含 25 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-13.md) |
+| 2026-09-13 | `track-crypto/openrouter_models` | — | 0 | 2 | [紀錄](changes/openrouter_models/2026-09-13.md) |
+| 2026-09-13 | `track-crypto/mcp_smithery` | — | 3 | 73（含 3 筆重新出現） | [紀錄](changes/mcp_smithery/2026-09-13.md) |
+| 2026-09-13 | `track-crypto/cex_currency_status` | — | 0；狀態變化 1 | 0 | [紀錄](changes/cex_currency_status/2026-09-13.md) |
+| 2026-09-13 | `track-crypto/agent_virtuals` | — | 0 | 82 | [紀錄](changes/agent_virtuals/2026-09-13.md) |
 | 2026-09-12 | `track-crypto/x402_bazaar` | — | 188 | 500（含 22 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-12.md) |
 | 2026-09-12 | `track-crypto/oracle_feed_directory` | — | 0 | 4 | [紀錄](changes/oracle_feed_directory/2026-09-12.md) |
 | 2026-09-12 | `track-crypto/openrouter_models` | — | 1 | 7 | [紀錄](changes/openrouter_models/2026-09-12.md) |

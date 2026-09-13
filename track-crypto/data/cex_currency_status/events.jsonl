@@ -540,3 +540,4 @@
 {"date": "2026-09-12", "source": "cex_currency_status", "group": "gate", "key": "MCAT", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
 {"date": "2026-09-12", "source": "cex_currency_status", "group": "gate", "key": "NES", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
 {"date": "2026-09-12", "source": "cex_currency_status", "group": "gate", "key": "UNHX", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-13", "source": "cex_currency_status", "group": "gate", "key": "MBL", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
