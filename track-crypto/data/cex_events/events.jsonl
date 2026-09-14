@@ -1021,3 +1021,9 @@
 {"date": "2026-09-13", "exchange": "mexc", "symbol": "WFCONUSDT", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 2.8087, "breaker_tripped": true, "breaker_threshold": 20.65}
 {"date": "2026-09-13", "exchange": "mexc", "symbol": "WMONUSDT", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 2.8087, "breaker_tripped": true, "breaker_threshold": 20.65}
 {"date": "2026-09-13", "exchange": "mexc", "symbol": "XRPHAIUSDT", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 2.8087, "breaker_tripped": true, "breaker_threshold": 20.65}
+{"date": "2026-09-14", "exchange": "gateio", "symbol": "FOLD_USDT", "event": "LISTED", "from": null, "to": "tradable"}
+{"date": "2026-09-14", "exchange": "mexc", "symbol": "BATONUSD1", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-14", "exchange": "mexc", "symbol": "BATONUSDT", "event": "LISTED", "from": null, "to": "1"}
+{"date": "2026-09-14", "exchange": "mexc", "symbol": "ASTRAAIUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-14", "exchange": "mexc", "symbol": "SDEXUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-14", "exchange": "mexc", "symbol": "VENOMUSDT", "event": "DELISTED", "from": "1", "to": null}
