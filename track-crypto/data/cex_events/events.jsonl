@@ -1027,3 +1027,38 @@
 {"date": "2026-09-14", "exchange": "mexc", "symbol": "ASTRAAIUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-14", "exchange": "mexc", "symbol": "SDEXUSDT", "event": "DELISTED", "from": "1", "to": null}
 {"date": "2026-09-14", "exchange": "mexc", "symbol": "VENOMUSDT", "event": "DELISTED", "from": "1", "to": null}
+{"date": "2026-09-15", "exchange": "gateio", "symbol": "STONK_USDT", "event": "LISTED", "from": null, "to": "tradable"}
+{"date": "2026-09-15", "exchange": "htx", "symbol": "ainvdausdt", "event": "LISTED", "from": null, "to": "online"}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "BEMUSD1", "event": "LISTED", "from": null, "to": "1", "note": "anomalous_scale", "breaker_tripped": true, "removed_pct": 1.4955, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "BEMUSDT", "event": "LISTED", "from": null, "to": "1", "note": "anomalous_scale", "breaker_tripped": true, "removed_pct": 1.4955, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "OKAIUSDT", "event": "LISTED", "from": null, "to": "2", "note": "anomalous_scale", "breaker_tripped": true, "removed_pct": 1.4955, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "AAVEUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "ACTUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "ASTERUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "AVAXUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "BABYUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "BANKUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "BUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "HYPERUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "ILVUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "KERNELUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "LAUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "LPTUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "MELANIAUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "MIRAUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "NMRUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "OPENUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "PEPEUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "PROVEUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "RSRUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "SAHARAUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "SAHARAUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "SIGNUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "TAGUSD1", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "THEUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "TNSRUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "UMAUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "USUALUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "ZBTUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "ZKCUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}
+{"date": "2026-09-15", "exchange": "mexc", "symbol": "ZKPUSDC", "event": "DELISTED", "from": "1", "to": null, "note": "anomalous_scale", "removed_pct": 1.4955, "breaker_tripped": true, "breaker_threshold": 20.06}

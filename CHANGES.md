@@ -4,6 +4,14 @@
 
 | 日期 | 來源 | 改寫 | 下架 | 新增 | 紀錄 |
 |---|---|---|---|---|---|
+| 2026-09-15 | `track-crypto/x402_bazaar` | — | 746 | 324（含 21 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/oracle_feed_directory` | — | 3 | 1 | [紀錄](changes/oracle_feed_directory/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/openrouter_models` | — | 2 | 2 | [紀錄](changes/openrouter_models/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/mcp_smithery` | — | 4 | 87 | [紀錄](changes/mcp_smithery/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/crypto_project_liveness` | — | 0 | 1 | [紀錄](changes/crypto_project_liveness/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/cex_symbols_ext` | — | 4；狀態變化 1 | 0 | [紀錄](changes/cex_symbols_ext/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/cex_currency_status` | — | 0；狀態變化 4 | 0 | [紀錄](changes/cex_currency_status/2026-09-15.md) |
+| 2026-09-15 | `track-crypto/agent_virtuals` | — | 0（_items:GATE_FAIL） | 0 | [紀錄](changes/agent_virtuals/2026-09-15.md) |
 | 2026-09-14 | `track-crypto/x402_bazaar` | — | 215 | 958（含 27 筆重新出現） | [紀錄](changes/x402_bazaar/2026-09-14.md) |
 | 2026-09-14 | `track-crypto/mcp_smithery` | — | 2 | 80 | [紀錄](changes/mcp_smithery/2026-09-14.md) |
 | 2026-09-14 | `track-crypto/cex_withdrawal_limits` | — | 0 | 1 | [紀錄](changes/cex_withdrawal_limits/2026-09-14.md) |

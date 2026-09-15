@@ -73,3 +73,8 @@
 {"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "VULTUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
 {"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "XTEREUR", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
 {"date": "2026-09-12", "source": "cex_symbols_ext", "group": "kraken", "key": "XTERUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}
+{"date": "2026-09-15", "source": "cex_symbols_ext", "group": "upbit", "key": "BTC-JASMY", "event": "DELISTED", "from": "JasmyCoin", "to": null}
+{"date": "2026-09-15", "source": "cex_symbols_ext", "group": "upbit", "key": "BTC-STORJ", "event": "DELISTED", "from": "Storj", "to": null}
+{"date": "2026-09-15", "source": "cex_symbols_ext", "group": "upbit", "key": "KRW-STORJ", "event": "DELISTED", "from": "Storj", "to": null}
+{"date": "2026-09-15", "source": "cex_symbols_ext", "group": "upbit", "key": "USDT-JASMY", "event": "DELISTED", "from": "JasmyCoin", "to": null}
+{"date": "2026-09-15", "source": "cex_symbols_ext", "group": "kraken", "key": "MONAUSD", "event": "STATUS_CHANGED", "from": {"status": "online"}, "to": {"status": "cancel_only"}}

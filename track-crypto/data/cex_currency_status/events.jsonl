@@ -542,3 +542,7 @@
 {"date": "2026-09-12", "source": "cex_currency_status", "group": "gate", "key": "UNHX", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
 {"date": "2026-09-13", "source": "cex_currency_status", "group": "gate", "key": "MBL", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
 {"date": "2026-09-14", "source": "cex_currency_status", "group": "gate", "key": "FOLD", "event": "LISTED", "from": null, "to": "Interfold"}
+{"date": "2026-09-15", "source": "cex_currency_status", "group": "gate", "key": "ANIME", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": false}, "to": {"withdraw_disabled": true}}
+{"date": "2026-09-15", "source": "cex_currency_status", "group": "gate", "key": "FOLD", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-15", "source": "cex_currency_status", "group": "gate", "key": "ISLM", "event": "STATUS_CHANGED", "from": {"withdraw_disabled": true}, "to": {"withdraw_disabled": false}}
+{"date": "2026-09-15", "source": "cex_currency_status", "group": "gate", "key": "STONK", "event": "STATUS_CHANGED", "from": {"trade_disabled": true}, "to": {"trade_disabled": false}}

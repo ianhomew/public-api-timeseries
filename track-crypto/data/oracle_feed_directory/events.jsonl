@@ -67,3 +67,7 @@
 {"date": "2026-09-12", "source": "oracle_feed_directory", "group": "pyth", "key": "71bfa98535ae29aad4190e20e5de37b4c417845bcb9243c967ecf3f176d05d2a", "event": "LISTED", "from": null, "to": ""}
 {"date": "2026-09-12", "source": "oracle_feed_directory", "group": "pyth", "key": "777b9fa77dfb15b2f3fbf63c2e7230535d01cad7dd3dcb19a607d93c72957f74", "event": "LISTED", "from": null, "to": ""}
 {"date": "2026-09-12", "source": "oracle_feed_directory", "group": "pyth", "key": "e56a57faccd127587a8a530c1895453edd606e11bcc33fb9cc3c6488f877da5e", "event": "LISTED", "from": null, "to": ""}
+{"date": "2026-09-15", "source": "oracle_feed_directory", "group": "pyth", "key": "3b7340060c669c19f9285fab57649ac27a7c332eccaaf2d18e1db3a9c9c26141", "event": "DELISTED", "from": "", "to": null}
+{"date": "2026-09-15", "source": "oracle_feed_directory", "group": "pyth", "key": "6166cc35fc143015084c2814bfff87cf21bea4dfc231676bc843496c1cfcf239", "event": "DELISTED", "from": "", "to": null}
+{"date": "2026-09-15", "source": "oracle_feed_directory", "group": "pyth", "key": "dca56b6f3f4a335a2f4e3b7b3338794710d1aa5779bdeb40059ead4b0854328b", "event": "DELISTED", "from": "", "to": null}
+{"date": "2026-09-15", "source": "oracle_feed_directory", "group": "pyth", "key": "b7113dfc953e2884fed9d8eef5154d696b8296bbf7267caf5ad218e49f97ea4e", "event": "LISTED", "from": null, "to": ""}

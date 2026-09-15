@@ -117,3 +117,7 @@
 {"date": "2026-09-12", "source": "openrouter_models", "group": "_models", "key": "~openai/gpt-terra-latest", "event": "LISTED", "from": null, "to": "OpenAI GPT Terra Latest"}
 {"date": "2026-09-13", "source": "openrouter_models", "group": "_models", "key": "inference-net/schematron-v2-small", "event": "LISTED", "from": null, "to": "Inference.net: Schematron V2 Small"}
 {"date": "2026-09-13", "source": "openrouter_models", "group": "_models", "key": "inference-net/schematron-v2-turbo", "event": "LISTED", "from": null, "to": "Inference.net: Schematron V2 Turbo"}
+{"date": "2026-09-15", "source": "openrouter_models", "group": "_models", "key": "google/gemini-2.5-pro-preview-05-06", "event": "DELISTED", "from": "Google: Gemini 2.5 Pro Preview 05-06", "to": null}
+{"date": "2026-09-15", "source": "openrouter_models", "group": "_models", "key": "openai/gpt-4-turbo-preview", "event": "DELISTED", "from": "OpenAI: GPT-4 Turbo Preview", "to": null}
+{"date": "2026-09-15", "source": "openrouter_models", "group": "_models", "key": "~deepseek/deepseek-flash-latest", "event": "LISTED", "from": null, "to": "DeepSeek: DeepSeek Flash Latest"}
+{"date": "2026-09-15", "source": "openrouter_models", "group": "_models", "key": "~deepseek/deepseek-pro-latest", "event": "LISTED", "from": null, "to": "DeepSeek: DeepSeek Pro Latest"}
